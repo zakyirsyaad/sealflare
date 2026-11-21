@@ -143,7 +143,7 @@ Satu kunci dipakai untuk kontrak dan skill, sehingga attestation, sengketa, dan 
 - **Pembayaran model tarik.** `Vault` tidak pernah mengirim BNB secara otomatis. Ia mencatat saldo yang bisa ditarik. Ini menutup reentrancy dan mencegah satu penerima yang menolak transfer menggagalkan pembayaran lain.
 - **Penyelesaian malas, tanpa bot.** Tidak ada penjadwal. Setiap transisi berbasis waktu dipicu oleh siapa pun yang memanggil `settle`, `resolve`, atau `expire`. Fungsi baca menghitung status dari waktu saat ini.
 - **Bobot tidak disimpan.** `W(S)` dihitung dari skor setiap kali dibaca, supaya tidak ada dua angka yang bisa tidak sinkron.
-- **Batas nominal sebagai konstanta.** `challengeStake`, `juryStake`, `warrantyBond`, dan bounty punya batas atas yang ditulis di kontrak.
+- **Batas nominal sebagai konstanta.** `challengeStake`, `juryStake`, `warrantyBond`, dan bounty punya nilai atau batas atas yang ditulis di kontrak (angka di Bagian 12.1).
 
 ### 4.5 Yang sengaja tidak ada
 
@@ -200,7 +200,7 @@ Setiap jawaban baca menyertakan nomor blok terakhir yang dibaca indexer.
 - Sandbox worker dan indexer di satu host yang selalu hidup, karena batas waktu fungsi serverless terlalu pendek untuk sandbox.
 - Postgres terkelola, dan Pinata untuk IPFS.
 
-Penyedia bisa diganti. Yang mengikat hanya kebutuhan proses yang selalu hidup untuk worker dan indexer.
+Penyedia yang dipilih ada di Bagian 12.2 dan bisa diganti. Yang mengikat hanya kebutuhan proses yang selalu hidup untuk worker dan indexer.
 
 ---
 
@@ -333,15 +333,50 @@ Blueprint perlu diselaraskan setelah dokumen ini disetujui.
 
 ---
 
-## 12. Keputusan yang belum diambil
+## 12. Keputusan pelaksanaan
 
-Semuanya milik founder, dan tidak menghalangi mulainya pekerjaan.
+Diputuskan 21 November 2026. Semuanya bisa diubah founder sebelum tenggat di kolom terakhir.
 
-| Keputusan | Paling lambat |
-| :--- | :--- |
-| Angka batas nominal `challengeStake`, `juryStake`, `warrantyBond`, bounty | Sebelum `Vault` di-*deploy* |
-| Penyedia host untuk worker dan indexer, serta penyedia Postgres | Sebelum penyambungan |
-| Model LLM untuk sandbox | Sebelum probe pertama ditulis |
-| `Core` dirilis lebih dulu atau bersama `Court` dan `Vault` | Sebelum deploy pertama |
+### 12.1 Batas nominal
 
-Empat asumsi dari blueprint juga masih belum diverifikasi dan harus dicek sebelum deploy: alamat dan sifat soulbound kontrak Agent ID, jaminan satu pengguna satu Agent ID, definisi "alamat Agent ID unik" untuk syarat 30, serta bobot rubrik dan isi Safety Red Lines.
+Semua angka ditulis sebagai konstanta di kontrak. Stake dibuat tetap, bukan rentang, supaya tidak ada juri atau penantang yang bisa menekan pihak lain dengan modal lebih besar.
+
+| Konstanta | Nilai | Alasan |
+| :--- | :--- | :--- |
+| `CHALLENGE_STAKE` | 0,01 BNB, tetap | Cukup mahal untuk menahan tantangan iseng, cukup murah bagi pelapor jujur |
+| `JURY_STAKE` | 0,005 BNB, tetap | Separuh stake penantang, supaya tiga juri mudah terkumpul |
+| `MAX_WARRANTY_BOND` | 0,5 BNB per target | Batas kerugian bila `Vault` bermasalah |
+| `MAX_BOUNTY` | 0,2 BNB per permintaan, 3 sampai 5 slot | Cukup untuk anggaran *Genesis Guardian Sprint* di blueprint |
+
+Harga BNB saat keputusan ini dibuat tidak bisa dipastikan (sumber yang ditemukan berkisar 570 sampai 710 dolar AS dan tidak bertanggal). Nilai dolar harus dicek ulang sebelum `Vault` di-*deploy*, karena setelah itu angkanya tidak bisa diubah.
+
+### 12.2 Tempat menjalankan
+
+| Komponen | Penyedia | Alasan |
+| :--- | :--- | :--- |
+| Next.js (UI dan API) | Vercel | Deploy otomatis dari git |
+| Sandbox worker dan indexer | Railway, dua layanan dalam satu proyek | Proses selalu hidup tanpa mengurus server |
+| Postgres | Railway, proyek yang sama | Satu tagihan, jaringan privat ke worker dan indexer |
+| IPFS | Pinata | Sudah disebut di blueprint |
+
+### 12.3 Model LLM untuk sandbox
+
+`claude-haiku-5-5` sebagai bawaan, dengan ID model dibaca dari konfigurasi.
+
+- Sandbox menjalankan hingga 8 probe, masing-masing 3 kali, jadi biaya per run penting.
+- Model yang lebih kecil lebih mudah terpancing *prompt injection*. Untuk sebuah firewall itu menguntungkan: skill berbahaya lebih mungkin tertangkap.
+- Hasil selalu dicatat bersama ID model, dan cache terikat padanya, jadi mengganti model tidak mencampur hasil.
+
+Harga per token belum dicek dan harus dipastikan sebelum batas 5 run per hari dianggap aman.
+
+### 12.4 Urutan rilis
+
+`Core` dirilis lebih dulu, paling lambat 1 Desember 2026. `Court` dan `Vault` menyusul, lalu `setModules` dipanggil dan kepemilikan dilepas.
+
+- Pengumpulan 30 alamat Agent ID baru bisa mulai setelah `attest()` hidup di mainnet. Rilis 1 Desember menyisakan 8 hari.
+- `Core` tidak memegang dana, jadi risikonya paling kecil untuk dirilis awal.
+- Harganya: antara rilis `Core` dan `setModules`, kontrak masih punya pemilik. Jendela itu harus disebut di dokumentasi *owner permissions*.
+
+### 12.5 Asumsi yang belum diverifikasi
+
+Empat asumsi dari blueprint masih belum diverifikasi dan harus dicek sebelum deploy: alamat dan sifat soulbound kontrak Agent ID, jaminan satu pengguna satu Agent ID, definisi "alamat Agent ID unik" untuk syarat 30, serta bobot rubrik dan isi Safety Red Lines.
