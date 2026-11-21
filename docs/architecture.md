@@ -197,8 +197,8 @@ Setiap jawaban baca menyertakan nomor blok terakhir yang dibaca indexer.
 ### 5.4 Tempat menjalankan
 
 - Next.js di Vercel.
-- Sandbox worker dan indexer di satu host yang selalu hidup, karena batas waktu fungsi serverless terlalu pendek untuk sandbox.
-- Postgres terkelola, dan Pinata untuk IPFS.
+- Sandbox worker, indexer, dan Postgres di VPS milik tim, karena batas waktu fungsi serverless terlalu pendek untuk sandbox.
+- Pinata untuk IPFS.
 
 Penyedia yang dipilih ada di Bagian 12.2 dan bisa diganti. Yang mengikat hanya kebutuhan proses yang selalu hidup untuk worker dan indexer.
 
@@ -355,9 +355,15 @@ Harga BNB saat keputusan ini dibuat tidak bisa dipastikan (sumber yang ditemukan
 | Komponen | Penyedia | Alasan |
 | :--- | :--- | :--- |
 | Next.js (UI dan API) | Vercel | Deploy otomatis dari git |
-| Sandbox worker dan indexer | Railway, dua layanan dalam satu proyek | Proses selalu hidup tanpa mengurus server |
-| Postgres | Railway, proyek yang sama | Satu tagihan, jaringan privat ke worker dan indexer |
+| Sandbox worker dan indexer | VPS milik tim, dua kontainer lewat Docker Compose | Sudah tersedia, proses selalu hidup, tanpa biaya tambahan |
+| Postgres | VPS yang sama, kontainer ketiga dengan volume tetap | Tidak terbuka ke internet; hanya worker, indexer, dan API yang mengaksesnya |
 | IPFS | Pinata | Sudah disebut di blueprint |
+
+Tiga hal yang timbul karena memakai VPS sendiri:
+
+- **API di Vercel perlu jalan ke Postgres.** Basis data tidak dibuka ke internet. API membaca data lewat layanan HTTP kecil di VPS (bagian dari indexer) yang dilindungi kunci rahasia dan HTTPS.
+- **Cadangan basis data.** Tabel indexer bisa dibangun ulang dari chain, tetapi cache sandbox tidak. `pg_dump` harian disimpan di luar VPS.
+- **Kunci rahasia di VPS.** Kunci LLM, Pinata, dan RPC disimpan sebagai variabel lingkungan di VPS, tidak pernah di repositori.
 
 ### 12.3 Model LLM untuk sandbox
 
