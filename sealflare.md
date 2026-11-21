@@ -6,6 +6,7 @@
 **Target Kompetisi:** Binance Wallet & BNB Chain: **Agent ID Hackathon** (*Agent Application Innovation Award*)  
 **Jaringan & Identitas Inti:** BNB Smart Chain (Mainnet) & **SPACE ID Agent ID** (`0x60b9262456de011f7d15a54cdd8c48baaa8b022f`, ERC-721 *non-transferable / soulbound*)  
 **Deadline Submisi:** 9 Desember 2026, 15:00 WIB  
+**Arsitektur:** rancangan teknis ada di [docs/architecture.md](docs/architecture.md). Bila isinya berbeda dari dokumen ini, arsitektur yang berlaku; daftar perbedaannya ada di Bagian 11 dokumen itu.  
 **Revisi 21 November 2026:** insentif *attestation* `SAFE`, bukti kepemilikan kontrak, aturan juri dan *deadlock*, *cache* *sandbox*, dan batas cakupan submisi (Bagian 10).
 
 ---
@@ -40,7 +41,7 @@ Sementara sistem pelaporan keamanan komunitas di Web3 selalu gagal karena penipu
 | **Larangan *web-based QR login* & penyimpanan sesi di server** | **Patuh 100%:** Koneksi wallet non-kustodian standar. Tanda tangan *off-chain* hanya untuk *rate-limit* sandbox, nol penyimpanan kunci/sesi eksekusi transaksi di server. |
 | **Larangan *bypass* konfirmasi transaksi oleh AI *Skill*** | **Patuh 100%:** *Companion Skill* bersifat *read-only advisory* & *transaction preparer*. Setiap transaksi `attest()` atau `openChallenge()` wajib dikonfirmasi manual oleh pengguna. |
 | **Larangan *unlimited approval* & *unauthorized transfer*** | **Patuh 100%:** Seluruh *stake/warranty/bounty* memakai **Native BNB** sebagai jalur utama (nol `approve()`), dan jika memakai BEP-20 (USDT/USDC) pada *Fast-Track Bounty* terkunci pada **exact-amount approval**. |
-| **Transparansi *owner permissions* (*open-source & verified*)** | **Patuh 100%:** **Zero Admin Override**: *contract owner* tidak memiliki fungsi mengubah/menghapus *verdict*, tidak bisa menarik *Warranty Bond*, *Challenge Stake*, maupun *Bounty Pool* pengguna. Satu-satunya fungsi *owner* adalah `setCourt()` sekali pakai untuk menyambungkan modul sengketa (Bagian 10.2); setelah itu kepemilikan dilepas. |
+| **Transparansi *owner permissions* (*open-source & verified*)** | **Patuh 100%:** **Zero Admin Override**: *contract owner* tidak memiliki fungsi mengubah/menghapus *verdict*, tidak bisa menarik *Warranty Bond*, *Challenge Stake*, maupun *Bounty Pool* pengguna. Satu-satunya fungsi *owner* adalah `setModules()` sekali pakai untuk menyambungkan modul sengketa (Bagian 10.2); setelah itu kepemilikan dilepas. |
 | **Privasi Agent ID (larangan alat pencari alamat dari `name.ai`)** | **Patuh 100%:** Tidak menyediakan fitur *lookup* alamat wallet dari nama. Verifikasi penerbit murni *opt-in* pada kontrak/manifest repositori publik yang dipublikasikan secara sadar. |
 | **Larangan merek & klaim *passive income*** | **Patuh 100%:** Nama bersih dari kata "Binance"/"BNB", nol token spekulatif, nol klaim *yield/return*: murni protokol keamanan, reputasi *soulbound*, dan *audit bounty* berbasis kinerja. |
 
@@ -344,14 +345,14 @@ Dari 21 November sampai tenggat 9 Desember tersisa 18 hari. Lima modul di Bagian
 
 ### 10.2 Urutan Rilis
 
-Pengumpulan 30 alamat Agent ID baru bisa dimulai setelah Tingkat A hidup di mainnet. Karena itu kontrak dipecah menjadi dua: `AgentFirewallCore` (Tingkat A) dirilis lebih dulu, lalu modul sengketa, *bond*, dan *bounty* (Tingkat B) menyusul sebagai kontrak terpisah. Core menyediakan `setCourt(address)` yang hanya bisa dipanggil satu kali untuk mengizinkan modul itu menulis *verdict* sengketa. Setelah dipanggil, kepemilikan dilepas (`renounceOwnership`). Fungsi ini dicantumkan di dokumentasi *owner permissions*.
+Pengumpulan 30 alamat Agent ID baru bisa dimulai setelah Tingkat A hidup di mainnet. Karena itu kontrak dipecah menjadi dua: `AgentFirewallCore` (Tingkat A) dirilis lebih dulu, lalu modul sengketa, *bond*, dan *bounty* (Tingkat B) menyusul sebagai kontrak terpisah. Core menyediakan `setModules(court, vault)` yang hanya bisa dipanggil satu kali untuk mengizinkan modul itu menulis *verdict* sengketa. Setelah dipanggil, kepemilikan dilepas (`renounceOwnership`). Fungsi ini dicantumkan di dokumentasi *owner permissions*.
 
 | Tanggal | Hasil |
 | :--- | :--- |
 | 22 sampai 27 November | `AgentFirewallCore` (Tingkat A) dan tes Foundry. Layer 1 *scanner*. Agent ID milik sendiri sudah dibuat. |
 | 28 November sampai 1 Desember | dApp scan + 1-klik *attest*. Core di-*deploy* dan diverifikasi di mainnet **paling lambat 1 Desember**, lalu direktori awal diisi. Tersisa 8 hari untuk mengumpulkan alamat. |
 | 2 sampai 5 Desember | *Sandbox* dengan 4 *probe*, *Companion Skill*, dan pengumpulan Agent ID (Bagian 8). |
-| 4 sampai 6 Desember | Modul Tingkat B di-*deploy*, `setCourt()` dipanggil, kepemilikan dilepas. |
+| 4 sampai 6 Desember | Modul Tingkat B di-*deploy*, `setModules()` dipanggil, kepemilikan dilepas. |
 | 7 sampai 8 Desember | Video demo, dokumentasi *owner permissions*, dan submisi. |
 | 9 Desember | Cadangan sampai 15:00 WIB. |
 
