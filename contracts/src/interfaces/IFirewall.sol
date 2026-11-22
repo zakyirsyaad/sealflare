@@ -21,6 +21,8 @@ interface IFirewall {
             uint256 warrantyBondActive
         );
 
+    /// `publisher` is the verified publisher, or address(0) when the bundle has none or only a
+    /// third-party sponsor. `warrantyBondActive` is that publisher's bond, as `IVault.activeBond`.
     function verifySkillBundle(bytes32 canonicalBundleHash)
         external
         view

@@ -32,7 +32,11 @@ const abis = INTERFACES.map(
   ({ contract, exportName }) => `export const ${exportName} = ${JSON.stringify(abiOf(contract), null, 2)} as const\n`,
 ).join('\n')
 
-const eip712 = `/** Typed data a target's owner or deployer signs to name an Agent ID holder as publisher. */
+const eip712 = `/**
+ * Typed data a target's owner or deployer signs to name an Agent ID holder as publisher.
+ * \`bindNonce\` is Core.bindNonce(target) at signing time; every binding consumes it.
+ * Mirrors contracts/src/lib/BindTypes.sol; both are checked against rules/vectors/eip712.json.
+ */
 export const EIP712 = {
   /** Add \`chainId\` and \`verifyingContract\` (the Core address) when building the domain. */
   domain: { name: 'Sealflare', version: '1' },
@@ -40,13 +44,15 @@ export const EIP712 = {
     BindByOwner: [
       { name: 'target', type: 'address' },
       { name: 'agentIdHolder', type: 'address' },
+      { name: 'bindNonce', type: 'uint256' },
       { name: 'deadline', type: 'uint256' },
     ],
     BindByDeployer: [
       { name: 'target', type: 'address' },
       { name: 'deployer', type: 'address' },
-      { name: 'nonce', type: 'uint256' },
+      { name: 'deployNonce', type: 'uint256' },
       { name: 'agentIdHolder', type: 'address' },
+      { name: 'bindNonce', type: 'uint256' },
       { name: 'deadline', type: 'uint256' },
     ],
   },

@@ -25,6 +25,10 @@ export const DANGER_WEIGHT_THRESHOLD = 3
 
 /** Architecture 4.6: eight rules in priority order, first match wins. */
 export function tierOf(input: TierInput): TrustTier {
+  for (const weight of [input.safeWeight, input.cautionWeight, input.dangerWeight]) {
+    // NaN compares false everywhere, which would fall through to a SAFE tier. Refuse instead.
+    if (!Number.isInteger(weight) || weight < 0) throw new RangeError('Vote weights must be whole non-negative numbers.')
+  }
   const against = input.cautionWeight + input.dangerWeight
   if (input.confirmedDanger) return 'CONFIRMED_DANGER'
   if (input.codehashDrift) return 'STALE_CODEHASH_DRIFT'

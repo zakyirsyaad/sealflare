@@ -3,6 +3,19 @@
 export const coreAbi = [
   {
     "type": "function",
+    "name": "DOMAIN_SEPARATOR",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "adjustScore",
     "inputs": [
       {
@@ -205,7 +218,7 @@ export const coreAbi = [
         "internalType": "address"
       },
       {
-        "name": "nonce",
+        "name": "deployNonce",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -255,6 +268,25 @@ export const coreAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "bindNonce",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -2409,6 +2441,18 @@ export const vaultAbi = [
         "internalType": "uint256"
       },
       {
+        "name": "targetId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "depositor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "slashed",
         "type": "uint256",
         "indexed": false,
@@ -2777,7 +2821,11 @@ export const firewallAbi = [
   }
 ] as const
 
-/** Typed data a target's owner or deployer signs to name an Agent ID holder as publisher. */
+/**
+ * Typed data a target's owner or deployer signs to name an Agent ID holder as publisher.
+ * `bindNonce` is Core.bindNonce(target) at signing time; every binding consumes it.
+ * Mirrors contracts/src/lib/BindTypes.sol; both are checked against rules/vectors/eip712.json.
+ */
 export const EIP712 = {
   /** Add `chainId` and `verifyingContract` (the Core address) when building the domain. */
   domain: { name: 'Sealflare', version: '1' },
@@ -2785,13 +2833,15 @@ export const EIP712 = {
     BindByOwner: [
       { name: 'target', type: 'address' },
       { name: 'agentIdHolder', type: 'address' },
+      { name: 'bindNonce', type: 'uint256' },
       { name: 'deadline', type: 'uint256' },
     ],
     BindByDeployer: [
       { name: 'target', type: 'address' },
       { name: 'deployer', type: 'address' },
-      { name: 'nonce', type: 'uint256' },
+      { name: 'deployNonce', type: 'uint256' },
       { name: 'agentIdHolder', type: 'address' },
+      { name: 'bindNonce', type: 'uint256' },
       { name: 'deadline', type: 'uint256' },
     ],
   },

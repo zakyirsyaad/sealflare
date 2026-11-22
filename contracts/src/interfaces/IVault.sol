@@ -12,7 +12,9 @@ interface IVault {
     event BondLocked(
         uint256 indexed challengeId, bytes32 indexed targetId, address indexed depositor, uint256 amount
     );
-    event BondSettled(uint256 indexed challengeId, uint256 slashed, uint256 released);
+    event BondSettled(
+        uint256 indexed challengeId, bytes32 indexed targetId, address indexed depositor, uint256 slashed, uint256 released
+    );
     event StakeDeposited(uint256 indexed challengeId, address indexed account, uint256 amount);
     event Distributed(uint256 indexed challengeId, address indexed recipient, uint256 amount);
     event BountyCreated(
@@ -55,12 +57,16 @@ interface IVault {
 
     // Court only.
     function depositStake(uint256 challengeId, address account) external payable;
+    /// Locks the current publisher's bond for this challenge. A locked bond cannot be withdrawn.
     function lockBond(uint256 challengeId, bytes32 targetId) external;
     /// Moves `slashBps` of the locked bond into the challenge escrow and releases the rest to its depositor.
     function settleBond(uint256 challengeId, uint16 slashBps) external;
     /// The sum of `amounts` can never exceed what this challenge's escrow holds.
     function distribute(uint256 challengeId, address[] calldata recipients, uint256[] calldata amounts) external;
 
+    /// Bond of the target's current publisher of record (verified publisher or sponsor), and of
+    /// nobody else. Zero once that publisher has requested withdrawal. A bond left behind by an
+    /// earlier sponsor never counts.
     function activeBond(bytes32 targetId) external view returns (uint256);
     function bondOf(bytes32 targetId, address depositor) external view returns (BondView memory);
     function balanceOf(address account) external view returns (uint256);

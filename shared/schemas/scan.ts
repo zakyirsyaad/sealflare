@@ -1,5 +1,13 @@
 import { z } from 'zod'
-import { CONSTANTS, CONTRACT_FLAGS_MASK, FLAGS, SKILL_FLAGS_MASK } from '../rules'
+import {
+  CONSTANTS,
+  CONTRACT_FLAGS_MASK,
+  FLAGS,
+  SKILL_FLAGS_MASK,
+  canonicalBundleHash,
+  targetIdOfContract,
+  targetIdOfSkill,
+} from '../rules'
 import {
   AddressSchema,
   Bytes32Schema,
@@ -111,8 +119,25 @@ export const ScanReport = z
     if (new Set(ids).size !== ids.length) {
       ctx.addIssue({ code: 'custom', path: ['checks'], message: 'a check id appears more than once' })
     }
-    // Doubt is never safe: SAFE needs every check to have run and passed, and no finding.
-    const allPassed = report.checks.length > 0 && report.checks.every((check) => check.status === 'passed')
+    const expected: readonly CheckId[] = isContract ? CONTRACT_CHECK_IDS : SKILL_CHECK_IDS
+    if (ids.some((id) => !expected.includes(id))) {
+      ctx.addIssue({ code: 'custom', path: ['checks'], message: 'a check belongs to the other target type' })
+    }
+    if (report.source.kind === 'skill') {
+      const canonical = canonicalBundleHash(report.source.contentHash, report.source.manifestPublisher)
+      if (canonical !== report.source.canonicalBundleHash) {
+        ctx.addIssue({ code: 'custom', path: ['source', 'canonicalBundleHash'], message: 'not the hash of contentHash and manifestPublisher' })
+      }
+    }
+    const idOfSource =
+      report.source.kind === 'contract' ? targetIdOfContract(report.source.address) : targetIdOfSkill(report.source.canonicalBundleHash)
+    if (report.targetId !== idOfSource) {
+      ctx.addIssue({ code: 'custom', path: ['targetId'], message: 'targetId is not the id of the source' })
+    }
+    // Doubt is never safe: SAFE needs every check of this target type to have run and passed, and
+    // no finding. A check that is simply left out counts as not run.
+    const passed = new Set(report.checks.filter((check) => check.status === 'passed').map((check) => check.id))
+    const allPassed = report.checks.length === expected.length && expected.every((id) => passed.has(id))
     if (report.suggestedVerdict === 'SAFE' && (!allPassed || report.findings.length > 0)) {
       ctx.addIssue({ code: 'custom', path: ['suggestedVerdict'], message: 'SAFE needs every check passed and no finding' })
     }

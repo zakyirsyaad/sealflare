@@ -11,7 +11,6 @@ The contracts have not had a third-party audit.
 
 - Node 24 and pnpm
 - Foundry 1.7 (`forge`, `anvil`, `cast`)
-- `jq`, for the local chain scripts
 
 ## Getting started
 

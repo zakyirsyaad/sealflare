@@ -14,7 +14,8 @@ contract VaultStub is IVault {
     address public immutable treasury;
 
     mapping(bytes32 => mapping(address => BondView)) internal _bonds;
-    mapping(bytes32 => uint256) public activeBond;
+    mapping(uint256 => bytes32) internal _lockedTarget;
+    mapping(uint256 => address) internal _lockedDepositor;
     mapping(address => uint256) public balanceOf;
     mapping(uint256 => uint256) public escrowOf;
     mapping(uint256 => BountyView) internal _bounties;
@@ -33,7 +34,6 @@ contract VaultStub is IVault {
     function depositBond(bytes32 targetId) external payable {
         BondView storage b = _bonds[targetId][msg.sender];
         b.amount += msg.value;
-        activeBond[targetId] += msg.value;
         emit BondDeposited(targetId, msg.sender, msg.value, b.amount);
     }
 
@@ -46,7 +46,6 @@ contract VaultStub is IVault {
     function finalizeBondWithdrawal(bytes32 targetId) external {
         BondView storage b = _bonds[targetId][msg.sender];
         uint256 amount = b.amount;
-        activeBond[targetId] -= amount;
         delete _bonds[targetId][msg.sender];
         balanceOf[msg.sender] += amount;
         emit BondWithdrawn(targetId, msg.sender, amount);
@@ -84,11 +83,20 @@ contract VaultStub is IVault {
         address publisher = ICore(core).getTarget(targetId).publisher;
         BondView storage b = _bonds[targetId][publisher];
         b.lockedByChallengeId = challengeId;
+        _lockedTarget[challengeId] = targetId;
+        _lockedDepositor[challengeId] = publisher;
         emit BondLocked(challengeId, targetId, publisher, b.amount);
     }
 
     function settleBond(uint256 challengeId, uint16 slashBps) external {
-        emit BondSettled(challengeId, 0, slashBps);
+        bytes32 targetId = _lockedTarget[challengeId];
+        address depositor = _lockedDepositor[challengeId];
+        BondView storage b = _bonds[targetId][depositor];
+        uint256 slashed = b.amount * slashBps / Constants.BPS;
+        b.amount -= slashed;
+        b.lockedByChallengeId = 0;
+        escrowOf[challengeId] += slashed;
+        emit BondSettled(challengeId, targetId, depositor, slashed, b.amount);
     }
 
     function distribute(uint256 challengeId, address[] calldata recipients, uint256[] calldata amounts) external {
@@ -98,6 +106,11 @@ contract VaultStub is IVault {
             balanceOf[recipients[i]] += amounts[i];
             emit Distributed(challengeId, recipients[i], amounts[i]);
         }
+    }
+
+    function activeBond(bytes32 targetId) external view returns (uint256) {
+        BondView storage b = _bonds[targetId][ICore(core).getTarget(targetId).publisher];
+        return b.withdrawalAvailableAt == 0 ? b.amount : 0;
     }
 
     function bondOf(bytes32 targetId, address depositor) external view returns (BondView memory) {

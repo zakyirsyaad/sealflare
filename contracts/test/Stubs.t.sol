@@ -7,6 +7,7 @@ import {ICore} from "../src/interfaces/ICore.sol";
 import {ICourt} from "../src/interfaces/ICourt.sol";
 import {IVault} from "../src/interfaces/IVault.sol";
 import {
+    ChallengeOutcome,
     ChallengePhase,
     ChallengeView,
     GuardianView,
@@ -193,12 +194,64 @@ contract StubsTest is Test {
         vault.withdraw();
     }
 
-    function test_vaultStub_depositBond_isActiveBond() public {
-        vm.deal(guardian, 1 ether);
-        vm.prank(guardian);
+    function test_vaultStub_activeBondIsTheCurrentPublishersBondOnly() public {
+        _attest(guardian, Verdict.SAFE, 0);
+        address sponsor = makeAddr("sponsor");
+        vm.deal(sponsor, 1 ether);
+        vm.startPrank(sponsor);
+        core.sponsor(targetId);
         vault.depositBond{value: 0.5 ether}(targetId);
-        assertEq(vault.bondOf(targetId, guardian).amount, 0.5 ether);
+        vm.stopPrank();
+        assertEq(vault.bondOf(targetId, sponsor).amount, 0.5 ether);
         assertEq(vault.activeBond(targetId), 0.5 ether);
+
+        // A verified publisher with no bond replaces the sponsor: the sponsor's bond no longer counts.
+        core.bindByOwner(target, guardian, 0, "");
+        assertEq(vault.activeBond(targetId), 0);
+        assertEq(vault.bondOf(targetId, sponsor).amount, 0.5 ether);
+    }
+
+    function test_coreStub_dangerVoteIsPaidOnlyAfterTheDangerVerdict() public {
+        _attest(guardian, Verdict.DANGER, 2);
+        core.settle(targetId, 0, 1);
+        assertFalse(core.getAttestation(targetId, 0).settled);
+        assertEq(core.pendingSettlement(targetId), 0);
+
+        core.applyVerdict(targetId, 1, ChallengeOutcome.UPHELD, 2);
+        assertEq(core.pendingSettlement(targetId), 1);
+        core.settle(targetId, 0, 1);
+        assertEq(core.getGuardian(guardian).score, 5);
+    }
+
+    function test_coreStub_safeVoteOnDangerIsChargedOnce() public {
+        _attest(guardian, Verdict.SAFE, 0);
+        core.applyVerdict(targetId, 1, ChallengeOutcome.UPHELD, 2);
+        core.settle(targetId, 0, 1);
+        core.applyPenalties(targetId, 0, 1);
+        core.applyPenalties(targetId, 0, 1);
+        core.settle(targetId, 0, 1);
+        assertEq(core.getGuardian(guardian).score, -15);
+    }
+
+    function test_coreStub_bindNonceRisesWithEachBinding() public {
+        assertEq(core.bindNonce(target), 0);
+        core.bindByOwner(target, guardian, 0, "");
+        assertEq(core.bindNonce(target), 1);
+    }
+
+    function test_vaultStub_settleBond_namesTargetAndDepositor() public {
+        _attest(guardian, Verdict.SAFE, 0);
+        vm.deal(guardian, 1 ether);
+        vm.startPrank(guardian);
+        core.sponsor(targetId);
+        vault.depositBond{value: 0.4 ether}(targetId);
+        vm.stopPrank();
+        vault.lockBond(9, targetId);
+        vm.expectEmit(address(vault));
+        emit IVault.BondSettled(9, targetId, guardian, 0.2 ether, 0.2 ether);
+        vault.settleBond(9, 5000);
+        assertEq(vault.bondOf(targetId, guardian).amount, 0.2 ether);
+        assertEq(vault.escrowOf(9), 0.2 ether);
     }
 
     function test_vaultStub_rejectsPlainTransfers() public {

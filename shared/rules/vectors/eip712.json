@@ -1,0 +1,10 @@
+{
+  "BindByOwner": {
+    "typeString": "BindByOwner(address target,address agentIdHolder,uint256 bindNonce,uint256 deadline)",
+    "typeHash": "0xa569374c0568d83613d46ee400b6516f597482371aa751054e633d93dfe59e78"
+  },
+  "BindByDeployer": {
+    "typeString": "BindByDeployer(address target,address deployer,uint256 deployNonce,address agentIdHolder,uint256 bindNonce,uint256 deadline)",
+    "typeHash": "0x3f2f1ba8d3d08445ad5f0d9396c8aa4b19d23eb05176221bf973d87bfd57171c"
+  }
+}

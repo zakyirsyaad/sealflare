@@ -412,6 +412,18 @@
         "internalType": "uint256"
       },
       {
+        "name": "targetId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "depositor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "slashed",
         "type": "uint256",
         "indexed": false,

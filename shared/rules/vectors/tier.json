@@ -219,5 +219,44 @@
     "verifiedPublisherBond": true,
     "tier": "CONFIRMED_DANGER",
     "tierIndex": 5
+  },
+  {
+    "name": "mixed-against-equals-safe",
+    "confirmedDanger": false,
+    "codehashDrift": false,
+    "activeDispute": false,
+    "safeWeight": 3,
+    "cautionWeight": 2,
+    "dangerWeight": 1,
+    "proxyMarker": false,
+    "verifiedPublisherBond": false,
+    "tier": "CAUTION_FLAGGED",
+    "tierIndex": 3
+  },
+  {
+    "name": "caution-equals-safe-bond",
+    "confirmedDanger": false,
+    "codehashDrift": false,
+    "activeDispute": false,
+    "safeWeight": 3,
+    "cautionWeight": 3,
+    "dangerWeight": 0,
+    "proxyMarker": false,
+    "verifiedPublisherBond": true,
+    "tier": "CAUTION_FLAGGED",
+    "tierIndex": 3
+  },
+  {
+    "name": "mixed-against-below-safe",
+    "confirmedDanger": false,
+    "codehashDrift": false,
+    "activeDispute": false,
+    "safeWeight": 4,
+    "cautionWeight": 2,
+    "dangerWeight": 1,
+    "proxyMarker": false,
+    "verifiedPublisherBond": false,
+    "tier": "COMMUNITY_SAFE",
+    "tierIndex": 1
   }
 ]

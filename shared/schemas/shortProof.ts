@@ -3,13 +3,13 @@ import { utf8Length } from './primitives'
 
 export type ShortProofItem = { flag: FlagName; location: string; excerpt: string }
 
-const LINE_PATTERN = /^([A-Z0-9_]+) @ (.*?): (.*)$/
+const LINE_PATTERN = /^([A-Z0-9_]+) @ ([^\n]*?): ([^\n]*)$/
 const KNOWN_FLAGS: ReadonlySet<string> = new Set(FLAG_NAMES)
 
 /** One line per item, so a line break inside a field must not survive. */
-const oneLine = (text: string): string => text.replace(/[\r\n]+/g, ' ')
-/** ": " ends the location when parsing, so a location may not contain it. */
-const cleanLocation = (text: string): string => oneLine(text).replace(/: /g, ':')
+const oneLine = (text: string): string => text.replace(/[\r\n\v\f\u0085\u2028\u2029]+/g, ' ')
+/** A colon followed by whitespace ends the location when parsing, so a location may not contain one. */
+const cleanLocation = (text: string): string => oneLine(text).replace(/:\s+/g, ':')
 
 /** Longest prefix of `text` that fits `maxBytes` of UTF-8 without splitting a code point. */
 function truncateUtf8(text: string, maxBytes: number): string {

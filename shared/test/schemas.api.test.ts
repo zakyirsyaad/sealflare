@@ -80,11 +80,14 @@ describe('requests', () => {
       expect(SandboxRunCreateRequest.safeParse({ ...validSandboxRequest, ...patch }).success).toBe(false)
     }
   })
-  test('an evidence request needs a report that passes the evidence schema', () => {
-    const report = loadJson('evidence/attestation.json')
+  test('an evidence request carries the exact JSON text that is hashed, signed and pinned', () => {
     const base = { address: ADDRESS, nonce: '1', expiry: '1795400000', signature: SIGNATURE }
-    expect(EvidenceRequest.safeParse({ ...base, report }).error?.issues).toBeUndefined()
-    expect(EvidenceRequest.safeParse({ ...base, report: { ...(report as object), kind: 'opinion' } }).success).toBe(false)
+    const reportJson = JSON.stringify(loadJson('evidence/attestation.json'))
+    expect(EvidenceRequest.safeParse({ ...base, reportJson }).error?.issues).toBeUndefined()
+    expect(EvidenceRequest.safeParse({ ...base, report: JSON.parse(reportJson) }).success).toBe(false)
+    expect(EvidenceRequest.safeParse({ ...base, reportJson: '{not json' }).success).toBe(false)
+    expect(EvidenceRequest.safeParse({ ...base, reportJson: JSON.stringify({ ...JSON.parse(reportJson), kind: 'opinion' }) }).success).toBe(false)
+    expect(EvidenceRequest.safeParse({ ...base, reportJson: ' '.repeat(300_000) + reportJson }).success).toBe(false)
   })
 })
 

@@ -18,6 +18,7 @@ import {
     Verdict
 } from "../interfaces/Types.sol";
 import {Constants} from "../lib/Constants.sol";
+import {BindTypes} from "../lib/BindTypes.sol";
 import {Ids} from "../lib/Ids.sol";
 import {Rules} from "../lib/Rules.sol";
 
@@ -40,6 +41,7 @@ contract CoreStub is ICore {
     mapping(bytes32 => TrustTier) internal _forcedTier;
     mapping(address => bool) internal _leftForced;
     mapping(address => uint8) internal _forcedLeft;
+    mapping(address => uint256) public bindNonce;
 
     constructor(address agentId_) {
         agentId = agentId_;
@@ -125,12 +127,14 @@ contract CoreStub is ICore {
     }
 
     function bindByOwner(address target, address agentIdHolder, uint256, bytes calldata) external {
+        bindNonce[target] += 1;
         _bind(_touch(TargetType.SMART_CONTRACT, _word(target)), agentIdHolder, BindMethod.OWNER);
     }
 
     function bindByDeployer(address target, address, uint256, address agentIdHolder, uint256, bytes calldata)
         external
     {
+        bindNonce[target] += 1;
         _bind(_touch(TargetType.SMART_CONTRACT, _word(target)), agentIdHolder, BindMethod.DEPLOYER);
     }
 
@@ -157,8 +161,7 @@ contract CoreStub is ICore {
         bool danger = _targets[targetId].confirmedDanger;
         for (uint32 i = start; i < start + count && i < list.length; ++i) {
             AttestationView storage a = list[i];
-            if (a.settled || a.verdict == Verdict.CAUTION) continue;
-            if (a.verdict == Verdict.SAFE && danger) continue;
+            if (!_payable(a, danger)) continue;
             a.settled = true;
             int32 delta = Rules.attestationXp(a.verdict, a.safeOrdinal, true, danger);
             emit AttestationSettled(targetId, i, delta);
@@ -173,7 +176,7 @@ contract CoreStub is ICore {
             AttestationView storage a = list[i];
             if (a.verdict != Verdict.SAFE || a.penalized) continue;
             a.penalized = true;
-            _score(a.guardian, targetId, Rules.XP_SAFE_ON_DANGER, ScoreReason.SAFE_ON_DANGER);
+            _score(a.guardian, targetId, Rules.attestationPenalty(a.verdict, true), ScoreReason.SAFE_ON_DANGER);
         }
     }
 
@@ -261,8 +264,9 @@ contract CoreStub is ICore {
 
     function pendingSettlement(bytes32 targetId) external view returns (uint32 n) {
         AttestationView[] storage list = _attestations[targetId];
+        bool danger = _targets[targetId].confirmedDanger;
         for (uint256 i; i < list.length; ++i) {
-            if (!list[i].settled && list[i].verdict != Verdict.CAUTION) ++n;
+            if (_payable(list[i], danger)) ++n;
         }
     }
 
@@ -283,7 +287,8 @@ contract CoreStub is ICore {
     function verifySkillBundle(bytes32 canonicalBundleHash) external view returns (TrustTier, address, uint32, uint256) {
         bytes32 targetId = Ids.targetIdOfSkill(canonicalBundleHash);
         TargetView storage t = _targets[targetId];
-        return (tierOf(targetId), t.publisher, t.activeFlags, _bond(targetId));
+        address verified = t.publisherRole == PublisherRole.VERIFIED_PUBLISHER ? t.publisher : address(0);
+        return (tierOf(targetId), verified, t.activeFlags, _bond(targetId));
     }
 
     // ---- internals ----------------------------------------------------------------------------
@@ -325,6 +330,18 @@ contract CoreStub is ICore {
         GuardianView storage g = _guardians[guardian];
         g.score += delta;
         emit ScoreChanged(guardian, targetId, delta, g.score, reason);
+    }
+
+    /// The stub ignores the 48 hour window: a SAFE vote is payable at once, a DANGER vote once
+    /// the target is confirmed dangerous.
+    function _payable(AttestationView storage a, bool danger) internal view returns (bool) {
+        if (a.settled) return false;
+        if (a.verdict == Verdict.SAFE) return !danger;
+        return a.verdict == Verdict.DANGER && danger;
+    }
+
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return BindTypes.domainSeparator(block.chainid, address(this));
     }
 
     function _reason(AttestationView storage a, bool danger) internal view returns (ScoreReason) {

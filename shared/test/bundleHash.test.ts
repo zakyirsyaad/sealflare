@@ -86,3 +86,11 @@ test.each(ids.skills)('skill content $contentHash has the frozen ids', (row) => 
   expect(canonical).toBe(row.canonicalBundleHash)
   expect(targetIdOfSkill(canonical)).toBe(row.targetId)
 })
+
+// ---- added after the final review ----
+test('publisher.sig must be a small regular file', () => {
+  const sig = (kind: 'file' | 'symlink', size: number): BundleEntry => ({ path: 'publisher.sig', kind, bytes: new Uint8Array(size) })
+  expect(() => contentHash([file('a'), sig('file', 1024)])).not.toThrow()
+  expect(() => contentHash([file('a'), sig('file', 1025)])).toThrowError(expect.objectContaining({ code: 'TOO_LARGE' }))
+  expect(() => contentHash([file('a'), sig('symlink', 10)])).toThrowError(expect.objectContaining({ code: 'INVALID_PATH' }))
+})

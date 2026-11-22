@@ -93,6 +93,50 @@ contract RulesTest is VectorTest {
         assertEq(Constants.expireForfeitBps(9), forfeit[2]);
     }
 
+    function test_penalty_matchesVectors() public view {
+        string memory json = _read("xp.json");
+        uint256 n = _rows(json, "$");
+        for (uint256 i; i < n; ++i) {
+            int32 got = Rules.attestationPenalty(
+                Verdict(vm.parseJsonUint(json, _key("$", i, "verdictIndex"))),
+                vm.parseJsonBool(json, _key("$", i, "confirmedDanger"))
+            );
+            assertEq(got, vm.parseJsonInt(json, _key("$", i, "penalty")), vm.toString(i));
+        }
+    }
+
+    function test_xpAmounts_matchVectors() public view {
+        string memory json = _read("xpEvents.json");
+        assertEq(Rules.XP_EARLY_SAFE, vm.parseJsonInt(json, ".EARLY_SAFE"));
+        assertEq(Rules.XP_CONFIRMING_SAFE, vm.parseJsonInt(json, ".CONFIRMING_SAFE"));
+        assertEq(Rules.XP_DANGER_CONFIRMED, vm.parseJsonInt(json, ".DANGER_CONFIRMED"));
+        assertEq(Rules.XP_SAFE_ON_DANGER, vm.parseJsonInt(json, ".SAFE_ON_DANGER"));
+        assertEq(Rules.XP_JUROR_MAJORITY, vm.parseJsonInt(json, ".JUROR_MAJORITY"));
+        assertEq(Rules.XP_CHALLENGER_WON, vm.parseJsonInt(json, ".CHALLENGER_WON"));
+        assertEq(Rules.XP_CHALLENGER_LOST, vm.parseJsonInt(json, ".CHALLENGER_LOST"));
+    }
+
+    function test_isValidFlags_matchesVectors() public view {
+        string memory json = _read("flagValidity.json");
+        uint256 n = _rows(json, "$");
+        for (uint256 i; i < n; ++i) {
+            uint256 flags = vm.parseJsonUint(json, _key("$", i, "flags"));
+            // Values above uint32 cannot reach the contract at all: the ABI decoder rejects them.
+            if (flags > type(uint32).max) continue;
+            bool got = Rules.isValidFlags(
+                TargetType(vm.parseJsonUint(json, _key("$", i, "targetTypeIndex"))),
+                Verdict(vm.parseJsonUint(json, _key("$", i, "verdictIndex"))),
+                uint32(flags)
+            );
+            assertEq(got, vm.parseJsonBool(json, _key("$", i, "valid")), vm.toString(i));
+        }
+    }
+
+    function testFuzz_settleNeverChargesThePenalty(uint8 verdict, uint32 ordinal, bool eligible, bool danger) public pure {
+        int32 xp = Rules.attestationXp(Verdict(verdict % 3), ordinal, eligible, danger);
+        assertGe(xp, 0);
+    }
+
     function test_isValidFlags_safeNeedsNoFlags() public pure {
         assertTrue(Rules.isValidFlags(TargetType.SMART_CONTRACT, Verdict.SAFE, 0));
         assertFalse(Rules.isValidFlags(TargetType.SMART_CONTRACT, Verdict.SAFE, 0x0002));

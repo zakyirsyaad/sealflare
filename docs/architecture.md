@@ -136,7 +136,7 @@ Aturan flag: setiap flag harus berada di dalam kelompok jenis targetnya (bit 0 s
 
 Aturan pembacaan `owner()`: panggilan `staticcall` tingkat rendah dengan batas gas. Target dianggap tidak punya pemilik bila panggilan gagal atau data baliknya bukan 32 byte.
 
-Domain EIP-712 memuat `chainId` dan alamat `Core`.
+Domain EIP-712 memuat `chainId` dan alamat `Core`. Pesan yang ditandatangani juga memuat `bindNonce`, pencacah per target yang dipakai habis oleh setiap pengikatan. Tanpanya, tanda tangan lama untuk penerbit X bisa diputar ulang setelah pemilik menandatangani untuk penerbit Y. Tipe pesannya ada di `contracts/src/lib/BindTypes.sol`.
 
 Peran penerbit: `NONE` ke `THIRD_PARTY_SPONSOR` ke `VERIFIED_PUBLISHER`. `VERIFIED_PUBLISHER` hanya bisa diganti oleh bukti baru dari `owner()` target saat itu.
 
@@ -157,7 +157,7 @@ Kelayakan juri: memegang Agent ID; profil Guardian dibuat sebelum blok sengketa 
 
 | Fungsi | Pemanggil | Keterangan |
 | :--- | :--- | :--- |
-| `depositBond(targetId)` payable | penerbit atau sponsor | Dicatat per `(targetId, penyetor)`. |
+| `depositBond(targetId)` payable | penerbit atau sponsor | Dicatat per `(targetId, penyetor)`. Bond yang dihitung untuk tier dan `IFirewall` hanya milik penerbit tercatat saat itu; bond sponsor lama tidak ikut dihitung setelah ada penerbit terverifikasi. |
 | `requestBondWithdrawal`, `finalizeBondWithdrawal` | penyetor bond itu | Jeda 7 hari. Dana tetap bisa dipotong selama menunggu atau ada sengketa. |
 | `createBounty(targetId, slots)` payable | siapa pun | 3 sampai 5 slot. |
 | `settleBounty(id)` | siapa pun | Aturan di Bagian 4.9. |
@@ -211,6 +211,8 @@ XP:
 | Penantang yang menang | +5 | `resolve` |
 | Penantang yang kalah | -5 | `resolve` |
 | Attestation `SAFE` pada target yang diputus bahaya | -15 | `applyPenalties` |
+
+`settle` tidak pernah memotong skor. Suara `SAFE` pada target yang diputus bahaya tidak mendapat apa pun dari `settle`; potongan -15 hanya diterapkan `applyPenalties`, dengan penandanya sendiri, sehingga tidak bisa terpotong dua kali. Suara `DANGER` baru bisa diselesaikan setelah ada putusan bahaya.
 
 Setiap attestation punya penanda "sudah diselesaikan", supaya XP tidak dibayar dua kali. Tabel tier dan XP disimpan di `shared/rules/` dengan vektor uji yang sama untuk Foundry dan Vitest. Halaman rincian membaca tier dari view `Core`, bukan menghitungnya ulang.
 
@@ -301,6 +303,7 @@ Treasury adalah alamat `immutable` di `Vault`. Saldonya ditarik lewat `withdraw(
 
 - `contentHash` dihitung atas **byte mentah** setiap file, tanpa normalisasi. Karakter tak terlihat yang disisipkan mengubah hash.
 - Semua file di folder skill ikut dihitung, diurutkan menurut path, kecuali tepat satu file: `publisher.sig` di akar folder.
+- `publisher.sig` harus berupa file biasa berukuran paling banyak 1.024 byte. Karena berada di luar hash, isinya tidak boleh menjadi tempat menyimpan apa pun selain tanda tangan.
 - Rumusnya: `contentHash = keccak256(leaf_0 ‖ … ‖ leaf_n)` atas entri yang diurutkan menurut byte UTF-8 path, dengan `leaf = keccak256(keccak256(path) ‖ kindByte ‖ keccak256(bytes))`. `kindByte` bernilai 0 untuk file dan 1 untuk symlink. Lebar tiap bagian tetap, jadi path dan isi tidak bisa saling bergeser.
 - Path yang absolut, memuat segmen `.` atau `..`, segmen kosong, garis miring terbalik, atau byte NUL ditolak. Dua entri dengan path sama juga ditolak.
 - `manifestPublisher` dibaca dari frontmatter YAML `SKILL.md` di akar folder: `metadata.sealflare-publisher`. Nilai yang tidak ada, tidak sah, atau ganda berarti `address(0)`.
@@ -331,7 +334,7 @@ Setiap jawaban baca menyertakan nomor blok final terakhir yang dibaca indexer.
 
 Tiga aturan tambahan:
 
-- `evidenceHash` adalah `keccak256` atas byte persis yang disimpan di `evidenceURI`. Pemeriksa cukup meng-hash berkas yang diunduh.
+- `evidenceHash` adalah `keccak256` atas byte persis yang disimpan di `evidenceURI`. Karena itu `POST /api/evidence` menerima laporan sebagai teks JSON (`reportJson`), bukan objek: klien meng-hash teks itu, menandatangani hash-nya, dan server menyimpan teks yang sama tanpa menyusun ulang.
 - Repositori skill hanya GitHub. Sumber target ditulis `0x…` untuk kontrak dan `gh:<owner>/<repo>@<commit 40 hex>:<path>` untuk skill; ini isi `?src=` di alamat halaman target.
 - Semua jawaban memakai satu amplop: `{ success: true, data, meta? }` atau `{ success: false, error: { code, message, details? } }`, tidak pernah keduanya.
 

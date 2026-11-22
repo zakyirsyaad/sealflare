@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { CONSTANTS } from '../rules'
 import { EvidenceReport } from './evidence'
-import { AddressSchema, Bytes32Schema, IsoDateSchema, SignatureSchema, UintStringSchema } from './primitives'
+import { AddressSchema, Bytes32Schema, IsoDateSchema, SignatureSchema, UintStringSchema, utf8Length } from './primitives'
 import { ProbeId, SandboxResult } from './sandbox'
 import { ScanReport } from './scan'
 import { SCAN_ERROR_CODES } from './scanner'
@@ -71,7 +71,27 @@ export const SandboxQuotaResponse = envelope(
 )
 
 // POST /api/evidence
-export const EvidenceRequest = z.object({ report: EvidenceReport, ...signed })
+export const EVIDENCE_MAX_BYTES = 262_144
+
+const parsesAsEvidence = (text: string): boolean => {
+  try {
+    return EvidenceReport.safeParse(JSON.parse(text)).success
+  } catch {
+    return false
+  }
+}
+
+/**
+ * `reportJson` is the exact text that is stored: the client hashes its UTF-8 bytes into the
+ * `evidenceHash` it signs, and the server pins those same bytes without re-serialising them.
+ */
+export const EvidenceRequest = z.strictObject({
+  reportJson: z
+    .string()
+    .refine((text) => utf8Length(text) <= EVIDENCE_MAX_BYTES, 'evidence is larger than 262,144 bytes')
+    .refine(parsesAsEvidence, 'reportJson is not a valid evidence report'),
+  ...signed,
+})
 export const EvidenceResponse = envelope(z.object({ evidenceURI: z.string().min(1), evidenceHash: Bytes32Schema }), EVIDENCE_ERROR_CODES)
 
 /** Typed data for requests an Agent ID holder signs without sending a transaction. */

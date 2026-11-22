@@ -1,0 +1,138 @@
+[
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "flags": 0,
+    "valid": true
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "flags": 2,
+    "valid": false
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "flags": 0,
+    "valid": true
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "flags": 256,
+    "valid": false
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 0,
+    "valid": false
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "CAUTION",
+    "verdictIndex": 1,
+    "flags": 0,
+    "valid": false
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "CAUTION",
+    "verdictIndex": 1,
+    "flags": 0,
+    "valid": false
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 255,
+    "valid": true
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 65280,
+    "valid": true
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "CAUTION",
+    "verdictIndex": 1,
+    "flags": 4096,
+    "valid": true
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 32768,
+    "valid": false
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 2,
+    "valid": false
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 257,
+    "valid": false
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 257,
+    "valid": false
+  },
+  {
+    "targetType": "AI_SKILL_BUNDLE",
+    "targetTypeIndex": 1,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 98304,
+    "valid": false
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "CAUTION",
+    "verdictIndex": 1,
+    "flags": 65537,
+    "valid": false
+  },
+  {
+    "targetType": "SMART_CONTRACT",
+    "targetTypeIndex": 0,
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "flags": 4294967295,
+    "valid": false
+  }
+]

@@ -68,3 +68,28 @@ describe('isValidFlags', () => {
 test('flagNames lists set bits in bit order', () => {
   expect(flagNames(FLAGS.HIDDEN_MINT | FLAGS.UNVERIFIED_SOURCE)).toEqual(['UNVERIFIED_SOURCE', 'HIDDEN_MINT'])
 })
+
+// ---- added after the final review ----
+import flagValidity from '../rules/vectors/flagValidity.json'
+import xpEvents from '../rules/vectors/xpEvents.json'
+import { type TargetType, XP, attestationPenalty } from '../rules'
+
+test.each(flagValidity)('isValidFlags($targetType, $verdict, $flags) is $valid', ({ targetType, verdict, flags, valid }) => {
+  expect(isValidFlags(targetType as TargetType, verdict as Verdict, flags)).toBe(valid)
+})
+test.each(xp)('attestationPenalty $verdict (danger: $confirmedDanger) is $penalty', ({ verdict, confirmedDanger, penalty }) => {
+  expect(attestationPenalty(verdict as Verdict, confirmedDanger)).toBe(penalty)
+})
+test('settling a SAFE vote on a confirmed danger pays nothing, so the penalty is charged once', () => {
+  expect(attestationXp({ verdict: 'SAFE', safeOrdinal: 1, eligible: true, confirmedDanger: true })).toBe(0)
+})
+test('every XP amount matches the shared vector', () => {
+  expect(XP).toEqual(xpEvents)
+})
+test('a score that is not a whole number carries no weight', () => {
+  for (const score of [Number.NaN, Number.POSITIVE_INFINITY, 12.5]) expect(weightOf(score)).toBe(0)
+})
+test('tierOf refuses weights that are not whole non-negative numbers instead of guessing a tier', () => {
+  const base = { confirmedDanger: false, codehashDrift: false, activeDispute: false, safeWeight: 5, cautionWeight: 0, dangerWeight: 0, proxyMarker: false, verifiedPublisherBond: false }
+  for (const bad of [Number.NaN, -1, 1.5]) expect(() => tierOf({ ...base, cautionWeight: bad })).toThrow(RangeError)
+})

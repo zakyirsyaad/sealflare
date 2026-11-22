@@ -83,11 +83,14 @@ interface ICore is IFirewall {
         bytes calldata shortProof,
         string calldata evidenceURI
     ) external returns (bytes32 targetId);
+    /// `sig` is over BindByOwner with the current `bindNonce(target)`; see BindTypes.
     function bindByOwner(address target, address agentIdHolder, uint256 deadline, bytes calldata sig) external;
+    /// `deployNonce` is the CREATE nonce that makes `deployer_` the creator of `target`.
+    /// `sig` is over BindByDeployer with the current `bindNonce(target)`.
     function bindByDeployer(
         address target,
         address deployer_,
-        uint256 nonce,
+        uint256 deployNonce,
         address agentIdHolder,
         uint256 deadline,
         bytes calldata sig
@@ -95,7 +98,12 @@ interface ICore is IFirewall {
     function bindSkill(bytes32 contentHash) external returns (bytes32 targetId);
     function sponsor(bytes32 targetId) external;
     function probeBytecode(address target) external;
+    /// Pays XP for attestations in [start, start + count) that are ready: a SAFE vote 48 hours
+    /// after it was cast, a DANGER vote once the target is confirmed dangerous. A CAUTION vote, and
+    /// a SAFE vote on a confirmed danger, earn nothing and are skipped. Each attestation settles once.
     function settle(bytes32 targetId, uint32 start, uint32 count) external;
+    /// Charges -15 to SAFE votes in the range once the target is confirmed dangerous. Tracked
+    /// separately from `settle`, so the penalty is charged exactly once.
     function applyPenalties(bytes32 targetId, uint32 start, uint32 count) external;
 
     // Court only.
@@ -108,6 +116,7 @@ interface ICore is IFirewall {
     function canonicalBundleHashOf(bytes32 contentHash, address publisher) external pure returns (bytes32);
     function getTarget(bytes32 targetId) external view returns (TargetView memory);
     function tierOf(bytes32 targetId) external view returns (TrustTier);
+    /// Reverts when `index` is out of range; an empty struct would read as a SAFE vote.
     function getAttestation(bytes32 targetId, uint32 index) external view returns (AttestationView memory);
     function attestationIndexOf(bytes32 targetId, address guardian)
         external
@@ -117,6 +126,11 @@ interface ICore is IFirewall {
     function weightOf(address guardian) external view returns (uint8);
     function attestationsLeftToday(address guardian) external view returns (uint8);
     function isAgentIdHolder(address account) external view returns (bool);
+    /// Per-target counter every binding consumes. Part of the signed binding message.
+    function bindNonce(address target) external view returns (uint256);
+    function DOMAIN_SEPARATOR() external view returns (bytes32);
+    /// Number of attestations `settle` would pay if called now over the whole target.
     function pendingSettlement(bytes32 targetId) external view returns (uint32);
+    /// Number of SAFE votes `applyPenalties` would still charge.
     function pendingPenalties(bytes32 targetId) external view returns (uint32);
 }

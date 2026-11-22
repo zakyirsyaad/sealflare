@@ -48,3 +48,16 @@ test('an empty list builds an empty proof', () => {
 test('parsing ignores lines that are not items, such as text written by another client', () => {
   expect(parseShortProof('free text\nNOT_A_FLAG @ a: b\nHIDDEN_MINT @ a: b')).toEqual([{ flag: 'HIDDEN_MINT', location: 'a', excerpt: 'b' }])
 })
+
+// ---- added after the final review ----
+test('unicode line separators cannot make a finding disappear', () => {
+  for (const separator of [' ', ' ', '\u0085', '\v', '\f']) {
+    const parsed = parseShortProof(buildShortProof([{ flag: 'HIDDEN_MINT', location: `a${separator}b`, excerpt: `x${separator}y` }]))
+    expect(parsed).toHaveLength(1)
+    expect(parsed[0]?.flag).toBe('HIDDEN_MINT')
+  }
+})
+test('a colon followed by spaces in a location cannot move text into the excerpt', () => {
+  const parsed = parseShortProof(buildShortProof([{ flag: 'HIDDEN_MINT', location: 'a:  SAFE', excerpt: 'e' }]))
+  expect(parsed).toEqual([{ flag: 'HIDDEN_MINT', location: 'a:SAFE', excerpt: 'e' }])
+})

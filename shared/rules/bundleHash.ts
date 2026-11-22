@@ -23,6 +23,8 @@ export class BundleError extends Error {
 
 /** The one file left out of the hash, so a publisher can sign a bundle without changing it. */
 export const EXCLUDED_PATH = 'publisher.sig'
+/** Room for a signature and a little framing. The file is outside the hash, so it must stay small. */
+export const MAX_PUBLISHER_SIG_BYTES = 1024
 
 const KIND_BYTE = { file: 0, symlink: 1 } as const
 const encoder = new TextEncoder()
@@ -61,6 +63,12 @@ function assertWithinLimits(entries: readonly BundleEntry[]): void {
 export function contentHash(entries: readonly BundleEntry[]): Hex {
   const invalid = entries.find((entry) => !isValidPath(entry.path))
   if (invalid) throw new BundleError('INVALID_PATH', `Invalid path in bundle: ${JSON.stringify(invalid.path)}`)
+
+  const signature = entries.find((entry) => entry.path === EXCLUDED_PATH)
+  if (signature && signature.kind !== 'file') throw new BundleError('INVALID_PATH', `${EXCLUDED_PATH} must be a regular file.`)
+  if (signature && signature.bytes.length > MAX_PUBLISHER_SIG_BYTES) {
+    throw new BundleError('TOO_LARGE', `${EXCLUDED_PATH} is larger than ${MAX_PUBLISHER_SIG_BYTES} bytes.`)
+  }
 
   const included = entries.filter((entry) => entry.path !== EXCLUDED_PATH)
   assertWithinLimits(included)

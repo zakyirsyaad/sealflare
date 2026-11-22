@@ -56,11 +56,18 @@ library Rules {
     {
         if (verdict == Verdict.CAUTION) return 0;
         if (verdict == Verdict.DANGER) return confirmedDanger ? XP_DANGER_CONFIRMED : int32(0);
-        if (confirmedDanger) return XP_SAFE_ON_DANGER;
+        // A SAFE vote on a confirmed danger earns nothing here. Its penalty is attestationPenalty,
+        // applied by applyPenalties, so it can never be charged twice.
+        if (confirmedDanger) return 0;
         if (!eligible || safeOrdinal == 0) return 0;
         if (safeOrdinal <= EARLY_SAFE_SLOTS) return XP_EARLY_SAFE;
         if (safeOrdinal <= REWARDED_SAFE_SLOTS) return XP_CONFIRMING_SAFE;
         return 0;
+    }
+
+    /// What applyPenalties charges: -15 for a SAFE vote on a target later confirmed dangerous.
+    function attestationPenalty(Verdict verdict, bool confirmedDanger) internal pure returns (int32) {
+        return verdict == Verdict.SAFE && confirmedDanger ? XP_SAFE_ON_DANGER : int32(0);
     }
 
     /// SAFE carries no flags; CAUTION and DANGER carry at least one, all inside the target type's mask.

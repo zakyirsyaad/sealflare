@@ -73,6 +73,51 @@ describe('ScanReport', () => {
   })
 })
 
+describe('ScanReport, after the final review', () => {
+  test('SAFE needs every check of the target type, not just one that passed', () => {
+    const clean = loadScan('contract-clean')
+    const checks = clean.checks as { id: string }[]
+    expect(ScanReport.safeParse({ ...clean, checks: checks.slice(1) }).success).toBe(false)
+    expect(ScanReport.safeParse({ ...clean, checks: [{ id: 'bundle_hash', status: 'passed' }] }).success).toBe(false)
+    expect(ScanReport.safeParse({ ...clean, checks: checks.slice(1), suggestedVerdict: 'CAUTION' }).success).toBe(true)
+  })
+  test('a check of the other target type is rejected', () => {
+    const clean = loadScan('contract-clean')
+    const checks = [...(clean.checks as object[]), { id: 'bundle_hash', status: 'passed' }]
+    expect(ScanReport.safeParse({ ...clean, checks }).success).toBe(false)
+  })
+  test('targetId must be the id of the source', () => {
+    const other = `0x${'cd'.repeat(32)}`
+    expect(ScanReport.safeParse({ ...loadScan('contract-clean'), targetId: other }).success).toBe(false)
+    expect(ScanReport.safeParse({ ...loadScan('skill-clean'), targetId: other }).success).toBe(false)
+  })
+  test('a skill source must carry the canonical hash of its content hash and publisher', () => {
+    const skill = loadScan('skill-clean')
+    const source = { ...(skill.source as object), manifestPublisher: '0x1111111111111111111111111111111111111111' }
+    expect(ScanReport.safeParse({ ...skill, source }).success).toBe(false)
+  })
+})
+
+describe('EvidenceReport, after the final review', () => {
+  const report = () => loadJson<Record<string, unknown>>('evidence/attestation.json')
+  test('the scan inside must be about the same target', () => {
+    expect(EvidenceReport.safeParse({ ...report(), targetId: `0x${'cd'.repeat(32)}` }).success).toBe(false)
+  })
+  test('flags cannot drop what the attached scan found', () => {
+    expect(EvidenceReport.safeParse({ ...report(), flags: 0 }).success).toBe(false)
+  })
+  test('a failed sandbox run forces the SANDBOX_FUZZ_FAILED flag', () => {
+    const { scan, ...rest } = report()
+    expect(EvidenceReport.safeParse({ ...rest, flags: FLAGS.UNLIMITED_APPROVAL_REQUEST }).success).toBe(false)
+    expect(EvidenceReport.safeParse({ ...rest, flags: FLAGS.SANDBOX_FUZZ_FAILED }).success).toBe(true)
+  })
+  test('the sandbox inside must be about the scanned bundle', () => {
+    const r = report()
+    const sandbox = { ...(r.sandbox as object), bundleHash: `0x${'cd'.repeat(32)}` }
+    expect(EvidenceReport.safeParse({ ...r, sandbox }).success).toBe(false)
+  })
+})
+
 describe('SandboxResult', () => {
   test.each(['no-violation', 'fuzz-failed', 'incomplete'])('%s parses', (name) => {
     expect(SandboxResult.safeParse(loadSandbox(name)).error?.issues).toBeUndefined()

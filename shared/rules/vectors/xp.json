@@ -5,7 +5,8 @@
     "safeOrdinal": 1,
     "eligible": true,
     "confirmedDanger": false,
-    "xp": 2
+    "xp": 2,
+    "penalty": 0
   },
   {
     "verdict": "SAFE",
@@ -13,7 +14,8 @@
     "safeOrdinal": 3,
     "eligible": true,
     "confirmedDanger": false,
-    "xp": 2
+    "xp": 2,
+    "penalty": 0
   },
   {
     "verdict": "SAFE",
@@ -21,7 +23,8 @@
     "safeOrdinal": 4,
     "eligible": true,
     "confirmedDanger": false,
-    "xp": 1
+    "xp": 1,
+    "penalty": 0
   },
   {
     "verdict": "SAFE",
@@ -29,7 +32,8 @@
     "safeOrdinal": 10,
     "eligible": true,
     "confirmedDanger": false,
-    "xp": 1
+    "xp": 1,
+    "penalty": 0
   },
   {
     "verdict": "SAFE",
@@ -37,7 +41,8 @@
     "safeOrdinal": 11,
     "eligible": true,
     "confirmedDanger": false,
-    "xp": 0
+    "xp": 0,
+    "penalty": 0
   },
   {
     "verdict": "SAFE",
@@ -45,7 +50,8 @@
     "safeOrdinal": 1,
     "eligible": false,
     "confirmedDanger": false,
-    "xp": 0
+    "xp": 0,
+    "penalty": 0
   },
   {
     "verdict": "SAFE",
@@ -53,7 +59,8 @@
     "safeOrdinal": 1,
     "eligible": true,
     "confirmedDanger": true,
-    "xp": -15
+    "xp": 0,
+    "penalty": -15
   },
   {
     "verdict": "SAFE",
@@ -61,7 +68,8 @@
     "safeOrdinal": 11,
     "eligible": false,
     "confirmedDanger": true,
-    "xp": -15
+    "xp": 0,
+    "penalty": -15
   },
   {
     "verdict": "CAUTION",
@@ -69,7 +77,8 @@
     "safeOrdinal": 0,
     "eligible": true,
     "confirmedDanger": false,
-    "xp": 0
+    "xp": 0,
+    "penalty": 0
   },
   {
     "verdict": "CAUTION",
@@ -77,7 +86,8 @@
     "safeOrdinal": 0,
     "eligible": true,
     "confirmedDanger": true,
-    "xp": 0
+    "xp": 0,
+    "penalty": 0
   },
   {
     "verdict": "DANGER",
@@ -85,7 +95,8 @@
     "safeOrdinal": 0,
     "eligible": true,
     "confirmedDanger": true,
-    "xp": 5
+    "xp": 5,
+    "penalty": 0
   },
   {
     "verdict": "DANGER",
@@ -93,6 +104,7 @@
     "safeOrdinal": 0,
     "eligible": true,
     "confirmedDanger": false,
-    "xp": 0
+    "xp": 0,
+    "penalty": 0
   }
 ]
