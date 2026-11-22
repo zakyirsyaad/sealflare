@@ -1,0 +1,66 @@
+[
+  {
+    "name": "UNVERIFIED_SOURCE",
+    "bit": 0
+  },
+  {
+    "name": "HIDDEN_MINT",
+    "bit": 1
+  },
+  {
+    "name": "PAUSE_OR_FREEZE_FUNDS",
+    "bit": 2
+  },
+  {
+    "name": "MUTABLE_OR_HIGH_TAX",
+    "bit": 3
+  },
+  {
+    "name": "HONEYPOT_OR_BLACKLIST",
+    "bit": 4
+  },
+  {
+    "name": "UPGRADEABLE_NO_TIMELOCK",
+    "bit": 5
+  },
+  {
+    "name": "UNPINNABLE_DELEGATECALL",
+    "bit": 6
+  },
+  {
+    "name": "PERMIT_OR_DRAINER_PATTERN",
+    "bit": 7
+  },
+  {
+    "name": "PROMPT_BYPASS_CONFIRMATION",
+    "bit": 8
+  },
+  {
+    "name": "UNLIMITED_APPROVAL_REQUEST",
+    "bit": 9
+  },
+  {
+    "name": "HIDDEN_FIXED_TRANSFER",
+    "bit": 10
+  },
+  {
+    "name": "CREDENTIAL_OR_KEY_HARVESTING",
+    "bit": 11
+  },
+  {
+    "name": "EXTERNAL_MUTABLE_DEPENDENCY",
+    "bit": 12
+  },
+  {
+    "name": "TROJAN_HELPER_SCRIPT",
+    "bit": 13
+  },
+  {
+    "name": "OBFUSCATED_UNICODE_INJECTION",
+    "bit": 14
+  },
+  {
+    "name": "SANDBOX_FUZZ_FAILED",
+    "bit": 15
+  }
+]

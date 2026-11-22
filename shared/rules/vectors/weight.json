@@ -1,0 +1,50 @@
+[
+  {
+    "score": -2147483648,
+    "weight": 0
+  },
+  {
+    "score": -1,
+    "weight": 0
+  },
+  {
+    "score": 0,
+    "weight": 1
+  },
+  {
+    "score": 9,
+    "weight": 1
+  },
+  {
+    "score": 10,
+    "weight": 2
+  },
+  {
+    "score": 24,
+    "weight": 2
+  },
+  {
+    "score": 25,
+    "weight": 3
+  },
+  {
+    "score": 49,
+    "weight": 3
+  },
+  {
+    "score": 50,
+    "weight": 4
+  },
+  {
+    "score": 99,
+    "weight": 4
+  },
+  {
+    "score": 100,
+    "weight": 5
+  },
+  {
+    "score": 2147483647,
+    "weight": 5
+  }
+]

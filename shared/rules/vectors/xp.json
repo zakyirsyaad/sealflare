@@ -1,0 +1,98 @@
+[
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 1,
+    "eligible": true,
+    "confirmedDanger": false,
+    "xp": 2
+  },
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 3,
+    "eligible": true,
+    "confirmedDanger": false,
+    "xp": 2
+  },
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 4,
+    "eligible": true,
+    "confirmedDanger": false,
+    "xp": 1
+  },
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 10,
+    "eligible": true,
+    "confirmedDanger": false,
+    "xp": 1
+  },
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 11,
+    "eligible": true,
+    "confirmedDanger": false,
+    "xp": 0
+  },
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 1,
+    "eligible": false,
+    "confirmedDanger": false,
+    "xp": 0
+  },
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 1,
+    "eligible": true,
+    "confirmedDanger": true,
+    "xp": -15
+  },
+  {
+    "verdict": "SAFE",
+    "verdictIndex": 0,
+    "safeOrdinal": 11,
+    "eligible": false,
+    "confirmedDanger": true,
+    "xp": -15
+  },
+  {
+    "verdict": "CAUTION",
+    "verdictIndex": 1,
+    "safeOrdinal": 0,
+    "eligible": true,
+    "confirmedDanger": false,
+    "xp": 0
+  },
+  {
+    "verdict": "CAUTION",
+    "verdictIndex": 1,
+    "safeOrdinal": 0,
+    "eligible": true,
+    "confirmedDanger": true,
+    "xp": 0
+  },
+  {
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "safeOrdinal": 0,
+    "eligible": true,
+    "confirmedDanger": true,
+    "xp": 5
+  },
+  {
+    "verdict": "DANGER",
+    "verdictIndex": 2,
+    "safeOrdinal": 0,
+    "eligible": true,
+    "confirmedDanger": false,
+    "xp": 0
+  }
+]
