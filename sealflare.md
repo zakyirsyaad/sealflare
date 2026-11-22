@@ -235,7 +235,7 @@ enum TrustTier {
     CONFIRMED_DANGER,
     STALE_CODEHASH_DRIFT
 }
-enum PublisherRole { NONE, VERIFIED_PUBLISHER, THIRD_PARTY_SPONSOR }
+enum PublisherRole { NONE, VERIFIED_PUBLISHER, THIRD_PARTY_SPONSOR } // urutan final ada di docs/architecture.md Bagian 11
 
 interface IFirewall {
     /// @notice Verifikasi on-chain hemat gas untuk dApp/router lain (otomatis cek EXTCODEHASH)
@@ -245,7 +245,7 @@ interface IFirewall {
         returns (
             TrustTier tier,
             bool isUpgradeableProxy,
-            bytes32 pinnedImplHash,
+            bytes32 pinnedImplHash, // final: pinnedCodehash, lihat docs/architecture.md 4.5
             uint32 activeFlagsBitmap,
             uint256 warrantyBondActive
         );

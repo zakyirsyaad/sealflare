@@ -1,6 +1,6 @@
 # UX Sealflare
 
-**Status:** rancangan, menunggu persetujuan  
+**Status:** rancangan revisi 2 (setelah review independen), menunggu persetujuan  
 **Tanggal:** 22 November 2026  
 **Sumber:** [architecture.md](architecture.md) dan [sealflare.md](../sealflare.md)  
 **Tahap berikutnya:** design (tampilan visual)
@@ -48,6 +48,8 @@ Satu orang bisa memegang beberapa peran sekaligus. Karena itu aplikasi tidak dib
 | Situs: `/` dan `/docs` | Docs, GitHub, "Launch app" | tidak ada |
 | Aplikasi: `/app/...` | Scan, Explore, Disputes, Bounties, Guardians | ada, di kanan |
 
+Tombol wallet yang sudah tersambung membuka menu berisi My activity (dengan penanda jumlah hal yang menunggu tindakan), Publish, dan Disconnect. Itu satu-satunya jalan ke kedua halaman tersebut, jadi penandanya harus terlihat tanpa membuka menu.
+
 ### 3.2 Dua belas layar
 
 | Layar | Alamat | Isi | Butuh wallet |
@@ -69,6 +71,7 @@ Satu orang bisa memegang beberapa peran sekaligus. Karena itu aplikasi tidak dib
 
 - Tautan yang dibagikan selalu langsung ke aplikasi: tautan target di X, lencana keamanan di README, dan keluaran Companion Skill mengarah ke `/app/t/[id]`, tidak pernah ke landing.
 - Kotak scan di landing mengirim pengguna ke `/app` dengan scan sudah berjalan.
+- `id` di alamat target adalah hash satu arah, jadi alamat itu juga membawa sumbernya sebagai query: `?src=` berisi alamat kontrak, atau repositori beserta commit. Dengan begitu halaman bisa dibangun ulang walau cache scan hilang dan target belum pernah ditulis ke chain.
 
 ---
 
@@ -83,7 +86,26 @@ Setiap layar aplikasi harus benar di keempat keadaan ini.
 | 3 | Wallet tersambung, tanpa Agent ID | Sama seperti 1, plus membuat bounty | Penjelasan kenapa Agent ID diperlukan dan tautan ke cara resmi mendapatkannya |
 | 4 | Pemegang Agent ID | Semua tindakan | Sisa kuota attestation hari ini |
 
-Keadaan 3 adalah titik paling rawan kehilangan orang. Hasil scan mereka tersimpan di alamat halaman, sehingga mereka bisa kembali ke target yang sama setelah punya Agent ID.
+Status "sudah attest", kuota harian, dan kepemilikan Agent ID dibaca langsung dari view `Core`, bukan dari indexer, supaya tidak tertinggal.
+
+### 4.1 Tanpa Agent ID
+
+Keadaan 3 adalah titik paling rawan kehilangan orang, dan metrik 30 alamat bergantung padanya. Panel tidak berhenti di "you need an Agent ID". Ia menawarkan dua jalan:
+
+| Pilihan | Yang terjadi |
+| :--- | :--- |
+| "I have one on another wallet" | Ganti wallet di ekstensi, atau sambungkan wallet ponsel lewat QR (WalletConnect) |
+| "Get an Agent ID" | Tautan ke cara resmi mendapatkannya, dibuka di tab baru |
+
+Di bawahnya ada tombol "Check again" yang membaca ulang `balanceOf` tanpa memuat ulang halaman. Halaman target tetap terbuka di belakang panel, jadi orang kembali ke tempat yang sama.
+
+### 4.2 Modul belum hidup
+
+`Core` dirilis lebih dulu; `Court` dan `Vault` menyusul. Selama jendela itu satu flag konfigurasi `modulesLive` bernilai mati, dan:
+
+- Tindakan sengketa, bounty, dan bond tampil nonaktif dengan keterangan "Opens when the dispute and vault contracts go live."
+- Halaman Disputes dan Bounties menampilkan keadaan kosong dengan keterangan yang sama.
+- Scan, attest, dan Publish (tanpa bond) berjalan normal.
 
 ---
 
@@ -94,7 +116,9 @@ Keadaan 3 adalah titik paling rawan kehilangan orang. Hasil scan mereka tersimpa
 - **Sinyal tidak pernah diringkas jadi satu angka.** Di mana pun status target muncul, rincian bobotnya ikut tampil atau satu klik dari sana.
 - **Data tertinggal dikatakan.** Halaman menyebut nomor blok terakhir yang dibaca indexer bila ia belum mengejar chain.
 - **Tidak ada notifikasi dari luar aplikasi.** Sealflare tidak menyimpan kontak pengguna. Tenggat ditampilkan di My activity dan di halaman terkait.
-- **Penyelesaian dipicu pengguna.** Tindakan seperti Resolve, Expire, dan Settle ditampilkan sebagai tombol kepada siapa pun yang membuka halamannya, dengan keterangan bahwa memicunya butuh gas.
+- **Penyelesaian dipicu pengguna.** Resolve, Expire, Settle, Apply penalties, dan Claim XP ditampilkan sebagai tombol kepada siapa pun yang membuka halamannya, dengan keterangan bahwa memicunya butuh gas.
+- **Empat keadaan transaksi di setiap panel tindakan.** Ditolak di wallet (kembali ke ringkasan, tanpa pesan galat), menunggu konfirmasi (tombol terkunci, tautan transaksi), gagal (alasan dari kontrak, tombol coba lagi), dan berhasil. Setelah berhasil, hasil ditampilkan langsung dengan label "Waiting for finality" sampai indexer membacanya.
+- **Layar sempit.** Kolom menumpuk, panel bertahap menjadi lembar layar penuh, tabel daftar menjadi kartu, dan tombol tindakan utama menempel di tepi bawah. Tidak ada informasi yang dibuang.
 
 ---
 
@@ -110,22 +134,44 @@ Keadaan 3 adalah titik paling rawan kehilangan orang. Hasil scan mereka tersimpa
 | 4 | Target | Menekan "Attest" | Panel bertahap terbuka di samping |
 | 5 | Panel, tahap 1 | Memilih Safe, Caution, atau Danger | Verdict dan flag usulan pemindai; pengguna boleh mengubah |
 | 6 | Panel, tahap 2 | Memeriksa ringkasan | Yang akan ditulis ke chain, perkiraan gas, akibat bila salah |
-| 7 | Wallet | Menandatangani | |
-| 8 | Target | Selesai | Suaranya muncul di rincian sinyal, dengan tautan transaksi |
+| 7 | Wallet | Menandatangani unggahan bukti (tanpa gas) | Laporan scan diunggah ke IPFS. Bila gagal: "Evidence upload failed. Nothing was sent on-chain." dan tombol coba lagi |
+| 8 | Wallet | Menandatangani transaksi | |
+| 9 | Target | Selesai | Suaranya muncul di rincian sinyal dengan label "Waiting for finality" dan tautan transaksi |
 
-Dari tautan sampai tanda tangan ada empat tindakan: tempel, tekan Attest, pilih, konfirmasi.
+Dari tautan sampai selesai ada empat tindakan di aplikasi (tempel, tekan Attest, pilih, konfirmasi) dan dua persetujuan di wallet. Panel menyebut sejak awal bahwa akan ada dua persetujuan dan hanya yang kedua memakai gas.
+
+`shortProof` diambil dari baris bukti flag yang dipilih. Bila pengguna menambah flag yang tidak ditemukan pemindai, panel meminta kutipan bukti singkat untuk flag itu.
 
 ### 6.2 Keputusan
 
 - **Hasil scan adalah halaman target.** Setelah Layer 1 selesai, alamat halaman berubah menjadi `/app/t/[id]`.
 - **Verdict diusulkan, tetapi harus dipilih sendiri.** Attestation adalah kesaksian pribadi yang bisa kena penalti.
-- **Risiko disebut sebelum tanda tangan.** Ringkasan menulis bahwa suara `SAFE` yang terbukti berbahaya memotong 15 poin, dan slot ke berapa yang sedang diisi (+2, +1, atau 0 XP).
+- **Risiko dan imbalan disebut menurut verdict yang dipilih.** Ringkasan menampilkan:
+
+| Verdict | Imbalan | Risiko |
+| :--- | :--- | :--- |
+| Safe | +2 XP (slot 1 sampai 3), +1 XP (slot 4 sampai 10), atau 0 | -15 bila target kelak diputus berbahaya |
+| Caution | 0 XP | tidak ada |
+| Danger | +5 XP bila target kelak diputus berbahaya | tidak ada |
+
+- **Dua hal lain selalu tertulis di ringkasan:** "This vote is permanent. It cannot be changed or withdrawn." dan "XP becomes claimable after 48 hours."
 
 ### 6.3 Sandbox
 
 - Bila hasil untuk bundel itu ada di cache, ia tampil bersama Layer 1.
 - Bila belum ada, halaman menampilkan tombol "Run sandbox". Tombol itu butuh tanda tangan pesan tanpa transaksi dan menampilkan sisa kuota hari itu.
 - Selama sandbox berjalan, pengguna boleh attest berdasarkan Layer 1 saja atau menunggu.
+- "Run sandbox" butuh Agent ID. Tanpa wallet, jaringan salah, atau tanpa Agent ID, tombol itu bercabang seperti Attest (Bagian 6.4 dan 4.1).
+- Di samping tombol tertulis: "Uses 1 of your 5 daily runs. A run that fails because of the skill's own content still counts."
+
+| Keadaan run | Yang ditampilkan |
+| :--- | :--- |
+| Antre | Posisi dalam antrean |
+| Berjalan | Probe mana yang sedang dijalankan |
+| Selesai, tanpa pelanggaran | "No violation observed" beserta model dan tanggal, dengan catatan bahwa ini bukan bukti aman |
+| Selesai, ada pelanggaran | Panggilan alat yang tertangkap, per probe |
+| Tidak lengkap | Hasil sebagian dan alasan berhenti |
+| Batas harian layanan tercapai | "Sandbox is paused for today. Layer 1 results are unaffected." |
 
 ### 6.4 Percabangan saat menekan "Attest"
 
@@ -136,13 +182,29 @@ Dari tautan sampai tanda tangan ada empat tindakan: tempel, tekan Attest, pilih,
 | Tanpa Agent ID | Panel menjelaskan kenapa Agent ID diperlukan dan menautkan cara mendapatkannya |
 | Sudah attest target ini | Tombol menjadi "You attested: Safe" dengan tautan transaksi |
 | Kuota harian habis | Tombol mati dengan keterangan kapan kuota kembali |
-| Target sedang disengketakan | Attest tetap bisa, dengan catatan XP tidak dibagikan selama sengketa aktif |
+| Target sedang disengketakan | Attest tetap bisa, dengan dua catatan: suara ini tidak mendapat XP, dan pengguna tidak bisa lagi menjadi juri sengketa itu |
+| Target sudah diputus berbahaya | Pilihan Safe dimatikan. Caution dan Danger tetap bisa. |
+| Kode berubah sejak disegel | Kontrak: attest ditutup, dengan penjelasan bahwa suara terikat pada kode lama. Skill: tombol menjadi "Scan the current version". |
 
 ### 6.5 Kasus khusus
 
 - **Belum pernah dinilai.** Ajakannya "Be the first Guardian", dengan keterangan tiga slot pertama bernilai +2 XP.
 - **Scan gagal sebagian.** Halaman menampilkan pemeriksaan mana yang tidak jalan. Verdict usulan tidak pernah lebih tinggi dari Caution.
-- **Proxy.** Halaman menyebut bahwa target ini tidak bisa mendapat status aman dari `IFirewall`, dan kenapa.
+- **Proxy.** Halaman menyebut bahwa target ini tidak bisa mendapat status aman dari `IFirewall`, dan kenapa. Bila pemindai menemukan `DELEGATECALL` tetapi penanda on-chain belum menyala, tab Findings menampilkan tombol "Flag as proxy on-chain" (memanggil `probeBytecode`).
+
+### 6.6 Galat scan
+
+| Galat | Pesan | Tindakan |
+| :--- | :--- | :--- |
+| Masukan tidak dikenali | "That is not a contract address or a repository link." | Contoh format yang diterima |
+| Alamat tanpa kode | "No contract is deployed at this address on BNB Chain." | Periksa jaringan dan alamat |
+| Repositori privat atau tidak ada | "This repository is not public." | Tempel tautan lain |
+| Tidak ada `SKILL.md` | "No skill was found in this repository." | Tunjukkan folder skill |
+| Beberapa folder skill | Daftar folder yang ditemukan | Pilih satu |
+| Bundel melewati batas ukuran | "This skill is too large to scan." beserta batasnya | |
+| Terlalu banyak permintaan | "Too many scans from your network. Try again in N minutes." | |
+| Semua RPC gagal | "BNB Chain could not be reached. No verdict was produced." | Coba lagi |
+| Target tidak ditemukan saat tautan dibuka | "This result is no longer cached." | Tombol "Scan again", memakai `?src=` |
 
 ---
 
@@ -177,7 +239,7 @@ Angka di sketsa ini contoh tata letak, bukan data.
 
 - **Identitas.** Alamat atau nama repositori, jenis target, tautan ke BscScan atau repositori.
 - **Status.** Tier dalam kata-kata, dengan satu kalimat alasan utamanya.
-- **Rincian sinyal.** Dua baris: pemegang Agent ID baru dan Guardian berpengalaman, masing-masing dengan arah suara dan flag yang dilaporkan.
+- **Rincian sinyal.** Dua baris: pemegang Agent ID baru (bobot 1 saat attest) dan Guardian berpengalaman (bobot 2 ke atas). Tiap baris menampilkan jumlah suara per verdict, total bobotnya, dan flag yang dilaporkan. Pemisahan ini dihitung indexer dari bobot yang tercatat di event attestation; tier tetap dibaca dari `Core`.
 - **Tindakan.** Satu tombol utama (Attest) dan dua tindakan sekunder. Kolom ini mengikuti keadaan pengguna.
 
 ### 7.3 Tab
@@ -186,7 +248,7 @@ Angka di sketsa ini contoh tata letak, bukan data.
 | :--- | :--- | :--- |
 | Findings | Hasil Layer 1 per pemeriksaan dengan baris bukti; hasil sandbox per probe dengan panggilan alat yang tertangkap | "This version has not been scanned yet." |
 | Attestations | Siapa, verdict, flag, bobot saat itu, tautan bukti dan transaksi | "No attestations yet. Be the first Guardian." |
-| Publisher | Peran, cara kepemilikan dibuktikan, besar bond, status penarikan | "No publisher has claimed this target." |
+| Publisher | Peran, cara kepemilikan dibuktikan, bond per penyetor, status penarikan. Bagi penyetor: tombol "Deposit bond", "Request withdrawal", dan "Finalize withdrawal" | "No publisher has claimed this target." |
 | Dispute | Sengketa aktif dengan fase dan sisa waktu; riwayat sengketa | "No disputes." |
 | Bounty | Bounty terbuka, slot terisi, kapan bisa dicairkan | "No bounty." |
 | History | Garis waktu kejadian on-chain | hanya kejadian pembuatan catatan |
@@ -199,7 +261,7 @@ Bila salah satu berlaku, pita muncul di atas status dan tidak bisa ditutup:
 
 | Pita | Arti |
 | :--- | :--- |
-| Confirmed danger | Juri sudah memutus target ini berbahaya |
+| Confirmed danger | Juri sudah memutus target ini berbahaya. Bila masih ada penalti yang belum diterapkan, pita memuat tombol "Apply penalties (N pending)". |
 | Modified since audit | Kode atau isi bundel berubah sejak disegel; suara lama tidak berlaku untuk versi ini |
 | Under dispute | Ada sengketa aktif, dengan sisa waktu dan tautan |
 | Unbonding | Penerbit sedang menarik bond, dengan tanggal selesai |
@@ -212,7 +274,7 @@ Bila salah satu berlaku, pita muncul di atas status dan tidak bisa ditutup:
 
 ### 7.6 Layar sempit
 
-Kolom tindakan turun ke bawah status, tombol Attest menempel di tepi bawah, dan tab menjadi baris yang digulir ke samping. Tidak ada informasi yang dibuang.
+Mengikuti aturan umum di Bagian 5: kolom tindakan turun ke bawah status, tombol Attest menempel di tepi bawah, dan tab menjadi baris yang digulir ke samping.
 
 ---
 
@@ -225,10 +287,22 @@ Panel tiga tahap dari tombol "Open a challenge" di halaman target.
 | Tahap | Yang diisi | Yang ditampilkan |
 | :---: | :--- | :--- |
 | 1 | Flag pelanggaran yang dituduhkan | Flag dari hasil scan sudah tercentang |
-| 2 | Bukti: kutipan singkat (masuk chain) dan lampiran (masuk IPFS) | Batas panjang kutipan dan pratinjau |
+| 2 | Bukti: kutipan singkat (masuk chain) dan keterangan tertulis (masuk IPFS sebagai JSON sesuai skema bukti) | Batas panjang kutipan dan pratinjau |
 | 3 | Ringkasan sebelum tanda tangan | Stake 0,01 BNB dan empat kemungkinan akhir beserta uang yang kembali di tiap kasus |
 
-Tahap 3 menyebut bahwa sengketa kedaluwarsa bila reveal juri kurang dari tiga, dan berapa porsi stake yang hangus untuk target itu.
+Seperti attest, ada dua persetujuan wallet: unggahan bukti tanpa gas, lalu transaksi.
+
+Tahap 3 menyebut empat hal: sengketa kedaluwarsa bila reveal juri kurang dari tiga; berapa porsi stake yang hangus untuk target itu (20%, 50%, atau 100%); kalah berarti stake hangus dan -5 XP; dan setelah kedaluwarsa ada jeda 7 hari sebelum bisa menantang target yang sama lagi.
+
+Percabangan saat menekan "Open a challenge":
+
+| Keadaan | Yang terjadi |
+| :--- | :--- |
+| Tanpa wallet, jaringan salah, tanpa Agent ID | Sama seperti Attest (Bagian 6.4 dan 4.1) |
+| Sudah ada sengketa aktif | Tombol menjadi tautan "View the open challenge" |
+| Dalam jeda 7 hari | Tombol mati dengan tanggal jeda berakhir |
+| Target sudah diputus berbahaya | Tombol tidak ditampilkan |
+| Modul belum hidup | Lihat Bagian 4.2 |
 
 ### 8.2 Halaman sengketa
 
@@ -252,30 +326,40 @@ Tahap 3 menyebut bahwa sengketa kedaluwarsa bila reveal juri kurang dari tiga, d
 
 Selama fase commit, halaman hanya menampilkan jumlah juri, tidak pernah arah suaranya.
 
+Kotak balasan penerbit:
+
+- Bagi penerbit tercatat, selama fase commit, kotak itu memuat tombol "Submit reply". Tombol membuka panel: tulis keterangan, unggah ke IPFS (tanpa gas), lalu tanda tangan transaksi.
+- Sponsor tidak bisa membalas; hanya penerbit terverifikasi.
+- Bila target tidak punya penerbit, kotak menampilkan "No publisher is bound to this target, so no reply is possible." tanpa hitung mundur.
+
 ### 8.3 Menjadi juri
 
 | Langkah | Yang terjadi |
 | :--- | :--- |
 | Menekan "Join the jury" | Aplikasi memeriksa kelayakan dan menyebut alasan bila ditolak: pernah attest target ini, penantangnya sendiri, penerbitnya, profil dibuat setelah sengketa dibuka, atau skor negatif |
 | Memilih suara | Uphold atau Reject |
-| Ringkasan | Stake 0,005 BNB, jadwal reveal, peringatan bahwa tidak reveal berarti stake hangus |
-| Tanda tangan commit | Aplikasi membuat salt |
+| Ringkasan | Stake 0,005 BNB, jadwal reveal, dan dua cara stake hangus: tidak reveal, atau reveal tetapi berada di sisi minoritas |
+| Simpan reveal code | Aplikasi membuat kode acak dan mewajibkan juri menyalin atau mengunduhnya sebelum lanjut |
+| Tanda tangan commit | Transaksi dengan stake |
 | Kembali untuk reveal | Satu tombol "Reveal my vote" dalam jendela 12 jam |
 
-### 8.4 Salt
+### 8.4 Reveal code
 
-Salt yang hilang berarti juri tidak bisa reveal dan stake-nya hangus.
+Tanpa reveal code, juri tidak bisa reveal dan stake-nya hangus. Reveal yang hilang juga bisa membuat sengketa kedaluwarsa dan merugikan penantang.
 
-- **Salt diturunkan dari tanda tangan wallet.** Aplikasi meminta wallet menandatangani pesan tetap untuk sengketa itu dan memakai hasilnya sebagai salt. Juri bisa membuatnya ulang di perangkat mana pun dengan wallet yang sama.
-- **Cadangan di peramban.** Salt disimpan di penyimpanan lokal supaya reveal bisa satu klik.
-- **Pengingat di aplikasi.** My activity menaruh reveal yang jatuh tempo di urutan teratas, dan halaman sengketa menampilkan hitung mundur.
-- **Halaman konfirmasi commit** mengatakan bahwa tidak ada pengingat dari luar aplikasi dan menampilkan waktu reveal yang bisa disalin.
+- **Kode acak, bukan turunan tanda tangan.** Salt adalah 32 byte acak yang dibuat di peramban. Tanda tangan wallet tidak dipakai sebagai sumbernya, karena wallet berbasis MPC, wallet kontrak, dan sebagian hardware wallet memberi tanda tangan berbeda tiap kali, dan pesan tetap bisa diminta situs lain untuk membongkar arah suara.
+- **Wajib disimpan sebelum commit.** Reveal code memuat salt dan arah suara. Tombol tanda tangan baru aktif setelah juri menyalin atau mengunduhnya.
+- **Cadangan di peramban.** Kode juga disimpan di penyimpanan lokal supaya reveal dari perangkat yang sama cukup satu klik.
+- **Reveal dari perangkat lain.** Layar reveal punya kolom "Paste your reveal code".
+- **Dicek sebelum dikirim.** Aplikasi mencocokkan kode dengan hash commit on-chain lebih dulu. Bila tidak cocok, transaksi tidak dikirim dan juri diberi tahu.
+- **Pengingat di aplikasi.** My activity menaruh reveal yang jatuh tempo di urutan teratas, dan halaman sengketa menampilkan hitung mundur. Halaman konfirmasi commit mengatakan bahwa tidak ada pengingat dari luar aplikasi dan menampilkan waktu reveal yang bisa disalin.
 
 ### 8.5 Setelah selesai
 
 - Putusan, bobot tiap sisi, dan daftar juri dengan suara yang sudah dibuka.
 - Rincian uang: siapa menerima berapa, sesuai tabel di arsitektur.
 - Bagi peserta: tombol "Withdraw" bila ada saldo.
+- Setelah putusan bahaya: tombol "Apply penalties (N pending)" bagi siapa pun. Tidak ada pihak yang diuntungkan langsung dengan menekannya, jadi tombol ini juga muncul di pita Confirmed danger, dan halaman Guardian menandai skor yang masih menunggu penalti dengan "Penalty pending".
 
 ### 8.6 Penerbit yang ditantang
 
@@ -297,9 +381,17 @@ Batas yang diketahui: tanpa notifikasi dari luar aplikasi, jendela 12 jam tidak 
 | Skill | Tempel tautan repositori. Aplikasi mencocokkan alamat penerbit di manifest dengan wallet. | Verified publisher |
 | Tidak bisa dibuktikan | Aplikasi menjelaskan kenapa dan menawarkan peran sponsor | Third-party sponsor |
 
+Rincian yang berlaku di semua cabang:
+
+- **Publish butuh Agent ID**, bukan hanya wallet. Tanpa Agent ID, halaman menampilkan pilihan di Bagian 4.1.
+- **Mengikat adalah dua langkah:** tanda tangan pesan dari pemilik (tanpa gas), lalu satu transaksi dari pemegang Agent ID.
+- **Pemilik di wallet lain atau multisig.** Aplikasi menampilkan layar "Share this request": tautan yang dibuka pemilik untuk menandatangani, dengan masa berlaku 24 jam. Untuk Safe, tanda tangan dilakukan di antarmuka Safe dan diperiksa on-chain. Pemilik EOA juga bisa menempelkan tanda tangannya lewat "Paste signature".
+- **Target sudah punya penerbit.** Tawaran sponsor diganti dengan "This target already has a publisher."
+
 Setelah terikat:
 
-- Langkah opsional menyetor Warranty Bond. Sebelum tanda tangan disebut: batas 0,5 BNB, penarikan butuh 7 hari, dan separuh bond dipotong bila sengketa membuktikan pelanggaran.
+- Langkah opsional menyetor Warranty Bond. Sebelum tanda tangan disebut: batas 0,5 BNB, penarikan butuh 7 hari, bond tetap bisa dipotong selama 7 hari itu, dan separuh bond dipotong bila sengketa membuktikan pelanggaran. Langkah ini bisa dilewati dan dilakukan belakangan dari tab Publisher di halaman target.
+- Penarikan bond dilakukan dari tab Publisher: "Request withdrawal", lalu "Finalize withdrawal" setelah 7 hari. Pengguna harus kembali untuk langkah kedua, dan My activity mengingatkannya.
 - Potongan kode lencana keamanan untuk README, yang menautkan ke halaman target.
 
 ---
@@ -308,9 +400,9 @@ Setelah terikat:
 
 | Tindakan | Dari mana | Langkah |
 | :--- | :--- | :--- |
-| Membuat | Tombol di halaman target | Pilih 3 sampai 5 slot dan dana maksimal 0,2 BNB. Ringkasan menyebut bahwa bayaran mengikuti mayoritas pengisi slot, apa pun verdict-nya, dan bahwa peminta tidak boleh attest target itu. |
+| Membuat | Tombol di halaman target | Pilih 3 sampai 5 slot dan dana maksimal 0,2 BNB. Ringkasan menyebut: bayaran mengikuti mayoritas pengisi slot, apa pun verdict-nya; 5% dipotong untuk treasury; bounty tidak bisa dibatalkan; slot yang kosong setelah 7 hari dikembalikan; dan attestation peminta sendiri tidak mengisi slot. |
 | Mengisi | Halaman Bounties | Menekan satu baris membuka halaman target. Alur attest berjalan seperti biasa; slot terisi otomatis. |
-| Mencairkan | Halaman target atau My activity | Tombol "Settle" muncul 48 jam setelah slot terakhir terisi. Bayaran masuk ke saldo yang bisa ditarik. |
+| Mencairkan | Halaman target atau My activity | Tombol "Settle" muncul 48 jam setelah slot penuh, atau 7 hari sejak bounty dibuat bila slot tidak penuh. Bayaran dan pengembalian masuk ke saldo yang bisa ditarik. |
 
 ---
 
@@ -320,7 +412,7 @@ Diurutkan menurut seberapa mendesak.
 
 | Bagian | Isi |
 | :--- | :--- |
-| Needs action | Reveal yang jatuh tempo, sengketa atas target milik sendiri, sengketa yang bisa diselesaikan, XP yang bisa diklaim |
+| Needs action | Reveal yang jatuh tempo, sengketa atas target milik sendiri (dengan sisa waktu balasan), sengketa yang bisa diselesaikan, XP yang bisa diklaim, bond yang siap difinalisasi, bounty milik sendiri yang bisa dicairkan |
 | Balance | Saldo yang bisa ditarik dan satu tombol Withdraw |
 | Standing | Skor, bobot suara, jarak ke bobot berikutnya, kuota attestation hari ini |
 | History | Attestation, kursi juri, sengketa, dan bounty beserta hasilnya |
@@ -366,3 +458,5 @@ Pesan penolakan dari kontrak diterjemahkan menjadi kalimat spesifik, misalnya "Y
 | Cara resmi mendapatkan Agent ID dan tautannya | Keadaan 3, landing, Publish | founder, dari materi hackathon |
 | Wallet yang dipakai pemegang Agent ID (ekstensi, aplikasi ponsel, atau keduanya) | Cara sambung wallet, prioritas layar sempit | founder |
 | Teks final setiap layar | Seluruh aplikasi | tahap design |
+
+Soal wallet sudah dijawab founder pada 22 November 2026: Agent ID bisa dipakai dari ekstensi desktop maupun aplikasi ponsel. Karena itu "desktop dulu" tetap berlaku, sambungan lewat QR tersedia sebagai jalur kedua, dan baris wallet di tabel di atas dianggap selesai. Jawaban ini berasal dari founder dan belum diuji dengan Agent ID sungguhan.

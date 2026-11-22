@@ -66,12 +66,12 @@ Enam hal ini ditulis pada hari pertama, sebelum ada fitur. Semuanya disimpan di 
 
 | Perjanjian | Lokasi | Isi | Yang bergantung |
 | :--- | :--- | :--- | :--- |
-| ABI dan event | `shared/abi/` | Interface `ICore`, `ICourt`, `IVault`, `IFirewall` dengan parameter lengkap, daftar event (termasuk event setiap perubahan skor), ABI JSON | web, indexer, SDK, skill |
-| Tipe pemindaian | `shared/schemas/scan.ts` | `ScanReport`, daftar flag, aturan `canonicalBundleHash` (Bagian 5.3) | API, sandbox, skill, SDK, web |
+| ABI dan event | `contracts/src/interfaces/` (sumber), `shared/abi/` (ABI hasil ekspor) | Interface `ICore`, `ICourt`, `IVault`, `IFirewall` dengan parameter lengkap, daftar event (termasuk event setiap perubahan skor, dan bobot pemilih di event attestation), galat kustom di dalam tiap interface, ABI JSON | web, indexer, SDK, skill |
+| Tipe pemindaian | `shared/schemas/scan.ts`, `shared/schemas/sandbox.ts`, `shared/rules/bundleHash.ts` | `ScanReport`, `SandboxResult`, daftar flag, aturan `canonicalBundleHash` (Bagian 5.3) | API, sandbox, skill, SDK, web |
 | Antarmuka `scanner-core` | `shared/schemas/scanner.ts` | Tanda tangan fungsi publik dan adapter RPC, BscScan, pengambil repositori | API, skill, SDK |
-| Skema API publik | `shared/schemas/api.ts` | Endpoint, bentuk permintaan dan jawaban | web, skill |
-| Skema layanan internal | `shared/schemas/internal.ts` | Endpoint baca dan tulis antara Vercel dan VPS | API, indexer, sandbox |
-| Skema bukti dan aturan | `shared/schemas/evidence.ts`, `shared/rules/` | JSON laporan IPFS, format `shortProof`, tabel tier dan XP beserta vektor uji | scanner, sandbox, kontrak, web |
+| Skema API publik | `shared/schemas/api.ts` | Amplop jawaban, endpoint scan, sandbox, dan bukti. Skema baca (`targets`, `guardians`, `challenges`, `bounties`, `activity`) dibuat Jalur 3, karena kedua sisinya milik jalur itu | web, skill |
+| Skema layanan internal | `shared/schemas/internal.ts` | Kontrak antara layanan internal dan sandbox worker. Endpoint antara Vercel dan layanan internal dibuat Jalur 3 | sandbox, layanan internal |
+| Skema bukti dan aturan | `shared/schemas/evidence.ts`, `shared/schemas/shortProof.ts`, `shared/rules/` | JSON laporan IPFS, format `shortProof`, tabel tier dan XP beserta vektor uji di `shared/rules/vectors/` | scanner, sandbox, kontrak, web |
 
 Yang diserahkan Jalur 1 pada hari pertama, supaya jalur lain tidak menunggu kontrak asli:
 
@@ -132,6 +132,8 @@ Catatan target dibuat saat pertama kali disentuh. Setiap fungsi yang membuat cat
 | `verifyContract(target)`, `verifySkillBundle(hash)` | siapa pun (view) | `IFirewall`. Biaya tetap, tanpa perulangan. |
 | `markDisputed`, `applyVerdict`, `adjustScore` | hanya `Court` | Satu-satunya jalur menulis putusan sengketa. |
 
+Aturan flag: setiap flag harus berada di dalam kelompok jenis targetnya (bit 0 sampai 7 untuk kontrak, bit 8 sampai 15 untuk skill). Attestation `SAFE` wajib tanpa flag; `CAUTION` dan `DANGER` wajib membawa minimal satu flag.
+
 Aturan pembacaan `owner()`: panggilan `staticcall` tingkat rendah dengan batas gas. Target dianggap tidak punya pemilik bila panggilan gagal atau data baliknya bukan 32 byte.
 
 Domain EIP-712 memuat `chainId` dan alamat `Core`.
@@ -144,7 +146,7 @@ Peran penerbit: `NONE` ke `THIRD_PARTY_SPONSOR` ke `VERIFIED_PUBLISHER`. `VERIFI
 | :--- | :--- | :--- |
 | `openChallenge(targetId, flags, evidenceHash, shortProof, evidenceURI)` payable | pemegang Agent ID | Satu sengketa aktif per target. Stake masuk escrow `Vault`. |
 | `submitCounterEvidence(id, uri)` | penerbit target | Selama fase commit. |
-| `commitVote(id, hash)` payable | juri yang layak | Bobot juri dibekukan saat commit. |
+| `commitVote(id, hash)` payable | juri yang layak | Bobot juri dibekukan saat commit. Paling banyak 21 juri per sengketa (`MAX_JURORS`), supaya `resolve` selalu muat dalam satu blok. |
 | `revealVote(id, uphold, salt)` | juri | Selama fase reveal. |
 | `resolve(id)` | siapa pun | Setelah reveal berakhir dan jumlah reveal minimal 3. |
 | `expire(id)` | siapa pun | Setelah reveal berakhir dan jumlah reveal kurang dari 3. |
@@ -162,6 +164,7 @@ Kelayakan juri: memegang Agent ID; profil Guardian dibuat sebelum blok sengketa 
 | `withdraw()` | siapa pun | Menarik saldo sendiri. |
 | `depositStake(challengeId, account)` payable | hanya `Court` | Satu-satunya jalur BNB masuk untuk sengketa. |
 | `lockBond(challengeId, targetId)` | hanya `Court` | Mengikat bond target ke escrow sengketa itu. |
+| `settleBond(challengeId, slashBps)` | hanya `Court` | Memindahkan `slashBps` dari bond yang terkunci ke escrow sengketa itu dan melepas sisanya ke penyetornya. Dipanggil sekali per sengketa yang mengunci bond: 5000 bila tantangan menang, 0 selain itu. |
 | `distribute(challengeId, recipients, amounts)` | hanya `Court` | Jumlah total tidak boleh melebihi isi escrow sengketa itu. |
 
 `Vault` tidak punya `receive()` dan tidak pernah memakai `address(this).balance` dalam logikanya. Bug di `Court` hanya bisa merusak satu escrow sengketa.
@@ -171,6 +174,7 @@ Kelayakan juri: memegang Agent ID; profil Guardian dibuat sebelum blok sengketa 
 Kontrak tidak bisa membaca storage kontrak lain, dan `EXTCODEHASH` sebuah proxy tidak berubah saat implementasinya diganti. Karena itu:
 
 - `verifyContract` mendeteksi perubahan bytecode target sendiri (`STALE_CODEHASH_DRIFT`).
+- Nilai ketiga yang dikembalikan `verifyContract` bernama `pinnedCodehash`: `EXTCODEHASH` target saat pertama kali dicatat. Blueprint menamainya `pinnedImplHash`, padahal `Core` tidak bisa membaca slot implementasi.
 - `verifyContract` **tidak** mendeteksi penggantian implementasi proxy. Pengecekan itu hanya ada di SDK dan pemindai, yang membaca slot EIP-1967 dan Beacon lewat RPC.
 - Sebagai pengaman, target dengan penanda `hasDelegatecall` atau flag `UPGRADEABLE_NO_TIMELOCK` atau `UNPINNABLE_DELEGATECALL` dari attestation mana pun tidak pernah mendapat tier `SAFE` dari `IFirewall`. Tier tertingginya `CAUTION_FLAGGED`, dan `isUpgradeableProxy` bernilai benar.
 - Penanda `hasDelegatecall` hanya bisa menyala, tidak bisa padam. Siapa pun bisa menyalakannya lewat `probeBytecode`, jadi attester pertama yang berbohong tidak bisa menyembunyikan proxy. Positif palsu jatuh ke sisi aman.
@@ -288,6 +292,7 @@ Treasury adalah alamat `immutable` di `Vault`. Saldonya ditarik lewat `withdraw(
 - **`scanner-core` tanpa keadaan dan tanpa lingkungan.** Akses RPC, BscScan, dan pengambil repositori disuntikkan pemanggil. Pustaka yang sama dipakai API, Companion Skill, dan SDK.
 - **Skrip milik skill tidak pernah dijalankan.** Sandbox memberi isi `SKILL.md` ke LLM bersama alat tiruan dan mencatat alat yang coba dipanggil. Flag `TROJAN_HELPER_SCRIPT` hanya bisa ditemukan pre-parser.
 - **Alat tiruan tidak melakukan I/O jaringan.** Kontainer worker hanya boleh keluar ke API LLM dan Pinata, sehingga injeksi tidak bisa mengarahkannya ke Postgres atau layanan internal.
+- **Layanan internal yang memanggil worker.** Worker membuka endpoint `POST /runs` dan `GET /runs/:id`, dan tidak pernah membuka koneksi balik. Status yang dibaca layanan internal memuat setiap run yang sudah selesai, jadi pelanggaran bisa disimpan sebelum run berakhir.
 - **Pelanggaran langsung disimpan.** Begitu wallet tiruan menangkap satu panggilan terlarang, hasil `SANDBOX_FUZZ_FAILED` disimpan permanen, apa pun yang terjadi pada sisa run. Skill tidak bisa menghapus jejak dengan menggagalkan run setelah melanggar.
 - **Cache asimetris.** Kunci `(bundleHash, probeSetVersion, modelId)`. Hasil gagal permanen. Hasil tanpa pelanggaran kedaluwarsa saat model atau versi probe berganti.
 - **Indexer hanya membaca blok final.** Ia mengindeks sampai tag `finalized`, menyimpan `blockHash`, dan memakai kunci unik `(txHash, logIndex)`. Status target dan sengketa dibaca lewat view kontrak, bukan dihitung ulang dari waktu.
@@ -296,8 +301,12 @@ Treasury adalah alamat `immutable` di `Vault`. Saldonya ditarik lewat `withdraw(
 
 - `contentHash` dihitung atas **byte mentah** setiap file, tanpa normalisasi. Karakter tak terlihat yang disisipkan mengubah hash.
 - Semua file di folder skill ikut dihitung, diurutkan menurut path, kecuali tepat satu file: `publisher.sig` di akar folder.
+- Rumusnya: `contentHash = keccak256(leaf_0 ‖ … ‖ leaf_n)` atas entri yang diurutkan menurut byte UTF-8 path, dengan `leaf = keccak256(keccak256(path) ‖ kindByte ‖ keccak256(bytes))`. `kindByte` bernilai 0 untuk file dan 1 untuk symlink. Lebar tiap bagian tetap, jadi path dan isi tidak bisa saling bergeser.
+- Path yang absolut, memuat segmen `.` atau `..`, segmen kosong, garis miring terbalik, atau byte NUL ditolak. Dua entri dengan path sama juga ditolak.
+- `manifestPublisher` dibaca dari frontmatter YAML `SKILL.md` di akar folder: `metadata.sealflare-publisher`. Nilai yang tidak ada, tidak sah, atau ganda berarti `address(0)`.
+- Implementasi acuannya ada di `shared/rules/bundleHash.ts`, `shared/rules/manifest.ts`, dan `shared/rules/ids.ts`. `scanner-core` memakainya, tidak menulis ulang.
 - Symlink di-*hash* sebagai teks tujuannya dan tidak pernah diikuti atau dibaca.
-- Ada batas ukuran total dan jumlah file. Bundel yang melewatinya ditolak, bukan dipotong.
+- Batasnya 200 file dan 2.097.152 byte total. Bundel yang melewatinya ditolak, bukan dipotong. `SKILL.md` yang dikirim ke sandbox dibatasi 65.536 byte.
 - Setiap aturan punya satu fixture di `shared/fixtures/`.
 
 ### 5.4 Endpoint API publik
@@ -309,9 +318,22 @@ Treasury adalah alamat `immutable` di `Vault`. Saldonya ditarik lewat `withdraw(
 | `POST /api/sandbox/runs` | tanda tangan EIP-712 pemegang Agent ID berisi `bundleHash`, nonce, dan kedaluwarsa; 5 per hari | Mengantrekan run |
 | `GET /api/sandbox/runs/:id` | | Status dan hasil run |
 | `POST /api/evidence` | tanda tangan Agent ID, hanya JSON yang lolos skema bukti, batas ukuran | Mengunggah laporan ke IPFS |
-| `GET /api/targets`, `/api/targets/:id`, `/api/guardians`, `/api/challenges`, `/api/bounties` | | Data baca |
+| `GET /api/targets`, `/api/targets/:id` | | Daftar dan rincian target, termasuk rincian sinyal per kelompok bobot |
+| `GET /api/guardians`, `/api/guardians/:address` | | Papan peringkat, serta riwayat dan penalti tertunda per alamat |
+| `GET /api/challenges`, `/api/challenges/:id` | | Daftar sengketa, serta rincian: bukti, balasan, juri, pembagian dana |
+| `GET /api/bounties`, `/api/bounties/:id` | | Daftar dan rincian bounty |
+| `GET /api/activity/:address` | | Hal yang menunggu tindakan dan saldo yang bisa ditarik untuk My activity |
+| `GET /api/sandbox/quota/:address` | | Sisa kuota sandbox hari ini |
+
+Semua endpoint daftar menerima filter `?address=`. Rincian layar yang memakainya ada di [ux.md](ux.md).
 
 Setiap jawaban baca menyertakan nomor blok final terakhir yang dibaca indexer.
+
+Tiga aturan tambahan:
+
+- `evidenceHash` adalah `keccak256` atas byte persis yang disimpan di `evidenceURI`. Pemeriksa cukup meng-hash berkas yang diunduh.
+- Repositori skill hanya GitHub. Sumber target ditulis `0x…` untuk kontrak dan `gh:<owner>/<repo>@<commit 40 hex>:<path>` untuk skill; ini isi `?src=` di alamat halaman target.
+- Semua jawaban memakai satu amplop: `{ success: true, data, meta? }` atau `{ success: false, error: { code, message, details? } }`, tidak pernah keduanya.
 
 ### 5.5 Perlindungan biaya sandbox
 
@@ -475,6 +497,10 @@ Tidak ada target persentase cakupan untuk UI.
 | Sandbox "menjalankan paket `SKILL.md`" | LLM membaca skill dengan alat tiruan; skrip tidak dieksekusi | Isolasi kontainer tidak realistis dalam jadwal |
 | *Genesis Guardian Sprint* satu bounty untuk 30 sampai 50 Guardian | Beberapa bounty 3 sampai 5 slot pada target berbeda | Batas slot per bounty |
 | Bagian 10: cakupan bertingkat | Kelima modul dirancang sama dalam | Keputusan founder |
+| `IFirewall` mengembalikan `pinnedImplHash` | Mengembalikan `pinnedCodehash` | `Core` tidak bisa membaca slot implementasi; nama lama menyesatkan pemanggil |
+| `Vault` punya tiga fungsi khusus `Court` | Empat: ditambah `settleBond` | `distribute` saja tidak bisa memotong bond lalu mengembalikan sisanya |
+| Jumlah juri tidak dibatasi | Paling banyak 21 juri per sengketa | `resolve` membagi dana ke semua juri dalam satu transaksi |
+| `PublisherRole`: `NONE`, `VERIFIED_PUBLISHER`, `THIRD_PARTY_SPONSOR` | `NONE`, `THIRD_PARTY_SPONSOR`, `VERIFIED_PUBLISHER` | Urutan naik, sama dengan arah perpindahan peran |
 
 ---
 
@@ -490,6 +516,7 @@ Diputuskan 21 November 2026. Semuanya bisa diubah founder sebelum komponen terka
 | `JURY_STAKE` | 0,005 BNB, tetap | Separuh stake penantang, supaya tiga juri mudah terkumpul |
 | `MAX_WARRANTY_BOND` | 0,5 BNB per penyetor per target | Batas kerugian bila `Vault` bermasalah |
 | `MAX_BOUNTY` | 0,2 BNB per permintaan | Cukup untuk beberapa bounty di *Genesis Guardian Sprint* |
+| `MAX_JURORS` | 21 per sengketa | Menjaga biaya gas `resolve` tetap terbatas |
 
 Harga BNB saat keputusan ini dibuat tidak bisa dipastikan (sumber yang ditemukan berkisar 570 sampai 710 dolar AS dan tidak bertanggal). Nilai dolar harus dicek ulang sebelum `Vault` di-*deploy*.
 
