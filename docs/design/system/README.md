@@ -4,7 +4,7 @@ Sealflare checks smart contracts and AI skills on BNB Chain before an agent touc
 
 - **The preset.** Colors, the secondary fill and `radius: 0` come from a shadcn preset the founder chose. Token names are shadcn's, so `primary` is `var(--primary)` in CSS and `bg-primary` in Tailwind.
 - **Zorvo.** Sealflare is part of the Zorvo ecosystem. It keeps Zorvo's rules that color means state and that code is set in Geist Mono, and it sets all text in Instrument Sans, the face of the `zorvo` wordmark. It does not use Zorvo's zinc greys or rounded corners.
-- **Three screens.** Landing, Scan and Target page on the [visual canvas](https://claude.ai/artifact/X8KxdB8hnoQr342ivZnU1d) are where every rule here was first drawn.
+- **Eight screens.** Landing, Scan, Target page, Explore, the Attest panel states, Dispute, My activity and Publish on the [visual canvas](https://claude.ai/artifact/X8KxdB8hnoQr342ivZnU1d) are where every rule here was drawn. Their sources are in `../screens`.
 
 Four values differ from the preset on purpose. Each token's usage note says why: `primary-foreground` and light `muted-foreground` for contrast, `positive` so lime can be text on white, `warning` because the product has a middle verdict.
 

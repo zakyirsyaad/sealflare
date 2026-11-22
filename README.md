@@ -4,7 +4,8 @@ Sealflare is a security registry and AI skill firewall on BNB Chain. Agent ID ho
 contracts and skills, disputes are settled by a staked commit-reveal jury, and any contract can read
 the result through `IFirewall`.
 
-The design lives in [docs/architecture.md](docs/architecture.md) and [docs/ux.md](docs/ux.md).
+The design lives in [docs/architecture.md](docs/architecture.md) and [docs/ux.md](docs/ux.md); the look is in
+[docs/design](docs/design/README.md). Coding agents start at [AGENTS.md](AGENTS.md).
 The contracts have not had a third-party audit.
 
 ## Requirements

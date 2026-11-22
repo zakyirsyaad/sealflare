@@ -1,0 +1,44 @@
+/*
+ * Sealflare design tokens as CSS variables. Generated from tokens.json; edit that file, not this one.
+ * Dark is the default theme. Add class "light" (or data-theme="light") on <html> for the light theme.
+ * Names follow shadcn, so Tailwind utilities such as bg-primary map straight onto them.
+ */
+:root {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: #ffffff1a;
+  --input: #ffffff26;
+  --ring: oklch(0.556 0 0);
+  --primary: oklch(0.768 0.233 130.85);
+  --primary-foreground: oklch(0.274 0.072 132.109);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --positive: oklch(0.768 0.233 130.85);
+  --warning: oklch(0.828 0.189 84.429);
+  --destructive: oklch(0.704 0.191 22.216);
+  --radius: 0;
+  --font-sans: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root.light,
+:root[data-theme='light'] {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.87 0 0);
+  --ring: oklch(0.708 0 0);
+  --primary: oklch(0.841 0.238 128.85);
+  --primary-foreground: oklch(0.274 0.072 132.109);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --positive: oklch(0.532 0.157 131.589);
+  --warning: oklch(0.555 0.163 48.998);
+  --destructive: oklch(0.577 0.245 27.325);
+}
