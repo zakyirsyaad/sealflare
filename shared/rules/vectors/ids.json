@@ -1,0 +1,67 @@
+{
+  "contracts": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "targetId": "0xad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5"
+    },
+    {
+      "address": "0x60b9262456de011f7d15a54cdd8c48baaa8b022f",
+      "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2"
+    },
+    {
+      "address": "0xffffffffffffffffffffffffffffffffffffffff",
+      "targetId": "0x5a88e376b28db152c8b0436709bac7c22da5d94345957293d8fac3c4270d766d"
+    }
+  ],
+  "skills": [
+    {
+      "fixture": "basic",
+      "publisher": "0x0000000000000000000000000000000000000000",
+      "contentHash": "0xee5d265a88256d40004c764dd0e0aa58d1d80967777455945505ea8cc7b15753",
+      "canonicalBundleHash": "0x87e3dd2699ca4306ce11e3bd4f9d8c5a4228dddbecb1ee93683c6c20bc451a66",
+      "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377"
+    },
+    {
+      "fixture": "publisher-sig-nested",
+      "publisher": "0x0000000000000000000000000000000000000000",
+      "contentHash": "0xfe5c1bbf38e5abacf3aa6f454701e7432b9a2cc576fea66a85274c312db06915",
+      "canonicalBundleHash": "0x124c5654548c80e06904b4e1d3f683791bdd0aab2df2a0229659861a8614375f",
+      "targetId": "0x0c42cd76cdd2eb94a53b865fc5e0993c3589a91789f9ed2c0e75a8fd753cfd3c"
+    },
+    {
+      "fixture": "publisher-sig-root",
+      "publisher": "0x0000000000000000000000000000000000000000",
+      "contentHash": "0xee5d265a88256d40004c764dd0e0aa58d1d80967777455945505ea8cc7b15753",
+      "canonicalBundleHash": "0x87e3dd2699ca4306ce11e3bd4f9d8c5a4228dddbecb1ee93683c6c20bc451a66",
+      "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377"
+    },
+    {
+      "fixture": "shuffled",
+      "publisher": "0x0000000000000000000000000000000000000000",
+      "contentHash": "0xee5d265a88256d40004c764dd0e0aa58d1d80967777455945505ea8cc7b15753",
+      "canonicalBundleHash": "0x87e3dd2699ca4306ce11e3bd4f9d8c5a4228dddbecb1ee93683c6c20bc451a66",
+      "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377"
+    },
+    {
+      "fixture": "symlink",
+      "publisher": "0x0000000000000000000000000000000000000000",
+      "contentHash": "0xcf45ddbbf535c4715b1dce4a8a04f35fb7ac7e0b32e198a609cdb70164fcdd23",
+      "canonicalBundleHash": "0xda32b8b775a4c8a0fc9d4099fa71be02613b9b3d4ce8cc1d287263f97177588a",
+      "targetId": "0x70132dcfdc7138f993403ac466c499af38f62812160068a485d150301f3e6c6f"
+    },
+    {
+      "fixture": "with-publisher",
+      "publisher": "0x1111111111111111111111111111111111111111",
+      "contentHash": "0xee5d265a88256d40004c764dd0e0aa58d1d80967777455945505ea8cc7b15753",
+      "canonicalBundleHash": "0xdcd1886d0e5a415130dfd702682afe077180167724f1dd5718a6b3abb15ebbc7",
+      "targetId": "0xdfd16a06c7f80f51e848531e1402cb210b97bdf43a4d587835643ee32334032d"
+    },
+    {
+      "fixture": "zero-width",
+      "publisher": "0x0000000000000000000000000000000000000000",
+      "contentHash": "0x96689cecd52fb95bb8e3a625c0a8dcdf5362baefc49459bd92078a5d3d57464e",
+      "canonicalBundleHash": "0x5f1d01d49cec223415a53864175414b70d1ed4f25a80889f7fa141dc72583e00",
+      "targetId": "0x235dda59c8777fb21d522d168cc04d55d2141f1f9b4e8a9eabebb3b97429b9a6"
+    }
+  ]
+}

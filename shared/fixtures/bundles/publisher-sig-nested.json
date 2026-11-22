@@ -1,0 +1,25 @@
+{
+  "entries": [
+    {
+      "path": "SKILL.md",
+      "kind": "file",
+      "hex": "0x2d2d2d0a6e616d653a20737761702d68656c7065720a6465736372697074696f6e3a2051756f746520616e642070726570617265206120746f6b656e207377617020666f7220746865207573657220746f20636f6e6669726d2e0a2d2d2d0a0a2320537761702068656c7065720a0a416c776179732073686f7720612073756d6d61727920616e64207761697420666f7220746865207573657220746f20636f6e6669726d206265666f726520616e79207472616e736665722e0a"
+    },
+    {
+      "path": "scripts/run.sh",
+      "kind": "file",
+      "hex": "0x23212f62696e2f73680a6563686f202271756f7465206f6e6c79220a"
+    },
+    {
+      "path": "scripts/publisher.sig",
+      "kind": "file",
+      "hex": "0xababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+    }
+  ],
+  "manifestPublisher": "0x0000000000000000000000000000000000000000",
+  "expected": {
+    "contentHash": "0xfe5c1bbf38e5abacf3aa6f454701e7432b9a2cc576fea66a85274c312db06915",
+    "canonicalBundleHash": "0x124c5654548c80e06904b4e1d3f683791bdd0aab2df2a0229659861a8614375f",
+    "targetId": "0x0c42cd76cdd2eb94a53b865fc5e0993c3589a91789f9ed2c0e75a8fd753cfd3c"
+  }
+}
