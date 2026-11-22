@@ -22,7 +22,10 @@ contract CourtStub is ICourt {
     mapping(uint256 => ChallengePhase) internal _forcedPhase;
     mapping(uint256 => mapping(address => JurorStatus)) internal _status;
 
+    error LocalChainOnly();
+
     constructor(address core_, address vault_) {
+        if (block.chainid != 31337) revert LocalChainOnly();
         core = core_;
         vault = vault_;
     }
@@ -72,6 +75,7 @@ contract CourtStub is ICourt {
         activeChallengeOf[targetId] = id;
 
         IVault(vault).depositStake{value: msg.value}(id, msg.sender);
+        IVault(vault).lockBond(id, targetId);
         ICore(core).markDisputed(targetId, id);
         emit ChallengeOpened(
             id, targetId, msg.sender, flags, evidenceHash, shortProof, evidenceURI, commitEndsAt, revealEndsAt
@@ -156,6 +160,7 @@ contract CourtStub is ICourt {
         ChallengeView storage c = _challenges[id];
         c.outcome = outcome;
         activeChallengeOf[c.targetId] = 0;
+        IVault(vault).settleBond(id, outcome == ChallengeOutcome.UPHELD ? Constants.BOND_SLASH_BPS : 0);
         ICore(core).applyVerdict(c.targetId, id, outcome, c.flags);
     }
 }

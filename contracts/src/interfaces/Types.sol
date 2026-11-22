@@ -116,6 +116,8 @@ struct AttestationView {
     uint64 timestamp;
     bool settled;
     bool penalized;
+    /// Cast while a challenge on the target was open. Such a vote earns no XP.
+    bool castDuringDispute;
 }
 
 struct GuardianView {

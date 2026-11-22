@@ -71,14 +71,17 @@ export type ContractSource = z.infer<typeof ContractSource>
 
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/
+const isSafeName = (name: string): boolean => name !== '.' && name !== '..'
+const isSafePath = (path: string): boolean =>
+  path === '' || (!path.startsWith('/') && !path.includes('\\') && path.split('/').every((part) => part !== '' && isSafeName(part)))
 
 export const SkillSource = z.object({
   kind: z.literal('skill'),
   /** GitHub repository as `owner/name`. */
-  repo: z.string().regex(REPO_PATTERN),
+  repo: z.string().regex(REPO_PATTERN).refine((repo) => repo.split('/').every(isSafeName), 'not a repository name'),
   commit: z.string().regex(COMMIT_PATTERN),
   /** Skill folder inside the repository; empty for the repository root. */
-  path: z.string().max(400),
+  path: z.string().max(400).refine(isSafePath, 'not a relative folder path'),
   contentHash: Bytes32Schema,
   manifestPublisher: AddressSchema,
   canonicalBundleHash: Bytes32Schema,
@@ -134,6 +137,9 @@ export const ScanReport = z
     if (report.targetId !== idOfSource) {
       ctx.addIssue({ code: 'custom', path: ['targetId'], message: 'targetId is not the id of the source' })
     }
+    if (report.suggestedVerdict === 'DANGER' && report.findings.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['suggestedVerdict'], message: 'DANGER needs at least one finding' })
+    }
     // Doubt is never safe: SAFE needs every check of this target type to have run and passed, and
     // no finding. A check that is simply left out counts as not run.
     const passed = new Set(report.checks.filter((check) => check.status === 'passed').map((check) => check.id))
@@ -150,9 +156,6 @@ export type DecodedSrc =
 
 const ADDRESS_SRC = /^0x[0-9a-fA-F]{40}$/
 const SKILL_SRC = /^gh:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)@([0-9a-f]{40}):(.*)$/
-const isSafeName = (name: string): boolean => name !== '.' && name !== '..'
-const isSafePath = (path: string): boolean =>
-  path === '' || (!path.startsWith('/') && !path.includes('\\') && path.split('/').every((part) => part !== '' && isSafeName(part)))
 
 /** Value of the `?src=` query that lets a target page be rebuilt from its source. */
 export function encodeSrc(source: ContractSource | SkillSource): string {

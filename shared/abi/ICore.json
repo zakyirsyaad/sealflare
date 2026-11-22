@@ -415,6 +415,11 @@
             "name": "penalized",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "castDuringDispute",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }

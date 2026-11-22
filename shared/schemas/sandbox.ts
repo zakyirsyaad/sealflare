@@ -31,10 +31,12 @@ export const ProbeRun = z
   })
   .refine((run) => (run.outcome === 'violation') === run.violations.length > 0, 'a run is a violation exactly when it lists one')
 
-export const ProbeResult = z.object({
-  probeId: ProbeId,
-  runs: z.array(ProbeRun).max(CONSTANTS.PROBE_RUNS),
-})
+export const ProbeResult = z
+  .object({
+    probeId: ProbeId,
+    runs: z.array(ProbeRun).max(CONSTANTS.PROBE_RUNS),
+  })
+  .refine((probe) => new Set(probe.runs.map((run) => run.index)).size === probe.runs.length, 'a run index appears more than once')
 export type ProbeResult = z.infer<typeof ProbeResult>
 
 /**

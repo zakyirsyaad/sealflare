@@ -85,3 +85,19 @@ test('a settled bond names the target and the depositor', () => {
   const event = vaultAbi.find((x) => x.type === 'event' && x.name === 'BondSettled') as AbiItem
   expect(event.inputs?.map((i) => i.name)).toEqual(['challengeId', 'targetId', 'depositor', 'slashed', 'released'])
 })
+
+// ---- deferred minors ----
+test('every credit to a withdrawable balance has an event', () => {
+  const event = vaultAbi.find((x) => x.type === 'event' && x.name === 'BalanceCredited') as AbiItem
+  expect(event.inputs?.map((i) => i.name)).toEqual(['account', 'amount'])
+})
+test('settleBond reports what it slashed and released', () => {
+  const fn = vaultAbi.find((x) => x.type === 'function' && x.name === 'settleBond') as unknown as { outputs: { name: string }[] }
+  expect(fn.outputs.map((o) => o.name)).toEqual(['slashed', 'released'])
+})
+test('an attestation records whether it was cast during a dispute', () => {
+  const fn = coreAbi.find((x) => x.type === 'function' && x.name === 'getAttestation') as unknown as {
+    outputs: { components: { name: string }[] }[]
+  }
+  expect(fn.outputs[0]?.components.map((c) => c.name)).toContain('castDuringDispute')
+})

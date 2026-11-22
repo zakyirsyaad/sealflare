@@ -118,6 +118,24 @@ describe('EvidenceReport, after the final review', () => {
   })
 })
 
+describe('deferred minors', () => {
+  test('a DANGER suggestion needs at least one finding', () => {
+    expect(ScanReport.safeParse({ ...loadScan('contract-partial'), suggestedVerdict: 'DANGER' }).success).toBe(false)
+    expect(ScanReport.safeParse(loadScan('contract-partial')).success).toBe(true)
+  })
+  test('a skill source rejects the same repo and path values decodeSrc rejects', () => {
+    const skill = loadScan('skill-clean')
+    for (const patch of [{ path: '../etc' }, { path: '/abs' }, { path: 'a//b' }, { repo: '../x' }, { repo: 'acme/..' }]) {
+      expect(ScanReport.safeParse({ ...skill, source: { ...(skill.source as object), ...patch } }).success).toBe(false)
+    }
+  })
+  test('a probe cannot list the same run index twice', () => {
+    const result = loadSandbox('no-violation') as { probes: { runs: { index: number }[] }[] }
+    const probes = result.probes.map((p, i) => (i === 0 ? { ...p, runs: p.runs.map((r) => ({ ...r, index: 0 })) } : p))
+    expect(SandboxResult.safeParse({ ...result, probes }).success).toBe(false)
+  })
+})
+
 describe('SandboxResult', () => {
   test.each(['no-violation', 'fuzz-failed', 'incomplete'])('%s parses', (name) => {
     expect(SandboxResult.safeParse(loadSandbox(name)).error?.issues).toBeUndefined()

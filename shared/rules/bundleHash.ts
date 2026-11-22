@@ -1,5 +1,8 @@
 import { type Hex, concatBytes, keccak256 } from 'viem'
+import type { Address } from 'viem'
 import { CONSTANTS } from './constants'
+import { canonicalBundleHash, targetIdOfSkill } from './ids'
+import { readManifestPublisher } from './manifest'
 
 export type BundleEntry = {
   /** POSIX path relative to the skill folder, as raw as the source gives it. */
@@ -9,7 +12,7 @@ export type BundleEntry = {
   bytes: Uint8Array
 }
 
-export type BundleErrorCode = 'EMPTY' | 'TOO_MANY_FILES' | 'TOO_LARGE' | 'DUPLICATE_PATH' | 'INVALID_PATH'
+export type BundleErrorCode = 'EMPTY' | 'TOO_MANY_FILES' | 'TOO_LARGE' | 'DUPLICATE_PATH' | 'INVALID_PATH' | 'INVALID_ENTRY'
 
 export class BundleError extends Error {
   readonly code: BundleErrorCode
@@ -32,6 +35,8 @@ const encoder = new TextEncoder()
 function isValidPath(path: string): boolean {
   if (path.length === 0 || path.startsWith('/')) return false
   if (path.includes('\u0000') || path.includes('\\')) return false
+  // A lone surrogate has no UTF-8 form: two different paths would encode to the same bytes.
+  if (!path.isWellFormed()) return false
   return path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
 }
 
@@ -61,6 +66,11 @@ function assertWithinLimits(entries: readonly BundleEntry[]): void {
  * Bytes are hashed raw. A bundle over the limits is rejected, never truncated.
  */
 export function contentHash(entries: readonly BundleEntry[]): Hex {
+  const malformed = entries.find(
+    (entry) => typeof entry.path !== 'string' || !(entry.kind in KIND_BYTE) || !(entry.bytes instanceof Uint8Array),
+  )
+  if (malformed) throw new BundleError('INVALID_ENTRY', 'A bundle entry needs a path, a kind of file or symlink, and bytes.')
+
   const invalid = entries.find((entry) => !isValidPath(entry.path))
   if (invalid) throw new BundleError('INVALID_PATH', `Invalid path in bundle: ${JSON.stringify(invalid.path)}`)
 
@@ -87,4 +97,20 @@ export function contentHash(entries: readonly BundleEntry[]): Hex {
     ),
   )
   return keccak256(concatBytes(leaves))
+}
+
+export const MANIFEST_PATH = 'SKILL.md'
+
+export type BundleIdentity = { contentHash: Hex; manifestPublisher: Address; canonicalBundleHash: Hex; targetId: Hex }
+
+/**
+ * Everything that identifies a skill bundle, from its entries alone. The publisher comes from the
+ * root SKILL.md when that is a regular file; a symlink or a nested SKILL.md does not count.
+ */
+export function bundleIdentity(entries: readonly BundleEntry[]): BundleIdentity {
+  const content = contentHash(entries)
+  const manifest = entries.find((entry) => entry.path === MANIFEST_PATH && entry.kind === 'file')
+  const manifestPublisher = readManifestPublisher(manifest?.bytes ?? new Uint8Array())
+  const canonical = canonicalBundleHash(content, manifestPublisher)
+  return { contentHash: content, manifestPublisher, canonicalBundleHash: canonical, targetId: targetIdOfSkill(canonical) }
 }

@@ -94,3 +94,31 @@ test('publisher.sig must be a small regular file', () => {
   expect(() => contentHash([file('a'), sig('file', 1025)])).toThrowError(expect.objectContaining({ code: 'TOO_LARGE' }))
   expect(() => contentHash([file('a'), sig('symlink', 10)])).toThrowError(expect.objectContaining({ code: 'INVALID_PATH' }))
 })
+
+// ---- deferred minors ----
+import { bundleIdentity } from '../rules'
+
+test('a path with a lone surrogate is rejected, since two such paths encode to the same bytes', () => {
+  expect(() => contentHash([file('a\uD800')])).toThrowError(expect.objectContaining({ code: 'INVALID_PATH' }))
+})
+test('an entry of an unknown kind or with non-byte content is rejected', () => {
+  const odd = [{ path: 'a', kind: 'device', bytes: new Uint8Array(1) }] as unknown as BundleEntry[]
+  expect(() => contentHash(odd)).toThrowError(expect.objectContaining({ code: 'INVALID_ENTRY' }))
+  const text = [{ path: 'a', kind: 'file', bytes: 'hello' }] as unknown as BundleEntry[]
+  expect(() => contentHash(text)).toThrowError(expect.objectContaining({ code: 'INVALID_ENTRY' }))
+})
+test('bundleIdentity reads the publisher from the root SKILL.md and returns every id', () => {
+  const publisher = '0x1111111111111111111111111111111111111111'
+  const skillMd = new TextEncoder().encode(`---\nmetadata:\n  sealflare-publisher: "${publisher}"\n---\nbody`)
+  const entries: BundleEntry[] = [{ path: 'SKILL.md', kind: 'file', bytes: skillMd }, file('scripts/run.sh')]
+  const identity = bundleIdentity(entries)
+  expect(identity.manifestPublisher).toBe(publisher)
+  expect(identity.contentHash).toBe(contentHash(entries))
+  expect(identity.canonicalBundleHash).toBe(canonicalBundleHash(identity.contentHash, publisher))
+  expect(identity.targetId).toBe(targetIdOfSkill(identity.canonicalBundleHash))
+})
+test('bundleIdentity ignores a SKILL.md that is a symlink or sits in a subfolder', () => {
+  const md = new TextEncoder().encode('---\nmetadata:\n  sealflare-publisher: "0x1111111111111111111111111111111111111111"\n---\n')
+  expect(bundleIdentity([{ path: 'SKILL.md', kind: 'symlink', bytes: md }]).manifestPublisher).toBe(ZERO_ADDRESS)
+  expect(bundleIdentity([{ path: 'sub/SKILL.md', kind: 'file', bytes: md }]).manifestPublisher).toBe(ZERO_ADDRESS)
+})

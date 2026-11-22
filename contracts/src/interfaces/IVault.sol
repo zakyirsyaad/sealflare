@@ -29,6 +29,8 @@ interface IVault {
     event BountySettled(
         uint256 indexed id, uint8 alignedVerdictMask, uint8 filled, uint256 paidPerSlot, uint256 refunded, uint256 fee
     );
+    /// Emitted for every amount added to a withdrawable balance, whatever its source.
+    event BalanceCredited(address indexed account, uint256 amount);
     event Withdrawn(address indexed account, uint256 amount);
 
     error OnlyCourt();
@@ -60,7 +62,7 @@ interface IVault {
     /// Locks the current publisher's bond for this challenge. A locked bond cannot be withdrawn.
     function lockBond(uint256 challengeId, bytes32 targetId) external;
     /// Moves `slashBps` of the locked bond into the challenge escrow and releases the rest to its depositor.
-    function settleBond(uint256 challengeId, uint16 slashBps) external;
+    function settleBond(uint256 challengeId, uint16 slashBps) external returns (uint256 slashed, uint256 released);
     /// The sum of `amounts` can never exceed what this challenge's escrow holds.
     function distribute(uint256 challengeId, address[] calldata recipients, uint256[] calldata amounts) external;
 

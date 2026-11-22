@@ -176,7 +176,9 @@ Kontrak tidak bisa membaca storage kontrak lain, dan `EXTCODEHASH` sebuah proxy 
 - `verifyContract` mendeteksi perubahan bytecode target sendiri (`STALE_CODEHASH_DRIFT`).
 - Nilai ketiga yang dikembalikan `verifyContract` bernama `pinnedCodehash`: `EXTCODEHASH` target saat pertama kali dicatat. Blueprint menamainya `pinnedImplHash`, padahal `Core` tidak bisa membaca slot implementasi.
 - `verifyContract` **tidak** mendeteksi penggantian implementasi proxy. Pengecekan itu hanya ada di SDK dan pemindai, yang membaca slot EIP-1967 dan Beacon lewat RPC.
-- Sebagai pengaman, target dengan penanda `hasDelegatecall` atau flag `UPGRADEABLE_NO_TIMELOCK` atau `UNPINNABLE_DELEGATECALL` dari attestation mana pun tidak pernah mendapat tier `SAFE` dari `IFirewall`. Tier tertingginya `CAUTION_FLAGGED`, dan `isUpgradeableProxy` bernilai benar.
+- Sebagai pengaman, target dengan penanda `hasDelegatecall` tidak pernah mendapat tier `SAFE` dari `IFirewall`. Tier tertingginya `CAUTION_FLAGGED`, dan `isUpgradeableProxy` bernilai benar.
+- Hanya penanda itu yang menutup tier `SAFE`, bukan flag `UPGRADEABLE_NO_TIMELOCK` atau `UNPINNABLE_DELEGATECALL` dari attestation. Flag tetap dicatat dan ditampilkan, tetapi kalau satu flag saja bisa menurunkan target selamanya, satu pemegang Agent ID bisa menjatuhkan kontrak pesaing tanpa biaya dan tanpa banding. Setiap proxy yang nyata memuat opcode `DELEGATECALL`, jadi penanda yang objektif sudah cukup.
+- `probeBytecode` berjalan per instruksi dan melompati data `PUSH`, jadi byte `0xF4` di dalam konstanta tidak dihitung. Ekor metadata CBOR Solidity hanya dilewati bila terbukti tidak bisa dicapai: didahului `INVALID` tepat di batas instruksi dan tidak memuat satu pun byte `JUMPDEST`. Kalau salah satu syarat gagal, ekor itu ikut dipindai. Positif palsu yang tersisa jatuh ke sisi aman.
 - Penanda `hasDelegatecall` hanya bisa menyala, tidak bisa padam. Siapa pun bisa menyalakannya lewat `probeBytecode`, jadi attester pertama yang berbohong tidak bisa menyembunyikan proxy. Positif palsu jatuh ke sisi aman.
 
 Kontrak pemanggil yang perlu mempercayai proxy harus memakai SDK, bukan `IFirewall` saja.
@@ -214,6 +216,8 @@ XP:
 
 `settle` tidak pernah memotong skor. Suara `SAFE` pada target yang diputus bahaya tidak mendapat apa pun dari `settle`; potongan -15 hanya diterapkan `applyPenalties`, dengan penandanya sendiri, sehingga tidak bisa terpotong dua kali. Suara `DANGER` baru bisa diselesaikan setelah ada putusan bahaya.
 
+Sengketa dan jendela 48 jam: selama sengketa aktif, `settle` tidak membayar suara `SAFE` pada target itu. Bila sengketa berakhir tanpa putusan bahaya (ditolak, seri, atau kedaluwarsa), suara yang dibuat sebelum sengketa dibayar seperti biasa setelah 48 jamnya lewat; jendelanya tidak diperpanjang. Suara yang dibuat saat sengketa sedang aktif tidak mendapat XP sama sekali, dan itu tercatat di `castDuringDispute`.
+
 Setiap attestation punya penanda "sudah diselesaikan", supaya XP tidak dibayar dua kali. Tabel tier dan XP disimpan di `shared/rules/` dengan vektor uji yang sama untuk Foundry dan Vitest. Halaman rincian membaca tier dari view `Core`, bukan menghitungnya ulang.
 
 ### 4.7 Mesin status sengketa
@@ -249,6 +253,7 @@ Treasury adalah alamat `immutable` di `Vault`. Saldonya ditarik lewat `withdraw(
 
 - Slot diisi oleh N attestation pertama pada target itu setelah `createBounty`, dari alamat selain peminta. `Vault` membaca urutannya dari `Core`.
 - Konsensus bounty adalah verdict mayoritas di antara pengisi slot itu sendiri, jadi tidak bisa digeser oleh attestation susulan.
+- Bila verdict teratas seri, semua pengisi slot yang memilih salah satu verdict teratas itu dibayar rata. Peminta membeli tinjauan, bukan jawaban tertentu, jadi seri tidak membatalkan bayaran.
 - Pembayaran bisa diselesaikan 48 jam setelah slot terakhir terisi: dibagi rata ke pengisi slot yang selaras, dipotong 5% untuk treasury.
 - Setelah 7 hari sejak dibuat, bounty yang slotnya belum penuh diselesaikan dengan slot yang ada, dan sisa dana kembali ke peminta.
 
@@ -448,9 +453,9 @@ sealflare/
 
 | Jalur | Isi | Pemegang |
 | :--- | :--- | :--- |
-| 1. On-chain | `contracts/`, deploy, verifikasi | founder |
+| 1. On-chain | `contracts/`, deploy, verifikasi; juga Landing, Docs, dan semua akun serta kunci layanan | founder |
 | 2. Pemindaian | `scanner-core`, `sandbox-worker` | developer kedua |
-| 3. Aplikasi | `apps/`, `sdk`, `skill` | developer ketiga |
+| 3. Aplikasi | `apps/` kecuali Landing dan Docs, `sdk`, `skill` | developer ketiga |
 
 Ada dua titik temu:
 
@@ -500,6 +505,7 @@ Tidak ada target persentase cakupan untuk UI.
 | Sandbox "menjalankan paket `SKILL.md`" | LLM membaca skill dengan alat tiruan; skrip tidak dieksekusi | Isolasi kontainer tidak realistis dalam jadwal |
 | *Genesis Guardian Sprint* satu bounty untuk 30 sampai 50 Guardian | Beberapa bounty 3 sampai 5 slot pada target berbeda | Batas slot per bounty |
 | Bagian 10: cakupan bertingkat | Kelima modul dirancang sama dalam | Keputusan founder |
+| Flag proxy dari attestation mana pun menutup tier `SAFE` | Hanya penanda `hasDelegatecall` dari `probeBytecode` | Menutup penurunan target tanpa biaya oleh satu pemegang Agent ID |
 | `IFirewall` mengembalikan `pinnedImplHash` | Mengembalikan `pinnedCodehash` | `Core` tidak bisa membaca slot implementasi; nama lama menyesatkan pemanggil |
 | `Vault` punya tiga fungsi khusus `Court` | Empat: ditambah `settleBond` | `distribute` saja tidak bisa memotong bond lalu mengembalikan sisanya |
 | Jumlah juri tidak dibatasi | Paling banyak 21 juri per sengketa | `resolve` membagi dana ke semua juri dalam satu transaksi |

@@ -43,7 +43,10 @@ contract CoreStub is ICore {
     mapping(address => uint8) internal _forcedLeft;
     mapping(address => uint256) public bindNonce;
 
+    error LocalChainOnly();
+
     constructor(address agentId_) {
+        if (block.chainid != 31337) revert LocalChainOnly();
         agentId = agentId_;
         deployer = msg.sender;
     }
@@ -121,7 +124,9 @@ contract CoreStub is ICore {
         t.attestationCount = r.index + 1;
 
         _attestations[targetId].push(
-            AttestationView(msg.sender, verdict, flags, r.weight, r.safeOrdinal, uint64(block.timestamp), false, false)
+            AttestationView(
+                msg.sender, verdict, flags, r.weight, r.safeOrdinal, uint64(block.timestamp), false, false, t.activeChallengeId != 0
+            )
         );
         _indexPlusOne[targetId][msg.sender] = uint256(r.index) + 1;
     }
@@ -163,7 +168,7 @@ contract CoreStub is ICore {
             AttestationView storage a = list[i];
             if (!_payable(a, danger)) continue;
             a.settled = true;
-            int32 delta = Rules.attestationXp(a.verdict, a.safeOrdinal, true, danger);
+            int32 delta = Rules.attestationXp(a.verdict, a.safeOrdinal, !a.castDuringDispute, danger);
             emit AttestationSettled(targetId, i, delta);
             _score(a.guardian, targetId, delta, _reason(a, danger));
         }

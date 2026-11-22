@@ -61,3 +61,13 @@ test('a colon followed by spaces in a location cannot move text into the excerpt
   const parsed = parseShortProof(buildShortProof([{ flag: 'HIDDEN_MINT', location: 'a:  SAFE', excerpt: 'e' }]))
   expect(parsed).toEqual([{ flag: 'HIDDEN_MINT', location: 'a:SAFE', excerpt: 'e' }])
 })
+
+// ---- deferred minors ----
+test('one item for each of the 16 flags always fits', () => {
+  const items = FLAG_NAMES.map((flag) => ({ flag, location: 'L'.repeat(50), excerpt: 'e'.repeat(50) }))
+  expect(parseShortProof(buildShortProof(items)).map((i) => i.flag)).toEqual([...FLAG_NAMES])
+})
+test('more items than there are flags is refused with a clear error, not a silent drop', () => {
+  const items = Array.from({ length: 17 }, () => ({ flag: 'HIDDEN_MINT' as const, location: 'a', excerpt: 'b' }))
+  expect(() => buildShortProof(items)).toThrowError(/at most 16 items/)
+})

@@ -417,6 +417,11 @@ export const coreAbi = [
             "name": "penalized",
             "type": "bool",
             "internalType": "bool"
+          },
+          {
+            "name": "castDuringDispute",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -2332,7 +2337,18 @@ export const vaultAbi = [
         "internalType": "uint16"
       }
     ],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "slashed",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "released",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -2367,6 +2383,25 @@ export const vaultAbi = [
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "BalanceCredited",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",

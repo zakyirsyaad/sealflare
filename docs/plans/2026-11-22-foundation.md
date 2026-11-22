@@ -926,6 +926,8 @@ git tag v0-frozen
 
 ## Temuan untuk Rencana 1 (tidak menghalangi Rencana 0)
 
+**Diputuskan 22 November 2026 atas permintaan founder.** Keempatnya sudah ditulis ke `docs/architecture.md` Bagian 4.5, 4.6, dan 4.9: (1) hanya `hasDelegatecall` yang menutup tier `SAFE`; (2) ekor metadata dilewati hanya bila terbukti tidak bisa dicapai; (3) seri bounty dibayar rata ke semua verdict teratas; (4) XP tertunda selama sengketa, dan suara yang dibuat saat sengketa tidak mendapat XP.
+
 Ditemukan saat membekukan aturan. Semuanya harus diputuskan sebelum `Core` ditulis, karena `Core` tidak bisa diubah setelah dirilis.
 
 1. **Flag proxy dari satu attestation bisa menurunkan target mana pun selamanya.** Arsitektur 4.5 membuat flag `UPGRADEABLE_NO_TIMELOCK` atau `UNPINNABLE_DELEGATECALL` "dari attestation mana pun" menutup tier `SAFE`. Satu pemegang Agent ID berbobot 1 bisa memberi `CAUTION` dengan flag itu pada kontrak pesaing, tanpa biaya dan tanpa jalan banding. Usul: aturan tier nomor 5 hanya membaca penanda `hasDelegatecall` dari `probeBytecode`, yang objektif. Vektor di Task 1 sudah memakai satu masukan `proxyMarker`, jadi pilihan ini tidak mengubah Rencana 0.

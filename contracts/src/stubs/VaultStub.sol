@@ -21,14 +21,22 @@ contract VaultStub is IVault {
     mapping(uint256 => BountyView) internal _bounties;
     uint256 internal _bountyCount;
 
+    error LocalChainOnly();
+
     constructor(address core_, address treasury_) {
+        if (block.chainid != 31337) revert LocalChainOnly();
         core = core_;
         treasury = treasury_;
     }
 
     /// Test setter: credits a withdrawable balance backed by the BNB sent with the call.
     function stubCredit(address account) external payable {
-        balanceOf[account] += msg.value;
+        _credit(account, msg.value);
+    }
+
+    function _credit(address account, uint256 amount) internal {
+        balanceOf[account] += amount;
+        emit BalanceCredited(account, amount);
     }
 
     function depositBond(bytes32 targetId) external payable {
@@ -47,7 +55,7 @@ contract VaultStub is IVault {
         BondView storage b = _bonds[targetId][msg.sender];
         uint256 amount = b.amount;
         delete _bonds[targetId][msg.sender];
-        balanceOf[msg.sender] += amount;
+        _credit(msg.sender, amount);
         emit BondWithdrawn(targetId, msg.sender, amount);
     }
 
@@ -61,7 +69,7 @@ contract VaultStub is IVault {
     function settleBounty(uint256 id) external {
         BountyView storage b = _bounties[id];
         b.settled = true;
-        balanceOf[b.requester] += b.amount;
+        _credit(b.requester, b.amount);
         emit BountySettled(id, 0, 0, 0, b.amount, 0);
     }
 
@@ -88,22 +96,23 @@ contract VaultStub is IVault {
         emit BondLocked(challengeId, targetId, publisher, b.amount);
     }
 
-    function settleBond(uint256 challengeId, uint16 slashBps) external {
+    function settleBond(uint256 challengeId, uint16 slashBps) external returns (uint256 slashed, uint256 released) {
         bytes32 targetId = _lockedTarget[challengeId];
         address depositor = _lockedDepositor[challengeId];
         BondView storage b = _bonds[targetId][depositor];
-        uint256 slashed = b.amount * slashBps / Constants.BPS;
+        slashed = b.amount * slashBps / Constants.BPS;
         b.amount -= slashed;
         b.lockedByChallengeId = 0;
         escrowOf[challengeId] += slashed;
-        emit BondSettled(challengeId, targetId, depositor, slashed, b.amount);
+        released = b.amount;
+        emit BondSettled(challengeId, targetId, depositor, slashed, released);
     }
 
     function distribute(uint256 challengeId, address[] calldata recipients, uint256[] calldata amounts) external {
         for (uint256 i; i < recipients.length; ++i) {
             if (amounts[i] > escrowOf[challengeId]) revert EscrowExceeded();
             escrowOf[challengeId] -= amounts[i];
-            balanceOf[recipients[i]] += amounts[i];
+            _credit(recipients[i], amounts[i]);
             emit Distributed(challengeId, recipients[i], amounts[i]);
         }
     }

@@ -254,6 +254,61 @@ contract StubsTest is Test {
         assertEq(vault.escrowOf(9), 0.2 ether);
     }
 
+    function test_stubs_refuseToDeployOffTheLocalChain() public {
+        vm.chainId(56);
+        vm.expectRevert();
+        new MockAgentID();
+        vm.expectRevert();
+        new CoreStub(address(agentId));
+        vm.expectRevert();
+        new VaultStub(address(core), address(this));
+        vm.expectRevert();
+        new CourtStub(address(core), address(vault));
+    }
+
+    function test_courtStub_locksAndSlashesThePublishersBond() public {
+        _attest(guardian, Verdict.SAFE, 0);
+        vm.deal(guardian, 1 ether);
+        vm.startPrank(guardian);
+        core.sponsor(targetId);
+        vault.depositBond{value: 0.4 ether}(targetId);
+        vm.stopPrank();
+
+        vm.deal(address(this), 1 ether);
+        uint256 id = court.openChallenge{value: Constants.CHALLENGE_STAKE}(targetId, 2, bytes32(0), "", "");
+        assertEq(vault.bondOf(targetId, guardian).lockedByChallengeId, id);
+
+        address juror = makeAddr("juror");
+        vm.deal(juror, 1 ether);
+        vm.startPrank(juror);
+        court.commitVote{value: Constants.JURY_STAKE}(id, bytes32(0));
+        court.revealVote(id, true, bytes32(0));
+        vm.stopPrank();
+        court.resolve(id);
+        assertEq(vault.bondOf(targetId, guardian).amount, 0.2 ether);
+        assertEq(vault.bondOf(targetId, guardian).lockedByChallengeId, 0);
+    }
+
+    function test_vaultStub_everyCreditEmitsBalanceCredited() public {
+        vm.deal(address(this), 1 ether);
+        vm.expectEmit(address(vault));
+        emit IVault.BalanceCredited(guardian, 0.1 ether);
+        vault.stubCredit{value: 0.1 ether}(guardian);
+    }
+
+    function test_coreStub_marksVotesCastDuringADispute() public {
+        _attest(guardian, Verdict.SAFE, 0);
+        core.markDisputed(targetId, 1);
+        address late = makeAddr("late");
+        _attest(late, Verdict.SAFE, 0);
+        assertFalse(core.getAttestation(targetId, 0).castDuringDispute);
+        assertTrue(core.getAttestation(targetId, 1).castDuringDispute);
+        core.applyVerdict(targetId, 1, ChallengeOutcome.REJECTED, 0);
+        core.settle(targetId, 0, 2);
+        assertEq(core.getGuardian(guardian).score, 2);
+        assertEq(core.getGuardian(late).score, 0);
+    }
+
     function test_vaultStub_rejectsPlainTransfers() public {
         vm.deal(address(this), 1 ether);
         (bool ok,) = address(vault).call{value: 1}("");

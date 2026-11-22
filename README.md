@@ -38,9 +38,9 @@ the final events and accept any caller. They are for local development only.
 
 | Lane | You own | You read from `shared/` | What stands in for the other lanes |
 | :--- | :--- | :--- | :--- |
-| 1. On-chain | `contracts/` | `rules/vectors` | Nothing. The contracts depend on no other lane. |
+| 1. On-chain | `contracts/`, the landing page and docs, service accounts and keys | `rules/vectors` | Nothing. The contracts depend on no other lane. |
 | 2. Scanning | `packages/scanner-core`, `packages/sandbox-worker` | `rules` (bundle hash, flags), `schemas` (scan, sandbox, scanner, internal) | `fixtures/bundles`, `fixtures/scans`, `fixtures/sandbox`, and a fake LLM |
-| 3. Application | `apps/`, `packages/sdk`, `packages/skill` | `abi`, `rules`, `schemas` (api, evidence, shortProof) | The stub contracts on the local chain, and `fixtures/api` as a fake API |
+| 3. Application | `apps/` except the landing page and docs, `packages/sdk`, `packages/skill` | `abi`, `rules`, `schemas` (api, evidence, shortProof) | The stub contracts on the local chain, and `fixtures/api` as a fake API |
 
 ## What is frozen
 

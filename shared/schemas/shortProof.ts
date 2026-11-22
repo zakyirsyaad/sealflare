@@ -46,6 +46,7 @@ function largestFittingCap(max: number, fits: (cap: number) => boolean): number 
  * longest locations. The flag names are never cut.
  */
 export function buildShortProof(items: readonly ShortProofItem[]): string {
+  if (items.length > FLAG_NAMES.length) throw new RangeError(`A short proof holds at most ${FLAG_NAMES.length} items.`)
   const limit = CONSTANTS.SHORT_PROOF_MAX_BYTES
   const clean = items.map((item) => ({ flag: item.flag, location: cleanLocation(item.location), excerpt: oneLine(item.excerpt) }))
   const capped = (excerptCap: number, locationCap: number): ShortProofItem[] =>
