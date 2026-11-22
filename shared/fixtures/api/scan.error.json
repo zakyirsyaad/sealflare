@@ -1,0 +1,13 @@
+{
+  "success": false,
+  "error": {
+    "code": "MULTIPLE_SKILL_FOLDERS",
+    "message": "More than one skill was found in this repository.",
+    "details": {
+      "folders": [
+        "swap-helper",
+        "price-feed-reader"
+      ]
+    }
+  }
+}
