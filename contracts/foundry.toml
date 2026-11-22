@@ -13,3 +13,7 @@ fs_permissions = [
 
 [fuzz]
 runs = 512
+
+[lint]
+# Test code casts fuzz and vector values on purpose.
+ignore = ["test/**/*.sol"]

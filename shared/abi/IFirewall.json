@@ -1,0 +1,75 @@
+[
+  {
+    "type": "function",
+    "name": "verifyContract",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tier",
+        "type": "uint8",
+        "internalType": "enum TrustTier"
+      },
+      {
+        "name": "isUpgradeableProxy",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "pinnedCodehash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "activeFlags",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "warrantyBondActive",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "verifySkillBundle",
+    "inputs": [
+      {
+        "name": "canonicalBundleHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tier",
+        "type": "uint8",
+        "internalType": "enum TrustTier"
+      },
+      {
+        "name": "publisher",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "activeFlags",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "warrantyBondActive",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]
