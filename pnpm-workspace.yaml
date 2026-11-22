@@ -2,3 +2,5 @@ packages:
   - shared
   - packages/*
   - apps/*
+allowBuilds:
+  esbuild: false
