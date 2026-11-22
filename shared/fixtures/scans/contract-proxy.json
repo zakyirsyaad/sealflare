@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "targetType": "SMART_CONTRACT",
+  "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+  "source": {
+    "kind": "contract",
+    "address": "0x60b9262456de011f7d15a54cdd8c48baaa8b022f",
+    "codehash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "blockNumber": "52000000",
+    "implementation": {
+      "standard": "eip1967",
+      "address": "0x2222222222222222222222222222222222222222",
+      "codehash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  },
+  "scannedAt": "2026-11-22T03:00:00.000Z",
+  "checks": [
+    {
+      "id": "source_verified",
+      "status": "passed"
+    },
+    {
+      "id": "admin_functions",
+      "status": "passed"
+    },
+    {
+      "id": "proxy_eip1967",
+      "status": "flagged",
+      "detail": "Implementation slot is set and the admin has no timelock."
+    },
+    {
+      "id": "proxy_beacon",
+      "status": "passed"
+    },
+    {
+      "id": "proxy_eip1167",
+      "status": "passed"
+    },
+    {
+      "id": "delegatecall_opcode",
+      "status": "passed"
+    },
+    {
+      "id": "dry_run",
+      "status": "passed"
+    }
+  ],
+  "findings": [
+    {
+      "flag": "UPGRADEABLE_NO_TIMELOCK",
+      "checkId": "proxy_eip1967",
+      "title": "Upgradeable proxy with no timelock",
+      "location": "slot 0x3608\u20262bbc",
+      "excerpt": "implementation = 0x2222222222222222222222222222222222222222"
+    }
+  ],
+  "flags": 32,
+  "suggestedVerdict": "CAUTION"
+}
