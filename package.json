@@ -8,7 +8,10 @@
   "scripts": {
     "test": "pnpm -r test",
     "abi:export": "tsx shared/scripts/export-abi.ts",
-    "abi:check": "pnpm abi:export && git diff --exit-code -- shared/abi"
+    "abi:check": "pnpm abi:export && git diff --exit-code -- shared/abi",
+    "chain": "scripts/chain.sh",
+    "chain:seed": "forge script SeedLocal --root contracts --rpc-url http://127.0.0.1:8545 --broadcast",
+    "chain:warp": "scripts/warp.sh"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

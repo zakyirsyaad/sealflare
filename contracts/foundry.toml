@@ -15,5 +15,5 @@ fs_permissions = [
 runs = 512
 
 [lint]
-# Test code casts fuzz and vector values on purpose.
-ignore = ["test/**/*.sol"]
+# Tests cast fuzz and vector values on purpose; stubs and scripts are local-only code.
+ignore = ["test/**/*.sol", "src/stubs/**/*.sol", "script/**/*.sol"]
