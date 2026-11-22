@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sealflare target page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+.sf{--bg:oklch(0.145 0 0);--fg:oklch(0.985 0 0);--card:oklch(0.205 0 0);--muted:oklch(0.269 0 0);--muted-fg:oklch(0.708 0 0);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(0.556 0 0);--primary:oklch(0.768 0.233 130.85);--primary-fg:oklch(0.274 0.072 132.109);--secondary:oklch(0.274 0.006 286.033);--secondary-fg:oklch(0.985 0 0);--destructive:oklch(0.704 0.191 22.216);--warning:oklch(0.828 0.189 84.429);--positive:oklch(0.768 0.233 130.85);background:var(--bg);color:var(--fg);font-family:'Instrument Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}
+.sf.is-light{--bg:oklch(1 0 0);--fg:oklch(0.145 0 0);--card:oklch(1 0 0);--muted:oklch(0.97 0 0);--muted-fg:oklch(0.5 0 0);--border:oklch(0.922 0 0);--input:oklch(0.87 0 0);--ring:oklch(0.708 0 0);--primary:oklch(0.841 0.238 128.85);--secondary:oklch(0.967 0.001 286.375);--secondary-fg:oklch(0.21 0.006 285.885);--destructive:oklch(0.577 0.245 27.325);--warning:oklch(0.555 0.163 48.998);--positive:oklch(0.532 0.157 131.589)}
+.sf *{box-sizing:border-box}
+.sf a{color:inherit;text-decoration:none}
+.sf button{cursor:pointer;font-family:inherit;border-radius:0}
+.sf button:focus-visible,.sf a:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.mono{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+.sf-nav a{color:var(--muted-fg);transition:color .15s}
+.sf-nav a:hover{color:var(--fg)}
+.sf-btn{transition:filter .15s}
+.sf-btn:hover{filter:brightness(1.08)}
+@media (max-width: 760px){.sf-appnav{order:3;flex:1 1 100% !important;flex-wrap:nowrap !important;overflow-x:auto;white-space:nowrap}}
+.sf-ghost{transition:background-color .15s,color .15s}
+.sf-ghost:hover{background:var(--muted);color:var(--fg)}
+.sf-crop{position:relative}
+.sf-crop::before,.sf-crop::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--positive);pointer-events:none}
+.sf-crop::before{left:-1px;top:-1px;border-right:0;border-bottom:0}
+.sf-crop::after{right:-1px;bottom:-1px;border-left:0;border-top:0}
+</style>
+</helmet>
+<div class="sf {{themeClass}}" style="min-height: 100vh; font-size: 14px; line-height: 22px">
+<header style="border-bottom: 1px solid var(--border)">
+<div class="sf-nav" style="max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 3.2vw, 40px); min-height: 60px; display: flex; align-items: center; gap: 8px 32px; flex-wrap: wrap">
+<span style="font-size: 20px; font-weight: 600; letter-spacing: -0.04em">seal<span style="color: var(--positive)">flare</span></span>
+<nav aria-label="App" class="sf-appnav" style="display: flex; gap: 24px; flex-wrap: wrap; flex-grow: 1; font-size: 14px">
+<a href="#scan" style="color: var(--fg); font-weight: 500; padding: 19px 0; box-shadow: inset 0 -2px 0 var(--positive)">Scan</a>
+<a href="#explore" style="padding: 19px 0">Explore</a>
+<a href="#disputes" style="padding: 19px 0">Disputes</a>
+<a href="#bounties" style="padding: 19px 0">Bounties</a>
+<a href="#guardians" style="padding: 19px 0">Guardians</a>
+</nav>
+<button class="sf-btn" type="button" style="height: 36px; padding: 0 16px; border: 0; background: var(--secondary); color: var(--secondary-fg); font-size: 14px; font-weight: 500">Connect wallet</button>
+</div>
+</header>
+<main style="max-width: 1240px; margin: 0 auto; padding: 40px clamp(20px, 3.2vw, 40px) 64px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+<h1 class="mono" style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 500; letter-spacing: -0.02em">0x1234…abcd</h1>
+<span style="padding: 3px 10px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg)">Smart contract</span>
+<span style="padding: 3px 10px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg)">BNB Chain</span>
+<span style="flex-grow: 1"></span>
+<button class="sf-ghost" type="button" style="height: 32px; padding: 0 12px; border: 0; background: transparent; color: var(--muted-fg); font-size: 13px">Copy address</button>
+<button class="sf-ghost" type="button" style="height: 32px; padding: 0 12px; border: 0; background: transparent; color: var(--muted-fg); font-size: 13px">View on BscScan</button>
+</div>
+<div role="status" style="padding: 14px 18px; border: 1px solid var(--warning); background: color-mix(in oklab, var(--warning) 9%, transparent); display: flex; gap: 14px; align-items: flex-start">
+<span aria-hidden="true" style="width: 8px; height: 8px; background: var(--warning); margin-top: 7px; flex-shrink: 0"></span>
+<div><div style="font-weight: 600">This contract is an upgradeable proxy</div><div style="color: var(--muted-fg)">Its code can be replaced without changing its address, so the on-chain firewall never rates it safe. Use the SDK to check the current implementation.</div></div>
+</div>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: stretch">
+<section aria-label="Status" class="sf-crop" style="flex: 999 1 600px; min-width: 0; background: var(--card); border: 1px solid var(--border)">
+<div style="padding: 28px 24px; display: flex; gap: 20px; align-items: center; border-bottom: 1px solid var(--border); flex-wrap: wrap">
+<svg aria-hidden="true" width="76" height="76" viewBox="0 0 76 76" style="flex-shrink: 0"><circle cx="38" cy="38" r="31" fill="none" stroke-width="9" style="stroke: var(--muted)"/><circle cx="38" cy="38" r="31" fill="none" stroke-width="9" stroke-dasharray="148 47" transform="rotate(-70 38 38)" style="stroke: var(--warning)"/></svg>
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<h2 style="margin: 0; font-size: 38px; line-height: 42px; font-weight: 600; letter-spacing: -0.04em">Caution flagged</h2>
+<p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--muted-fg)">Upgradeable proxy with no timelock. Three guardians report a hidden mint.</p>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); border-bottom: 1px solid var(--border)">
+<div style="padding: 16px 24px; display: flex; flex-direction: column; gap: 2px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">code hash</span><span class="mono" style="font-size: 13px">0x9c41…77e1</span><span style="font-size: 12px; line-height: 18px; color: var(--positive)">unchanged since first seal</span></div>
+<div style="padding: 16px 24px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">publisher</span><span style="font-size: 13px">Not claimed</span><span style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">no bond posted</span></div>
+<div style="padding: 16px 24px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">dispute</span><span style="font-size: 13px">None open</span><span style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">no past challenges</span></div>
+</div>
+<div style="padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 10px">
+<h3 class="mono" style="margin: 0; font-size: 12px; line-height: 18px; font-weight: 400; color: var(--muted-fg)">community signal</h3>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 540px; border-collapse: collapse; font-size: 14px; line-height: 20px">
+<thead><tr style="color: var(--muted-fg); text-align: left"><th scope="col" style="font-weight: 400; padding: 0 12px 8px 0">Who</th><th scope="col" style="font-weight: 400; padding: 0 12px 8px">Safe</th><th scope="col" style="font-weight: 400; padding: 0 12px 8px">Caution</th><th scope="col" style="font-weight: 400; padding: 0 12px 8px">Danger</th><th scope="col" style="font-weight: 400; padding: 0 0 8px 12px">Flags reported</th></tr></thead>
+<tbody>
+<tr><th scope="row" style="text-align: left; font-weight: 500; padding: 12px 12px 12px 0; border-top: 1px solid var(--border)">New Agent IDs<div style="font-weight: 400; font-size: 12px; line-height: 18px; color: var(--muted-fg)">weight 1 each</div></th><td class="mono" style="padding: 12px; border-top: 1px solid var(--border)">42</td><td class="mono" style="padding: 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td><td class="mono" style="padding: 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td><td style="padding: 12px 0 12px 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">None</td></tr>
+<tr><th scope="row" style="text-align: left; font-weight: 500; padding: 12px 12px 12px 0; border-top: 1px solid var(--border)">Guardians<div style="font-weight: 400; font-size: 12px; line-height: 18px; color: var(--muted-fg)">combined weight 15</div></th><td class="mono" style="padding: 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td><td class="mono" style="padding: 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td><td class="mono" style="padding: 12px; border-top: 1px solid var(--border); color: var(--destructive); font-weight: 500">3</td><td style="padding: 12px 0 12px 12px; border-top: 1px solid var(--border)"><span class="mono" style="padding: 3px 8px; background: color-mix(in oklab, var(--destructive) 16%, transparent); color: var(--destructive); font-size: 12px; line-height: 18px">HIDDEN_MINT</span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<aside aria-label="Actions" style="flex: 1 1 280px; min-width: 0; border: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 10px">
+<button class="sf-btn" type="button" style="height: 48px; border: 0; background: var(--primary); color: var(--primary-fg); font-size: 16px; font-weight: 600">Attest</button>
+<button class="sf-btn" type="button" style="height: 40px; border: 0; background: var(--secondary); color: var(--secondary-fg); font-size: 14px; font-weight: 500">Open a challenge</button>
+<button class="sf-btn" type="button" style="height: 40px; border: 0; background: var(--secondary); color: var(--secondary-fg); font-size: 14px; font-weight: 500">Fund an audit bounty</button>
+<div style="margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px">
+<p style="margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-fg)">Connect a wallet that holds an Agent ID to attest.</p>
+<div class="mono" style="font-size: 12px; line-height: 18px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: var(--muted-fg)">daily limit</span><span>5 attestations</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px"><span style="color: var(--muted-fg)">wrong "safe"</span><span style="color: var(--destructive)">-15 reputation</span></div>
+</div>
+</div>
+</aside>
+</div>
+<section aria-label="Details" style="background: var(--card); border: 1px solid var(--border)">
+<div role="tablist" aria-label="Target details" style="display: flex; gap: 28px; padding: 0 24px; border-bottom: 1px solid var(--border); overflow-x: auto">
+<button type="button" role="tab" aria-selected="true" style="height: 48px; padding: 0; border: 0; background: transparent; color: var(--fg); font-size: 14px; font-weight: 600; white-space: nowrap; box-shadow: inset 0 -2px 0 var(--positive)">Findings</button>
+<button type="button" role="tab" aria-selected="false" style="height: 48px; padding: 0; border: 0; background: transparent; color: var(--muted-fg); font-size: 14px; white-space: nowrap">Attestations <span class="mono" style="font-size: 12px">45</span></button>
+<button type="button" role="tab" aria-selected="false" style="height: 48px; padding: 0; border: 0; background: transparent; color: var(--muted-fg); font-size: 14px; white-space: nowrap">Publisher</button>
+<button type="button" role="tab" aria-selected="false" style="height: 48px; padding: 0; border: 0; background: transparent; color: var(--muted-fg); font-size: 14px; white-space: nowrap">Dispute</button>
+<button type="button" role="tab" aria-selected="false" style="height: 48px; padding: 0; border: 0; background: transparent; color: var(--muted-fg); font-size: 14px; white-space: nowrap">Bounty</button>
+<button type="button" role="tab" aria-selected="false" style="height: 48px; padding: 0; border: 0; background: transparent; color: var(--muted-fg); font-size: 14px; white-space: nowrap">History</button>
+</div>
+<ul style="list-style: none; margin: 0; padding: 0">
+<li style="display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap">
+<span class="mono" style="width: 76px; flex-shrink: 0; color: var(--positive); font-size: 12px">passed</span>
+<div style="flex: 1 1 320px; min-width: 0; font-weight: 500">Source code is verified on BscScan</div>
+</li>
+<li style="display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap">
+<span class="mono" style="width: 76px; flex-shrink: 0; color: var(--warning); font-size: 12px">flagged</span>
+<div style="flex: 1 1 320px; min-width: 0"><div style="font-weight: 500">EIP-1967 proxy, upgradeable with no timelock</div><div class="mono" style="margin-top: 8px; padding: 8px 12px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg); overflow-wrap: anywhere">implementation slot  0x9f2c…71ae</div></div>
+<span class="mono" style="padding: 3px 8px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg)">UPGRADEABLE_NO_TIMELOCK</span>
+</li>
+<li style="display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap">
+<span class="mono" style="width: 76px; flex-shrink: 0; color: var(--destructive); font-size: 12px">reported</span>
+<div style="flex: 1 1 320px; min-width: 0"><div style="font-weight: 500">Owner can mint without a cap</div><div class="mono" style="margin-top: 8px; padding: 8px 12px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg); overflow-wrap: anywhere">function mint(address to, uint256 amount) external onlyOwner</div></div>
+<span class="mono" style="padding: 3px 8px; background: color-mix(in oklab, var(--destructive) 16%, transparent); font-size: 12px; line-height: 18px; color: var(--destructive)">HIDDEN_MINT</span>
+</li>
+<li style="display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap">
+<span class="mono" style="width: 76px; flex-shrink: 0; color: var(--positive); font-size: 12px">passed</span>
+<div style="flex: 1 1 320px; min-width: 0; font-weight: 500">Transfer dry-run completes with no hidden tax</div>
+</li>
+<li style="display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; flex-wrap: wrap">
+<span class="mono" style="width: 76px; flex-shrink: 0; color: var(--muted-fg); font-size: 12px">not run</span>
+<div style="flex: 1 1 320px; min-width: 0"><div style="font-weight: 500">Behavioral sandbox</div><div style="color: var(--muted-fg)">The sandbox tests AI skills. It does not apply to contracts.</div></div>
+</li>
+</ul>
+</section>
+<p class="mono" style="margin: 0; font-size: 11px; line-height: 16px; color: var(--muted-fg)">sample data for layout, not a real scan result</p>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"]},"$preview":{"width":1280,"height":1290}}'>
+class Component extends DCLogic {
+renderVals() {
+return { themeClass: (this.props.theme ?? 'dark') === 'light' ? 'is-light' : '' };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+<!-- @dsCard group="Status" height=300 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<div style="padding: 24px; background: var(--background)">
+<ul style="list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); background: var(--card)">
+<li class="sf-finding"><span class="sf-finding__state sf-finding__state--passed">passed</span><div class="sf-finding__body"><div class="sf-finding__title">Source code is verified on BscScan</div></div></li>
+<li class="sf-finding"><span class="sf-finding__state sf-finding__state--flagged">flagged</span><div class="sf-finding__body"><div class="sf-finding__title">EIP-1967 proxy, upgradeable with no timelock</div><div class="sf-finding__proof">implementation slot  0x9f2c…71ae</div></div><span class="sf-chip sf-chip--flag">UPGRADEABLE_NO_TIMELOCK</span></li>
+<li class="sf-finding"><span class="sf-finding__state sf-finding__state--reported">reported</span><div class="sf-finding__body"><div class="sf-finding__title">Owner can mint without a cap</div><div class="sf-finding__proof">function mint(address to, uint256 amount) external onlyOwner</div></div><span class="sf-chip sf-chip--flag sf-chip--danger">HIDDEN_MINT</span></li>
+<li class="sf-finding"><span class="sf-finding__state">not run</span><div class="sf-finding__body"><div class="sf-finding__title">Behavioral sandbox</div><div class="sf-finding__note">The sandbox tests AI skills. It does not apply to contracts.</div></div></li>
+</ul>
+</div>

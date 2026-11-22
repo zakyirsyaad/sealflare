@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sealflare publish</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+.sf{--bg:oklch(0.145 0 0);--fg:oklch(0.985 0 0);--card:oklch(0.205 0 0);--muted:oklch(0.269 0 0);--muted-fg:oklch(0.708 0 0);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(0.556 0 0);--primary:oklch(0.768 0.233 130.85);--primary-fg:oklch(0.274 0.072 132.109);--secondary:oklch(0.274 0.006 286.033);--secondary-fg:oklch(0.985 0 0);--destructive:oklch(0.704 0.191 22.216);--warning:oklch(0.828 0.189 84.429);--positive:oklch(0.768 0.233 130.85);background:var(--bg);color:var(--fg);font-family:'Instrument Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}
+.sf.is-light{--bg:oklch(1 0 0);--fg:oklch(0.145 0 0);--card:oklch(1 0 0);--muted:oklch(0.97 0 0);--muted-fg:oklch(0.5 0 0);--border:oklch(0.922 0 0);--input:oklch(0.87 0 0);--ring:oklch(0.708 0 0);--primary:oklch(0.841 0.238 128.85);--secondary:oklch(0.967 0.001 286.375);--secondary-fg:oklch(0.21 0.006 285.885);--destructive:oklch(0.577 0.245 27.325);--warning:oklch(0.555 0.163 48.998);--positive:oklch(0.532 0.157 131.589)}
+.sf *{box-sizing:border-box}
+.sf a{color:inherit;text-decoration:none}
+.sf button{cursor:pointer;font-family:inherit;border-radius:0}
+.sf :focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.mono{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+.cap{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 16px;border:0;font-size:14px;font-weight:500;white-space:nowrap;transition:filter .15s}
+.btn:hover{filter:brightness(1.08)}
+.btn-p{background:var(--primary);color:var(--primary-fg);font-weight:600}
+.btn-s{background:var(--secondary);color:var(--secondary-fg)}
+.btn:disabled{cursor:not-allowed;filter:none;background:var(--muted);color:var(--muted-fg)}
+.sf-nav a{color:var(--muted-fg);transition:color .15s}
+.sf-nav a:hover{color:var(--fg)}
+.sf-appnav a{padding:19px 0}
+.row{display:flex;justify-content:space-between;gap:16px;align-items:baseline}
+.step{display:flex;gap:20px;padding:28px 0;border-top:1px solid var(--border)}
+.step > .n{flex-shrink:0;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);font-family:'Geist Mono',ui-monospace,monospace;font-size:13px;color:var(--muted-fg)}
+.step.done > .n{background:var(--positive);border-color:var(--positive);color:var(--bg)}
+.step.now > .n{border-color:var(--fg);color:var(--fg)}
+.step > .b{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:12px}
+.step.next{color:var(--muted-fg)}
+.field{height:48px;padding:0 16px;border:1px solid var(--input);border-radius:0;background:var(--card);color:var(--fg);font-size:14px;width:100%}
+.seg{display:inline-flex;border:1px solid var(--border)}
+.seg button{height:40px;padding:0 18px;border:0;background:transparent;color:var(--muted-fg);font-size:14px}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg);font-weight:600}
+@media (max-width: 760px){.sf-appnav{order:3;flex:1 1 100% !important;flex-wrap:nowrap !important;overflow-x:auto;white-space:nowrap}}
+</style>
+</helmet>
+<div class="sf {{themeClass}}" style="min-height: 100vh; font-size: 14px; line-height: 22px">
+<header style="border-bottom: 1px solid var(--border)">
+<div class="sf-nav" style="max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 3.2vw, 40px); min-height: 60px; display: flex; align-items: center; gap: 8px 32px; flex-wrap: wrap">
+<span style="font-size: 20px; font-weight: 600; letter-spacing: -0.04em">seal<span style="color: var(--positive)">flare</span></span>
+<nav aria-label="App" class="sf-appnav" style="display: flex; gap: 24px; flex-wrap: wrap; flex-grow: 1; font-size: 14px"><a href="#scan">Scan</a><a href="#explore">Explore</a><a href="#disputes">Disputes</a><a href="#bounties">Bounties</a><a href="#guardians">Guardians</a></nav>
+<button class="btn btn-s" type="button" style="height: 36px"><span class="mono" style="font-size: 13px">0x52…9c1</span></button>
+</div>
+</header>
+<main style="max-width: 880px; margin: 0 auto; padding: 72px clamp(20px, 3.2vw, 40px) 72px; display: flex; flex-direction: column; gap: 40px">
+<div style="display: flex; flex-direction: column; gap: 20px">
+<h1 style="margin: 0; font-size: clamp(38px, 5vw, 60px); line-height: 1; font-weight: 600; letter-spacing: -0.045em">Bind your work.</h1>
+<p style="margin: 0; font-size: 18px; line-height: 28px; color: var(--muted-fg); max-width: 620px">Prove a contract or a skill is yours, so people can see who stands behind it. Posting a bond is optional.</p>
+<div class="seg" role="group" aria-label="What are you binding"><button type="button" aria-pressed="true">A contract</button><button type="button" aria-pressed="false">An AI skill</button></div>
+</div>
+<div style="display: flex; flex-direction: column; border-bottom: 1px solid var(--border)">
+<div class="step done">
+<span class="n" aria-hidden="true">1</span>
+<div class="b">
+<div class="row"><span style="font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.02em">The contract</span><span class="cap" style="color: var(--positive)">found on BNB Chain</span></div>
+<div class="mono" style="font-size: 14px">0x1234…abcd</div>
+</div>
+</div>
+<div class="step now">
+<span class="n" aria-hidden="true">2</span>
+<div class="b">
+<div class="row"><span style="font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.02em">Prove you own it</span><span class="cap">waiting for the owner</span></div>
+<p style="margin: 0; color: var(--muted-fg)">The contract reports its owner as <span class="mono" style="font-size: 13px; color: var(--fg)">0x9a…4e0</span>, a different wallet from the one connected. That owner signs once, with no gas, to name your Agent ID as the publisher.</p>
+<div style="border: 1px solid var(--border); background: var(--card)">
+<div class="row" style="padding: 12px 16px; border-bottom: 1px solid var(--border)"><span class="cap">share this request with the owner</span><span class="cap">valid for 24 hours</span></div>
+<div style="padding: 14px 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center"><span class="mono" style="flex: 1 1 260px; min-width: 0; font-size: 13px; color: var(--muted-fg); overflow-wrap: anywhere">sealflare.xyz/app/publish/sign/[request id]</span><button class="btn btn-s" type="button">Copy link</button></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="sig" class="cap">or paste the owner's signature</label>
+<div style="display: flex; flex-wrap: wrap; gap: 10px"><input id="sig" class="field mono" type="text" placeholder="0x…" style="flex: 999 1 260px; width: auto; min-width: 0"><button class="btn btn-p" type="button" disabled style="height: 48px; flex: 1 0 auto">Bind as publisher</button></div>
+</div>
+<p style="margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-fg)">If the owner is a Safe, they sign in the Safe app and it is checked on-chain.</p>
+</div>
+</div>
+<div class="step next">
+<span class="n" aria-hidden="true">3</span>
+<div class="b">
+<div class="row"><span style="font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.02em">Post a bond</span><span class="cap">optional</span></div>
+<p style="margin: 0">Up to 0.5 BNB. It takes 7 days to withdraw and can still be cut during that time. Half is cut if a challenge proves a violation.</p>
+</div>
+</div>
+</div>
+<p class="cap" style="margin: 0; font-size: 11px; line-height: 16px">sample data for layout. The request link is a placeholder.</p>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"]},"$preview":{"width":1280,"height":1140}}'>
+class Component extends DCLogic {
+renderVals() {
+return { themeClass: (this.props.theme ?? 'dark') === 'light' ? 'is-light' : '' };
+}
+}
+</script>
+</body>
+</html>

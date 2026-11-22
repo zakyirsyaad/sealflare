@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sealflare attest panel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+.sf{--bg:oklch(0.145 0 0);--fg:oklch(0.985 0 0);--card:oklch(0.205 0 0);--muted:oklch(0.269 0 0);--muted-fg:oklch(0.708 0 0);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(0.556 0 0);--primary:oklch(0.768 0.233 130.85);--primary-fg:oklch(0.274 0.072 132.109);--secondary:oklch(0.274 0.006 286.033);--secondary-fg:oklch(0.985 0 0);--destructive:oklch(0.704 0.191 22.216);--warning:oklch(0.828 0.189 84.429);--positive:oklch(0.768 0.233 130.85);background:var(--bg);color:var(--fg);font-family:'Instrument Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}
+.sf.is-light{--bg:oklch(1 0 0);--fg:oklch(0.145 0 0);--card:oklch(1 0 0);--muted:oklch(0.97 0 0);--muted-fg:oklch(0.5 0 0);--border:oklch(0.922 0 0);--input:oklch(0.87 0 0);--ring:oklch(0.708 0 0);--primary:oklch(0.841 0.238 128.85);--secondary:oklch(0.967 0.001 286.375);--secondary-fg:oklch(0.21 0.006 285.885);--destructive:oklch(0.577 0.245 27.325);--warning:oklch(0.555 0.163 48.998);--positive:oklch(0.532 0.157 131.589)}
+.sf *{box-sizing:border-box}
+.sf a{color:inherit}
+.sf button{cursor:pointer;font-family:inherit;border-radius:0}
+.sf :focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.mono{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+.cap{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 16px;border:0;font-size:14px;font-weight:500;white-space:nowrap;transition:filter .15s}
+.btn:hover{filter:brightness(1.08)}
+.btn-p{background:var(--primary);color:var(--primary-fg);font-weight:600;height:48px;font-size:16px}
+.btn-s{background:var(--secondary);color:var(--secondary-fg)}
+.btn-g{background:transparent;color:var(--muted-fg);height:32px;padding:0 10px;font-size:13px}
+.btn-g:hover{filter:none;background:var(--muted);color:var(--fg)}
+.pane{flex:1 1 360px;min-width:0;max-width:440px;display:flex;flex-direction:column;border:1px solid var(--border);background:var(--card)}
+.pane > header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)}
+.pane > section{padding:20px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:12px}
+.pane > footer{margin-top:auto;padding:20px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;justify-content:space-between;gap:16px;align-items:baseline}
+.opt{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;border:1px solid var(--border);background:transparent;color:var(--fg);text-align:left;font-size:14px;line-height:22px}
+.opt[aria-checked="true"]{border-color:var(--fg);background:var(--muted)}
+.opt i{flex-shrink:0;width:14px;height:14px;margin-top:4px;border:1px solid var(--ring)}
+.opt[aria-checked="true"] i{border-color:var(--fg);background:var(--fg);box-shadow:inset 0 0 0 3px var(--muted)}
+</style>
+</helmet>
+<div class="sf {{themeClass}}" style="min-height: 100vh; font-size: 14px; line-height: 22px; padding: 48px clamp(20px, 3.2vw, 40px) 64px">
+<div style="max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; flex-direction: column; gap: 8px; max-width: 760px">
+<h1 style="margin: 0; font-size: 38px; line-height: 42px; font-weight: 600; letter-spacing: -0.04em">The attest panel</h1>
+<p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--muted-fg)">It opens beside the target page when someone presses Attest. Three of its states, side by side. On a phone it becomes a full-screen sheet.</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: stretch">
+<div style="flex: 1 1 360px; min-width: 0; max-width: 440px; display: flex; flex-direction: column; gap: 10px">
+<span class="cap">step 1  choose your verdict</span>
+<div class="pane" style="flex: 1 1 auto; max-width: none">
+<header><span style="font-size: 18px; font-weight: 600; letter-spacing: -0.02em; flex-grow: 1">Attest</span><span class="cap">1 of 2</span><button class="btn btn-g" type="button">Close</button></header>
+<section>
+<div class="row"><span class="mono" style="font-size: 14px">0x1234…abcd</span><span class="cap">smart contract</span></div>
+<p style="margin: 0; color: var(--muted-fg)">The scanner suggests Caution. The choice is yours, and your Agent ID stands behind it.</p>
+</section>
+<section role="radiogroup" aria-label="Your verdict" style="gap: 8px">
+<button class="opt" type="button" role="radio" aria-checked="false"><i></i><span><span style="font-weight: 600">Safe</span><br><span style="color: var(--muted-fg)">You checked it and found nothing wrong.</span></span></button>
+<button class="opt" type="button" role="radio" aria-checked="true"><i></i><span><span style="font-weight: 600">Caution</span> <span class="cap">suggested</span><br><span style="color: var(--muted-fg)">It carries a risk people should know about.</span></span></button>
+<button class="opt" type="button" role="radio" aria-checked="false"><i></i><span><span style="font-weight: 600">Danger</span><br><span style="color: var(--muted-fg)">It breaks a safety rule, and you have the proof.</span></span></button>
+</section>
+<section>
+<span class="cap">flags you are reporting</span>
+<div style="display: flex; gap: 8px; flex-wrap: wrap"><span class="mono" style="padding: 3px 8px; background: var(--muted); font-size: 12px; line-height: 18px">UPGRADEABLE_NO_TIMELOCK</span><button class="btn btn-g" type="button" style="height: 24px">Add a flag</button></div>
+</section>
+<footer><button class="btn btn-p" type="button">Review</button></footer>
+</div>
+</div>
+<div style="flex: 1 1 360px; min-width: 0; max-width: 440px; display: flex; flex-direction: column; gap: 10px">
+<span class="cap">step 2  review, then sign</span>
+<div class="pane" style="flex: 1 1 auto; max-width: none">
+<header><span style="font-size: 18px; font-weight: 600; letter-spacing: -0.02em; flex-grow: 1">Review</span><span class="cap">2 of 2</span><button class="btn btn-g" type="button">Close</button></header>
+<section style="gap: 8px">
+<span class="cap">what goes on-chain</span>
+<div class="row"><span style="color: var(--muted-fg)">Target</span><span class="mono" style="font-size: 13px">0x1234…abcd</span></div>
+<div class="row"><span style="color: var(--muted-fg)">Verdict</span><span style="font-weight: 600; color: var(--warning)">Caution</span></div>
+<div class="row"><span style="color: var(--muted-fg)">Flag</span><span class="mono" style="font-size: 12px">UPGRADEABLE_NO_TIMELOCK</span></div>
+<div class="row"><span style="color: var(--muted-fg)">Evidence</span><span>Scan report, pinned to IPFS</span></div>
+<div class="row"><span style="color: var(--muted-fg)">BNB sent</span><span>None, gas only</span></div>
+</section>
+<section style="gap: 8px">
+<span class="cap">what you stand to gain or lose</span>
+<div class="row"><span>Reputation for this vote</span><span class="mono" style="font-size: 13px">0</span></div>
+<div class="row"><span>If it is later judged dangerous</span><span class="mono" style="font-size: 13px">no penalty</span></div>
+<p style="margin: 4px 0 0; color: var(--muted-fg)">A Safe vote here would earn +2, and lose 15 if the target is later judged dangerous.</p>
+</section>
+<section style="gap: 6px">
+<p style="margin: 0; font-weight: 600">This vote is permanent.</p>
+<p style="margin: 0; color: var(--muted-fg)">It cannot be changed or withdrawn. You have 3 of 5 attestations left today.</p>
+</section>
+<footer>
+<div class="row" style="align-items: center"><span class="cap">1  sign the evidence upload</span><span class="cap">no gas</span></div>
+<div class="row" style="align-items: center"><span class="cap">2  confirm the transaction</span><span class="cap">gas</span></div>
+<button class="btn btn-p" type="button" style="margin-top: 6px">Sign and attest</button>
+<button class="btn btn-s" type="button">Back</button>
+</footer>
+</div>
+</div>
+<div style="flex: 1 1 360px; min-width: 0; max-width: 440px; display: flex; flex-direction: column; gap: 10px">
+<span class="cap">no agent id in this wallet</span>
+<div class="pane" style="flex: 1 1 auto; max-width: none">
+<header><span style="font-size: 18px; font-weight: 600; letter-spacing: -0.02em; flex-grow: 1">Attest</span><button class="btn btn-g" type="button">Close</button></header>
+<section>
+<div style="display: flex; gap: 14px; align-items: center"><svg aria-hidden="true" width="52" height="52" viewBox="0 0 52 52" style="flex-shrink: 0"><circle cx="26" cy="26" r="21" fill="none" stroke-width="6" stroke-dasharray="3 6" style="stroke: var(--ring)"/></svg><span style="font-size: 22px; line-height: 26px; font-weight: 600; letter-spacing: -0.03em">This wallet has no Agent ID</span></div>
+<p style="margin: 0; color: var(--muted-fg)">Attesting takes an Agent ID, so that each person votes once. Your scan result stays on this page.</p>
+<div class="row"><span style="color: var(--muted-fg)">Connected</span><span class="mono" style="font-size: 13px">0x52…9c1</span></div>
+</section>
+<section style="gap: 8px">
+<button class="opt" type="button"><span><span style="font-weight: 600">I have one on another wallet</span><br><span style="color: var(--muted-fg)">Switch wallet, or connect your phone wallet with a QR code.</span></span></button>
+<button class="opt" type="button"><span><span style="font-weight: 600">Get an Agent ID</span><br><span style="color: var(--muted-fg)">Opens the official page in a new tab. [link from the hackathon material]</span></span></button>
+</section>
+<footer><button class="btn btn-s" type="button">Check again</button><p style="margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-fg)">Checks this wallet again without reloading the page.</p></footer>
+</div>
+</div>
+</div>
+<p class="cap" style="margin: 0; font-size: 11px; line-height: 16px">sample data for layout</p>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"]},"$preview":{"width":1440,"height":1090}}'>
+class Component extends DCLogic {
+renderVals() {
+return { themeClass: (this.props.theme ?? 'dark') === 'light' ? 'is-light' : '' };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sealflare scan</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+.sf{--bg:oklch(0.145 0 0);--fg:oklch(0.985 0 0);--card:oklch(0.205 0 0);--muted:oklch(0.269 0 0);--muted-fg:oklch(0.708 0 0);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(0.556 0 0);--primary:oklch(0.768 0.233 130.85);--primary-fg:oklch(0.274 0.072 132.109);--secondary:oklch(0.274 0.006 286.033);--secondary-fg:oklch(0.985 0 0);--destructive:oklch(0.704 0.191 22.216);--warning:oklch(0.828 0.189 84.429);--positive:oklch(0.768 0.233 130.85);background:var(--bg);color:var(--fg);font-family:'Instrument Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}
+.sf.is-light{--bg:oklch(1 0 0);--fg:oklch(0.145 0 0);--card:oklch(1 0 0);--muted:oklch(0.97 0 0);--muted-fg:oklch(0.5 0 0);--border:oklch(0.922 0 0);--input:oklch(0.87 0 0);--ring:oklch(0.708 0 0);--primary:oklch(0.841 0.238 128.85);--secondary:oklch(0.967 0.001 286.375);--secondary-fg:oklch(0.21 0.006 285.885);--destructive:oklch(0.577 0.245 27.325);--warning:oklch(0.555 0.163 48.998);--positive:oklch(0.532 0.157 131.589)}
+.sf *{box-sizing:border-box}
+.sf a{color:inherit;text-decoration:none}
+.sf button{cursor:pointer;font-family:inherit;border-radius:0}
+.sf button:focus-visible,.sf a:focus-visible,.sf input:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.sf input::placeholder{color:var(--muted-fg)}
+.mono{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+.sf-nav a{color:var(--muted-fg);transition:color .15s}
+.sf-nav a:hover{color:var(--fg)}
+.sf-btn{transition:filter .15s}
+.sf-btn:hover{filter:brightness(1.08)}
+@media (max-width: 760px){.sf-appnav{order:3;flex:1 1 100% !important;flex-wrap:nowrap !important;overflow-x:auto;white-space:nowrap}}
+.sf-crop{position:relative}
+.sf-crop::before,.sf-crop::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--positive);pointer-events:none}
+.sf-crop::before{left:-1px;top:-1px;border-right:0;border-bottom:0}
+.sf-crop::after{right:-1px;bottom:-1px;border-left:0;border-top:0}
+</style>
+</helmet>
+<div class="sf {{themeClass}}" style="min-height: 100vh; font-size: 14px; line-height: 22px">
+<header style="border-bottom: 1px solid var(--border)">
+<div class="sf-nav" style="max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 3.2vw, 40px); min-height: 60px; display: flex; align-items: center; gap: 8px 32px; flex-wrap: wrap">
+<span style="font-size: 20px; font-weight: 600; letter-spacing: -0.04em">seal<span style="color: var(--positive)">flare</span></span>
+<nav aria-label="App" class="sf-appnav" style="display: flex; gap: 24px; flex-wrap: wrap; flex-grow: 1; font-size: 14px">
+<a href="#scan" style="color: var(--fg); font-weight: 500; padding: 19px 0; box-shadow: inset 0 -2px 0 var(--positive)">Scan</a>
+<a href="#explore" style="padding: 19px 0">Explore</a>
+<a href="#disputes" style="padding: 19px 0">Disputes</a>
+<a href="#bounties" style="padding: 19px 0">Bounties</a>
+<a href="#guardians" style="padding: 19px 0">Guardians</a>
+</nav>
+<button class="sf-btn" type="button" style="height: 36px; padding: 0 16px; border: 0; background: var(--secondary); color: var(--secondary-fg); font-size: 14px; font-weight: 500">Connect wallet</button>
+</div>
+</header>
+<main style="max-width: 1240px; margin: 0 auto; padding: 96px clamp(20px, 3.2vw, 40px) 72px; display: flex; flex-direction: column; gap: 72px">
+<div style="display: flex; flex-direction: column; gap: 32px; max-width: 880px">
+<h1 style="margin: 0; font-size: clamp(40px, 5.4vw, 72px); line-height: 1; font-weight: 600; letter-spacing: -0.045em">Scan a contract or an AI skill.</h1>
+<form class="sf-crop" style="display: flex; flex-wrap: wrap">
+<label for="target" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Contract address or repository link</label>
+<input id="target" class="mono" type="text" placeholder="0x… or github.com/owner/skill" style="flex: 999 1 320px; min-width: 0; height: 68px; padding: 0 22px; border: 1px solid var(--input); border-radius: 0; background: var(--card); color: var(--fg); font-size: 16px">
+<button class="sf-btn" type="submit" style="height: 68px; padding: 0 44px; border: 0; background: var(--primary); color: var(--primary-fg); font-size: 18px; font-weight: 600; flex: 1 0 auto">Scan</button>
+</form>
+<p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--muted-fg)">Paste a BNB Chain contract address or a link to a skill repository. The result takes a few seconds, and you do not need a wallet.</p>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border)">
+<div style="padding: 24px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">contracts</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.02em">Proxies, hidden mints, honeypots</span><span style="color: var(--muted-fg)">Verified source, upgrade paths, delegatecall, and a transfer dry-run.</span></div>
+<div style="padding: 24px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">ai skills</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.02em">Every file, hashed and searched</span><span style="color: var(--muted-fg)">Hidden characters, hard-coded addresses, remote code, then six attack probes.</span></div>
+<div style="padding: 24px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">after the scan</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.02em">Put your Agent ID behind it</span><span style="color: var(--muted-fg)">The first three Guardians to attest a target earn the most reputation.</span></div>
+</div>
+<section aria-label="Recently rated" style="border: 1px solid var(--border); background: var(--card)">
+<h2 class="mono" style="margin: 0; padding: 14px 24px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 18px; font-weight: 400; color: var(--muted-fg)">recently rated</h2>
+<div style="padding: 40px 24px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap">
+<svg aria-hidden="true" width="56" height="56" viewBox="0 0 56 56" style="flex-shrink: 0"><circle cx="28" cy="28" r="22" fill="none" stroke-width="7" stroke-dasharray="3 6" style="stroke: var(--ring)"/></svg>
+<div style="display: flex; flex-direction: column; gap: 2px"><p style="margin: 0; font-size: 18px; line-height: 26px; font-weight: 600">Nothing has been rated yet</p><p style="margin: 0; color: var(--muted-fg)">Scan a target above and be the first Guardian to seal it.</p></div>
+</div>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"]},"$preview":{"width":1280,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+return { themeClass: (this.props.theme ?? 'dark') === 'light' ? 'is-light' : '' };
+}
+}
+</script>
+</body>
+</html>

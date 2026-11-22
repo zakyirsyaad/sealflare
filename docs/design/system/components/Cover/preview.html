@@ -1,0 +1,36 @@
+<!-- @dsCard height=300 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+.cv{position:relative;width:960px;height:300px;overflow:hidden;background:var(--background)}
+.cv svg{position:absolute;inset:0;display:block}
+.cv .b-primary{fill:var(--primary)}
+.cv .b-ink{fill:var(--foreground)}
+.cv .b-grey{fill:var(--muted-foreground)}
+.cv .b-danger{fill:var(--destructive)}
+.cv rect{rx:var(--radius)}
+.cv .ring{fill:none;stroke:var(--primary-foreground);stroke-width:12px}
+.cv .txt{position:absolute;left:40px;bottom:36px;max-width:440px;display:flex;flex-direction:column;gap:12px;font-family:var(--font-sans)}
+.cv .name{margin:0;font-size:80px;line-height:74px;font-weight:600;letter-spacing:-0.045em;color:var(--foreground)}
+.cv .tag{margin:0;font-size:14px;line-height:20px;color:var(--muted-foreground)}
+</style>
+<div class="cv">
+<svg width="960" height="300" viewBox="0 0 960 300" aria-hidden="true">
+<!--
+blocks: primary 240x240, muted-foreground 240x120, foreground 120x120, destructive 48x48 (sides are multiples of space-6, 24px)
+arrangement: a flush modular grid bleeding off the top and right edges, the lime block largest because it is the one brand hue
+pattern: a literal motif, the seal. Three concentric rings in primary-foreground inside the lime block, because the seal is the only round thing in the system
+steps and radii: pitch space-6 (24px), ring stroke space-3 (12px), every corner radius (0)
+-->
+<rect class="b-grey" x="480" y="0" width="240" height="120"/>
+<rect class="b-ink" x="600" y="120" width="120" height="120"/>
+<rect class="b-primary" x="720" y="0" width="240" height="240"/>
+<rect class="b-danger" x="720" y="240" width="48" height="48"/>
+<circle class="ring" cx="840" cy="120" r="36"/>
+<circle class="ring" cx="840" cy="120" r="66"/>
+<circle class="ring" cx="840" cy="120" r="96"/>
+</svg>
+<div class="txt">
+<p class="name">Sealflare</p>
+<p class="tag">Trust the code your agent runs.</p>
+</div>
+</div>

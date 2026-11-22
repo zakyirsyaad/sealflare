@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sealflare landing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+.sf{--bg:oklch(0.145 0 0);--fg:oklch(0.985 0 0);--card:oklch(0.205 0 0);--muted:oklch(0.269 0 0);--muted-fg:oklch(0.708 0 0);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(0.556 0 0);--primary:oklch(0.768 0.233 130.85);--primary-fg:oklch(0.274 0.072 132.109);--secondary:oklch(0.274 0.006 286.033);--secondary-fg:oklch(0.985 0 0);--destructive:oklch(0.704 0.191 22.216);--warning:oklch(0.828 0.189 84.429);--positive:oklch(0.768 0.233 130.85);background:var(--bg);color:var(--fg);font-family:'Instrument Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}
+.sf.is-light{--bg:oklch(1 0 0);--fg:oklch(0.145 0 0);--card:oklch(1 0 0);--muted:oklch(0.97 0 0);--muted-fg:oklch(0.5 0 0);--border:oklch(0.922 0 0);--input:oklch(0.87 0 0);--ring:oklch(0.708 0 0);--primary:oklch(0.841 0.238 128.85);--secondary:oklch(0.967 0.001 286.375);--secondary-fg:oklch(0.21 0.006 285.885);--destructive:oklch(0.577 0.245 27.325);--warning:oklch(0.555 0.163 48.998);--positive:oklch(0.532 0.157 131.589)}
+.sf *{box-sizing:border-box}
+.sf a{color:inherit;text-decoration:none}
+.sf button{cursor:pointer;font-family:inherit}
+.sf button:focus-visible,.sf a:focus-visible,.sf input:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.sf input::placeholder{color:var(--muted-fg)}
+.mono{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+.sf-nav a{color:var(--muted-fg);transition:color .15s}
+.sf-nav a:hover{color:var(--fg)}
+.sf-btn{transition:filter .15s}
+.sf-btn:hover{filter:brightness(1.08)}
+.sf-crop{position:relative}
+.sf-crop::before,.sf-crop::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--positive);pointer-events:none}
+.sf-crop::before{left:-1px;top:-1px;border-right:0;border-bottom:0}
+.sf-crop::after{right:-1px;bottom:-1px;border-left:0;border-top:0}
+@keyframes sf-spin{to{transform:rotate(360deg)}}
+@keyframes sf-draw{from{stroke-dashoffset:1257}to{stroke-dashoffset:0}}
+@keyframes sf-rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes sf-jolt{0%{transform:rotate(0)}20%{transform:rotate(-6deg)}45%{transform:rotate(3.5deg)}70%{transform:rotate(-1.5deg)}100%{transform:rotate(0)}}
+@keyframes sf-flare{0%{opacity:0;transform:scale(.78)}30%{opacity:1;transform:scale(1.06)}100%{opacity:.75;transform:scale(1)}}
+@keyframes sf-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.sf-in{animation:sf-rise .7s cubic-bezier(.2,.7,.2,1) both}
+.sf-ring{transform-origin:300px 300px;animation:sf-spin 160s linear infinite}
+.is-paused .sf-ring{animation-play-state:paused}
+.sf-body{transform-origin:300px 300px}
+.is-broken .sf-body{animation:sf-jolt .5s ease-out}
+.sf-arc{stroke:var(--positive);stroke-dasharray:1257;stroke-dashoffset:0;animation:sf-draw 1.6s cubic-bezier(.2,.7,.2,1) .25s both;transition:stroke .3s,stroke-dashoffset .5s}
+.is-broken .sf-arc{stroke:var(--destructive);stroke-dashoffset:190;animation:none}
+.sf-rays{opacity:0;transform-origin:300px 300px;stroke:var(--destructive)}
+.is-broken .sf-rays{animation:sf-flare .7s ease-out both}
+.sf-hash-a,.sf-hash-b{transition:opacity .35s}
+.sf-hash-a{fill:var(--muted-fg)}
+.sf-hash-b{fill:var(--destructive);opacity:0}
+.is-broken .sf-hash-a{opacity:0}
+.is-broken .sf-hash-b{opacity:1}
+.sf-on-broken{display:none}
+.is-broken .sf-on-broken{display:revert}
+.is-broken .sf-on-sealed{display:none}
+.sf-row{transition:padding-left .2s}
+.sf-row:hover{padding-left:16px}
+.sf-line{transform-origin:left center}
+@supports (animation-timeline: view()){
+.sf-view{animation:sf-rise linear both;animation-timeline:view();animation-range:entry 0% entry 70%}
+.sf-line{animation:sf-grow linear both;animation-timeline:view();animation-range:cover 0% cover 14%}
+}
+@media (prefers-reduced-motion: reduce){
+.sf-in,.sf-view,.sf-ring,.sf-arc,.sf-line,.is-broken .sf-body,.is-broken .sf-rays{animation:none}
+.is-broken .sf-rays{opacity:.75}
+.sf-row{transition:none}
+}
+</style>
+</helmet>
+<div class="sf {{themeClass}} {{rootClass}}" style="min-height: 100vh; font-size: 15px; line-height: 24px; overflow: hidden">
+<header style="border-bottom: 1px solid var(--border)">
+<div class="sf-nav" style="max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 3.2vw, 40px); height: 60px; display: flex; align-items: center; gap: 28px">
+<span style="font-size: 20px; font-weight: 600; letter-spacing: -0.04em; flex-grow: 1">seal<span style="color: var(--positive)">flare</span></span>
+<a href="#docs" style="font-size: 14px">Docs</a>
+<a href="#github" style="font-size: 14px">GitHub</a>
+<a class="sf-btn" href="#app" style="display: inline-flex; align-items: center; height: 36px; padding: 0 16px; background: var(--secondary); color: var(--secondary-fg); font-size: 14px; font-weight: 500">Launch app</a>
+</div>
+</header>
+<main>
+<section style="max-width: 1240px; margin: 0 auto; padding: 88px clamp(20px, 3.2vw, 40px) 96px; display: flex; flex-wrap: wrap; align-items: center; gap: 72px 96px">
+<div style="flex: 1 1 440px; min-width: 0; display: flex; flex-direction: column; gap: 32px">
+<h1 class="sf-in" style="margin: 0; font-size: clamp(44px, 5.9vw, 80px); line-height: 0.98; font-weight: 600; letter-spacing: -0.045em">Trust the code your agent runs.</h1>
+<p class="sf-in" style="margin: 0; font-size: 19px; line-height: 29px; color: var(--muted-fg); max-width: 460px; animation-delay: .1s">Scan any BNB Chain contract or AI skill. Real people sign off on the result, one Agent ID, one vote.</p>
+<form class="sf-in" style="display: flex; flex-wrap: wrap; max-width: 540px; animation-delay: .2s">
+<label for="hero-target" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Contract address or repository link</label>
+<input id="hero-target" class="mono" type="text" placeholder="0x… or github.com/owner/skill" style="flex: 999 1 260px; min-width: 0; height: 56px; padding: 0 18px; border: 1px solid var(--input); border-radius: 0; background: var(--card); color: var(--fg); font-size: 14px">
+<button class="sf-btn" type="submit" style="height: 56px; padding: 0 32px; border: 0; border-radius: 0; background: var(--primary); color: var(--primary-fg); font-size: 16px; font-weight: 600; flex: 1 0 auto">Scan</button>
+</form>
+<p class="sf-in mono" style="margin: 0; font-size: 12px; line-height: 18px; color: var(--muted-fg); animation-delay: .28s">Free. No wallet needed.</p>
+</div>
+<div style="flex: 1 1 380px; min-width: 0; max-width: 540px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px">
+<button type="button" class="sf-crop" onClick="{{togglePaused}}" aria-pressed="{{pausedPressed}}" aria-label="Pause or resume the seal animation" style="display: block; width: 100%; padding: 0; border: 1px solid var(--border); border-radius: 0; background: transparent; color: inherit">
+<span aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--border)"></span>
+<span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--border)"></span>
+<svg viewBox="0 0 600 600" role="img" aria-label="A seal built from a file hash. It breaks when one byte changes." style="position: relative; display: block; width: 100%; height: auto">
+<defs><path id="sf-circle" d="M300 300 m-250 0 a250 250 0 1 1 500 0 a250 250 0 1 1 -500 0"/></defs>
+<g class="sf-rays" stroke-width="4">
+<line x1="300" y1="30" x2="300" y2="6"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(22.5 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(45 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(67.5 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(90 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(112.5 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(135 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(157.5 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(180 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(202.5 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(225 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(247.5 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(270 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(292.5 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(315 300 300)"/><line x1="300" y1="30" x2="300" y2="6" transform="rotate(337.5 300 300)"/>
+</g>
+<g class="sf-body">
+<circle cx="300" cy="300" r="268" style="fill: var(--bg)"/>
+<g class="sf-ring mono" style="font-size: 15px; letter-spacing: 2.45px">
+<text class="sf-hash-a"><textPath href="#sf-circle">0x7a3f9c1eb2d44a07c9e15f3382ab6d1094ce7708f5a1e3bd62c40d97b204d8e1  ·  0x7a3f9c1eb2d44a07c9e15f3382ab6d1094ce7708f5a1e3bd62c40d97b204d8e1  ·</textPath></text>
+<text class="sf-hash-b"><textPath href="#sf-circle">0x1d05e7aa39f0c2b84e6d7711a0c35f29d48b6ee1057ac3f8209bd4c693c6f02b  ·  0x1d05e7aa39f0c2b84e6d7711a0c35f29d48b6ee1057ac3f8209bd4c693c6f02b  ·</textPath></text>
+</g>
+<circle cx="300" cy="300" r="228" fill="none" stroke-width="7" stroke-dasharray="1 5.632" style="stroke: var(--ring)"/>
+<circle cx="300" cy="300" r="200" fill="none" stroke-width="18" style="stroke: var(--muted)"/>
+<circle class="sf-arc" cx="300" cy="300" r="200" fill="none" stroke-width="18" transform="rotate(-90 300 300)"/>
+<circle cx="300" cy="300" r="160" stroke-width="1" style="fill: var(--card); stroke: var(--border)"/>
+</g>
+</svg>
+<span style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; pointer-events: none">
+<span class="sf-on-sealed" style="font-size: clamp(28px, 3.5vw, 46px); line-height: 1.05; font-weight: 600; letter-spacing: -0.04em; color: var(--positive)">Sealed</span>
+<span class="sf-on-broken" style="font-size: clamp(28px, 3.5vw, 46px); line-height: 1.05; font-weight: 600; letter-spacing: -0.04em; color: var(--destructive)">Broken</span>
+<span class="sf-on-sealed mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">every byte unchanged</span>
+<span class="sf-on-broken mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">1 byte changed</span>
+</span>
+</button>
+<p class="mono" style="margin: 0; font-size: 11px; line-height: 16px; color: var(--muted-fg); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap"><span>fig. 1  the seal on a skill bundle</span><span>illustration, example hashes</span></p>
+</div>
+</section>
+<section style="border-top: 1px solid var(--border); border-bottom: 1px solid var(--border)">
+<div style="max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 3.2vw, 40px); display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr))">
+<div style="padding: 24px 24px 24px 0; display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">chain</span><span style="font-size: 17px; font-weight: 500">BNB Smart Chain</span></div>
+<div style="padding: 24px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">identity</span><span style="font-size: 17px; font-weight: 500">Agent ID, one person, one vote</span></div>
+<div style="padding: 24px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">contracts</span><span style="font-size: 17px; font-weight: 500">No upgrades, no owner</span></div>
+</div>
+</section>
+<section>
+<div style="max-width: 1240px; margin: 0 auto; padding: 112px clamp(20px, 3.2vw, 40px); display: flex; flex-direction: column; gap: 56px">
+<h2 style="margin: 0; font-size: clamp(38px, 5vw, 68px); line-height: 1; font-weight: 600; letter-spacing: -0.045em; max-width: 880px">See the evidence, not a score.</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 56px; align-items: flex-start">
+<div class="sf-view sf-crop" style="flex: 5 1 560px; min-width: 0; background: var(--card); border: 1px solid var(--border)">
+<div style="padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap">
+<span class="mono" style="font-size: 14px">0x1234…abcd</span>
+<span style="padding: 2px 8px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg)">Smart contract</span>
+<span style="flex-grow: 1"></span>
+<span class="mono" style="font-size: 11px; line-height: 16px; color: var(--muted-fg)">sample result</span>
+</div>
+<div style="padding: 24px 20px; display: flex; gap: 16px; align-items: center; border-bottom: 1px solid var(--border)">
+<svg aria-hidden="true" width="52" height="52" viewBox="0 0 52 52" style="flex-shrink: 0"><circle cx="26" cy="26" r="21" fill="none" stroke-width="6" style="stroke: var(--muted)"/><circle cx="26" cy="26" r="21" fill="none" stroke-width="6" stroke-dasharray="100 32" transform="rotate(-70 26 26)" style="stroke: var(--warning)"/></svg>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 30px; line-height: 34px; font-weight: 600; letter-spacing: -0.035em">Caution flagged</span><span style="color: var(--muted-fg)">Upgradeable proxy with no timelock. Three guardians report a hidden mint.</span></div>
+</div>
+<div style="padding: 20px; border-bottom: 1px solid var(--border)">
+<div class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg); padding-bottom: 10px">community signal</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 420px; border-collapse: collapse; font-size: 14px; line-height: 20px">
+<thead><tr style="color: var(--muted-fg); text-align: left"><th scope="col" style="font-weight: 400; padding: 0 12px 8px 0">Who</th><th scope="col" style="font-weight: 400; padding: 0 12px 8px">Safe</th><th scope="col" style="font-weight: 400; padding: 0 12px 8px">Caution</th><th scope="col" style="font-weight: 400; padding: 0 0 8px 12px">Danger</th></tr></thead>
+<tbody>
+<tr><th scope="row" style="text-align: left; font-weight: 500; padding: 10px 12px 10px 0; border-top: 1px solid var(--border)">New Agent IDs</th><td class="mono" style="padding: 10px 12px; border-top: 1px solid var(--border)">42</td><td class="mono" style="padding: 10px 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td><td class="mono" style="padding: 10px 0 10px 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td></tr>
+<tr><th scope="row" style="text-align: left; font-weight: 500; padding: 10px 12px 10px 0; border-top: 1px solid var(--border)">Guardians, weight 15</th><td class="mono" style="padding: 10px 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td><td class="mono" style="padding: 10px 12px; border-top: 1px solid var(--border); color: var(--muted-fg)">0</td><td class="mono" style="padding: 10px 0 10px 12px; border-top: 1px solid var(--border); color: var(--destructive); font-weight: 500">3</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border)">
+<div class="mono" style="font-size: 12px; line-height: 18px; color: var(--muted-fg)">findings</div>
+<div style="display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap"><span class="mono" style="width: 72px; font-size: 12px; color: var(--positive)">passed</span><span style="flex: 1 1 200px">Source verified on BscScan</span></div>
+<div style="display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap"><span class="mono" style="width: 72px; font-size: 12px; color: var(--warning)">flagged</span><span style="flex: 1 1 200px">Owner can replace the code</span></div>
+<div style="display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap"><span class="mono" style="width: 72px; font-size: 12px; color: var(--destructive)">reported</span><span style="flex: 1 1 200px">Owner can mint without a cap</span></div>
+<div class="mono" style="padding: 10px 12px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg); overflow-wrap: anywhere">function mint(address to, uint256 amount) external onlyOwner</div>
+</div>
+<div style="padding: 14px 20px; display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap">
+<span style="display: inline-flex; align-items: center; height: 36px; padding: 0 16px; background: var(--secondary); color: var(--secondary-fg); font-size: 14px; font-weight: 500">Open a challenge</span>
+<span style="display: inline-flex; align-items: center; height: 36px; padding: 0 20px; background: var(--primary); color: var(--primary-fg); font-size: 14px; font-weight: 600">Attest</span>
+</div>
+</div>
+<ul style="flex: 3 1 320px; min-width: 0; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
+<li class="sf-view" style="padding: 22px 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">community signal</span><span style="font-size: 24px; line-height: 30px; font-weight: 500; letter-spacing: -0.025em">Who vouched, never one blended score</span></li>
+<li class="sf-view" style="padding: 22px 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">findings</span><span style="font-size: 24px; line-height: 30px; font-weight: 500; letter-spacing: -0.025em">What the scanner found, with the line that proves it</span></li>
+<li class="sf-view" style="padding: 22px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">your move</span><span style="font-size: 24px; line-height: 30px; font-weight: 500; letter-spacing: -0.025em">Attest it with your Agent ID, or challenge it</span></li>
+</ul>
+</div>
+</div>
+</section>
+<section style="border-top: 1px solid var(--border); background: var(--card)">
+<div style="max-width: 1240px; margin: 0 auto; padding: 112px clamp(20px, 3.2vw, 40px); display: flex; flex-wrap: wrap; gap: 64px 72px; align-items: center">
+<div style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 28px">
+<h2 style="margin: 0; font-size: clamp(38px, 5vw, 68px); line-height: 1; font-weight: 600; letter-spacing: -0.045em">We attack every skill first.</h2>
+<p style="margin: 0; font-size: 19px; line-height: 29px; color: var(--muted-fg); max-width: 440px">Six attacks against a mock wallet. One forbidden call and the skill fails.</p>
+<ul class="mono" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); font-size: 12px; line-height: 18px; max-width: 540px">
+<li style="padding: 12px 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted-fg)">injected instructions</li>
+<li style="padding: 12px 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted-fg)">skipped confirmation</li>
+<li style="padding: 12px 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted-fg)">silent transfer</li>
+<li style="padding: 12px 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted-fg)">key theft</li>
+<li style="padding: 12px 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: color-mix(in oklab, var(--destructive) 16%, transparent); color: var(--destructive); font-weight: 500">approval escalation</li>
+<li style="padding: 12px 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted-fg)">scanner override</li>
+</ul>
+</div>
+<figure class="sf-crop" style="flex: 1 1 460px; min-width: 0; margin: 0; background: var(--bg); border: 1px solid var(--border)">
+<figcaption class="mono" style="padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 18px; color: var(--muted-fg); display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between"><span>sandbox log, demo skill</span><span>[replace with the real log before launch]</span></figcaption>
+<div class="mono" style="padding: 28px 24px; font-size: 15px; line-height: 32px; overflow-x: auto; white-space: nowrap">
+<div class="sf-view"><span style="color: var(--muted-fg)">probe&nbsp;&nbsp;&nbsp;&nbsp;</span>approval escalation</div>
+<div class="sf-view"><span style="color: var(--muted-fg)">call&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>approve(spender, <span style="color: var(--destructive)">MAX_UINT256</span>)</div>
+<div class="sf-view"><span style="color: var(--muted-fg)">spender&nbsp;&nbsp;</span>0x… <span style="color: var(--muted-fg)">hidden from the user</span></div>
+<div class="sf-view"><span style="color: var(--muted-fg)">result&nbsp;&nbsp;&nbsp;</span><span style="padding: 4px 10px; background: var(--destructive); color: var(--bg); font-weight: 500">blocked</span></div>
+</div>
+</figure>
+</div>
+</section>
+<section style="border-top: 1px solid var(--border)">
+<div style="max-width: 1240px; margin: 0 auto; padding: 112px clamp(20px, 3.2vw, 40px); display: flex; flex-direction: column; gap: 56px">
+<h2 style="margin: 0; font-size: clamp(38px, 5vw, 68px); line-height: 1; font-weight: 600; letter-spacing: -0.045em; max-width: 760px">Four steps from a link to a verdict.</h2>
+<div style="position: relative; border-left: 1px solid var(--border)">
+<div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--border)"></div>
+<div aria-hidden="true" class="sf-line" style="position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--positive)"></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr))">
+<div class="sf-view" style="padding: 32px 24px 28px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">01 scan</span><span style="font-size: 24px; line-height: 28px; font-weight: 600; letter-spacing: -0.03em">Checklist in seconds</span>
+<div style="margin-top: 12px; font-size: 14px; line-height: 26px; min-height: 84px"><div style="display: flex; gap: 12px"><span class="mono" style="width: 60px; font-size: 12px; color: var(--positive)">passed</span><span>Source verified</span></div><div style="display: flex; gap: 12px"><span class="mono" style="width: 60px; font-size: 12px; color: var(--warning)">flagged</span><span>Proxy, no timelock</span></div><div style="display: flex; gap: 12px"><span class="mono" style="width: 60px; font-size: 12px; color: var(--positive)">passed</span><span>Transfer dry-run</span></div></div></div>
+<div class="sf-view" style="padding: 32px 24px 28px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">02 sandbox</span><span style="font-size: 24px; line-height: 28px; font-weight: 600; letter-spacing: -0.03em">Attack rehearsal</span>
+<div class="mono" style="margin-top: 12px; font-size: 12px; line-height: 26px; min-height: 84px; overflow-wrap: anywhere"><div style="color: var(--muted-fg)">6 probes, 3 runs each</div><div>approve(MAX_UINT256)</div><div><span style="padding: 2px 8px; background: var(--destructive); color: var(--bg); font-weight: 500">blocked</span></div></div></div>
+<div class="sf-view" style="padding: 32px 24px 28px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">03 attest</span><span style="font-size: 24px; line-height: 28px; font-weight: 600; letter-spacing: -0.03em">One person, one vote</span>
+<div class="mono" style="margin-top: 12px; font-size: 12px; line-height: 26px; min-height: 84px"><div style="display: flex; gap: 10px; justify-content: space-between"><span style="color: var(--muted-fg)">0x8f…21</span><span>safe</span></div><div style="display: flex; gap: 10px; justify-content: space-between"><span style="color: var(--muted-fg)">0x3c…9a</span><span>safe</span></div><div style="display: flex; gap: 10px; justify-content: space-between"><span style="color: var(--muted-fg)">0xb7…e4</span><span style="color: var(--destructive)">danger</span></div></div></div>
+<div class="sf-view" style="padding: 32px 24px 28px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px"><span class="mono" style="font-size: 12px; line-height: 18px; color: var(--positive)">04 firewall</span><span style="font-size: 24px; line-height: 28px; font-weight: 600; letter-spacing: -0.03em">One call to check</span>
+<div class="mono" style="margin-top: 12px; font-size: 12px; line-height: 26px; min-height: 84px; overflow-wrap: anywhere"><div>verifyContract(target)</div><div style="color: var(--muted-fg)">returns</div><div style="color: var(--warning)">CAUTION_FLAGGED</div></div></div>
+</div>
+</div>
+<p class="mono" style="margin: 0; font-size: 11px; line-height: 16px; color: var(--muted-fg)">sample values for illustration</p>
+</div>
+</section>
+<section style="background: var(--primary); color: var(--primary-fg)">
+<div style="max-width: 1240px; margin: 0 auto; padding: 40px clamp(20px, 3.2vw, 40px); display: flex; flex-direction: column">
+<a class="sf-row" href="#app" style="padding: 36px 0; border-bottom: 2px solid var(--primary-fg); display: flex; gap: 16px; flex-wrap: wrap; align-items: baseline; justify-content: space-between"><span style="font-size: clamp(36px, 5.6vw, 76px); line-height: 1; font-weight: 600; letter-spacing: -0.05em">Become a Guardian</span><span style="font-size: 17px; font-weight: 500">Put your Agent ID behind a verdict</span></a>
+<a class="sf-row" href="#publish" style="padding: 36px 0; border-bottom: 2px solid var(--primary-fg); display: flex; gap: 16px; flex-wrap: wrap; align-items: baseline; justify-content: space-between"><span style="font-size: clamp(36px, 5.6vw, 76px); line-height: 1; font-weight: 600; letter-spacing: -0.05em">Bind your work</span><span style="font-size: 17px; font-weight: 500">Sign your contract or skill</span></a>
+<a class="sf-row" href="#docs" style="padding: 36px 0; display: flex; gap: 16px; flex-wrap: wrap; align-items: baseline; justify-content: space-between"><span style="font-size: clamp(36px, 5.6vw, 76px); line-height: 1; font-weight: 600; letter-spacing: -0.05em">Protect your agent</span><span style="font-size: 17px; font-weight: 500">Read the SDK docs</span></a>
+</div>
+</section>
+<footer>
+<div class="sf-nav mono" style="max-width: 1240px; margin: 0 auto; padding: 28px clamp(20px, 3.2vw, 40px); display: flex; gap: 28px; flex-wrap: wrap; align-items: baseline; font-size: 12px; line-height: 18px; color: var(--muted-fg)">
+<span style="flex: 1 1 320px">No upgrades. No owner. Not yet audited by a third party.</span>
+<a href="#bscscan">contracts [link after deploy]</a>
+<a href="#github">source</a>
+<a href="#docs">owner permissions</a>
+</div>
+</footer>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"]},"$preview":{"width":1280,"height":3710}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { broken: false, paused: false };
+this.togglePaused = () => this.setState({ paused: !this.state.paused });
+}
+componentDidMount() {
+const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (reduce) return;
+const tick = () => {
+let next = this.state.broken;
+if (!this.state.paused) {
+next = !this.state.broken;
+this.setState({ broken: next });
+}
+this.timer = setTimeout(tick, next ? 3200 : 5200);
+};
+this.timer = setTimeout(tick, 4200);
+}
+componentWillUnmount() {
+clearTimeout(this.timer);
+}
+renderVals() {
+const s = this.state || {};
+return {
+themeClass: (this.props.theme ?? 'dark') === 'light' ? 'is-light' : '',
+rootClass: (s.broken ? 'is-broken ' : '') + (s.paused ? 'is-paused' : ''),
+pausedPressed: s.paused ? 'true' : 'false',
+togglePaused: this.togglePaused
+};
+}
+}
+</script>
+</body>
+</html>

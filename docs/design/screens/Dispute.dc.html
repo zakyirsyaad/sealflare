@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sealflare dispute</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+.sf{--bg:oklch(0.145 0 0);--fg:oklch(0.985 0 0);--card:oklch(0.205 0 0);--muted:oklch(0.269 0 0);--muted-fg:oklch(0.708 0 0);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(0.556 0 0);--primary:oklch(0.768 0.233 130.85);--primary-fg:oklch(0.274 0.072 132.109);--secondary:oklch(0.274 0.006 286.033);--secondary-fg:oklch(0.985 0 0);--destructive:oklch(0.704 0.191 22.216);--warning:oklch(0.828 0.189 84.429);--positive:oklch(0.768 0.233 130.85);background:var(--bg);color:var(--fg);font-family:'Instrument Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}
+.sf.is-light{--bg:oklch(1 0 0);--fg:oklch(0.145 0 0);--card:oklch(1 0 0);--muted:oklch(0.97 0 0);--muted-fg:oklch(0.5 0 0);--border:oklch(0.922 0 0);--input:oklch(0.87 0 0);--ring:oklch(0.708 0 0);--primary:oklch(0.841 0.238 128.85);--secondary:oklch(0.967 0.001 286.375);--secondary-fg:oklch(0.21 0.006 285.885);--destructive:oklch(0.577 0.245 27.325);--warning:oklch(0.555 0.163 48.998);--positive:oklch(0.532 0.157 131.589)}
+.sf *{box-sizing:border-box}
+.sf a{color:inherit;text-decoration:none}
+.sf button{cursor:pointer;font-family:inherit;border-radius:0}
+.sf :focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.mono{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+.cap{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 16px;border:0;font-size:14px;font-weight:500;white-space:nowrap;transition:filter .15s}
+.btn:hover{filter:brightness(1.08)}
+.btn-p{background:var(--primary);color:var(--primary-fg);font-weight:600;height:48px;font-size:16px}
+.btn-s{background:var(--secondary);color:var(--secondary-fg)}
+.btn-g{background:transparent;color:var(--muted-fg);height:32px;padding:0 12px;font-size:13px}
+.btn-g:hover{filter:none;background:var(--muted);color:var(--fg)}
+.chip{display:inline-flex;padding:3px 10px;background:var(--muted);color:var(--muted-fg);font-size:12px;line-height:18px;white-space:nowrap}
+.panel{border:1px solid var(--border);background:var(--card)}
+.crop{position:relative}
+.crop::before,.crop::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--positive);pointer-events:none}
+.crop::before{left:-1px;top:-1px;border-right:0;border-bottom:0}
+.crop::after{right:-1px;bottom:-1px;border-left:0;border-top:0}
+.sf-nav a{color:var(--muted-fg);transition:color .15s}
+.sf-nav a:hover{color:var(--fg)}
+.sf-appnav a{padding:19px 0}
+.sf-appnav a.on{color:var(--fg);font-weight:500;box-shadow:inset 0 -2px 0 var(--positive)}
+.row{display:flex;justify-content:space-between;gap:16px;align-items:baseline}
+@media (max-width: 760px){.sf-appnav{order:3;flex:1 1 100% !important;flex-wrap:nowrap !important;overflow-x:auto;white-space:nowrap}}
+</style>
+</helmet>
+<div class="sf {{themeClass}}" style="min-height: 100vh; font-size: 14px; line-height: 22px">
+<header style="border-bottom: 1px solid var(--border)">
+<div class="sf-nav" style="max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 3.2vw, 40px); min-height: 60px; display: flex; align-items: center; gap: 8px 32px; flex-wrap: wrap">
+<span style="font-size: 20px; font-weight: 600; letter-spacing: -0.04em">seal<span style="color: var(--positive)">flare</span></span>
+<nav aria-label="App" class="sf-appnav" style="display: flex; gap: 24px; flex-wrap: wrap; flex-grow: 1; font-size: 14px"><a href="#scan">Scan</a><a href="#explore">Explore</a><a class="on" href="#disputes">Disputes</a><a href="#bounties">Bounties</a><a href="#guardians">Guardians</a></nav>
+<button class="btn btn-s" type="button"><span class="mono" style="font-size: 13px">0x52…9c1</span><span class="mono" style="margin-left: 10px; padding: 0 6px; background: var(--primary); color: var(--primary-fg); font-size: 12px; line-height: 18px" aria-label="2 things need action">2</span></button>
+</div>
+</header>
+<main style="max-width: 1240px; margin: 0 auto; padding: 40px clamp(20px, 3.2vw, 40px) 64px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+<h1 style="margin: 0; font-size: 38px; line-height: 42px; font-weight: 600; letter-spacing: -0.04em">Challenge <span class="mono" style="font-weight: 500; letter-spacing: -0.02em">#12</span></h1>
+<span class="chip mono" style="color: var(--fg)">0x1234…abcd</span>
+<span class="chip" style="background: color-mix(in oklab, var(--warning) 14%, transparent); color: var(--warning)">Under dispute</span>
+<span style="flex-grow: 1"></span>
+<a class="btn btn-g" href="#target">View the target</a>
+</div>
+<div class="panel crop" style="position: relative">
+<div aria-hidden="true" style="position: absolute; left: 0; top: 0; height: 3px; width: 22%; background: var(--positive)"></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr))">
+<div style="padding: 24px; display: flex; flex-direction: column; gap: 6px"><span class="cap" style="color: var(--positive)">01 commit  now</span><span class="mono" style="font-size: 30px; line-height: 36px; font-weight: 500; letter-spacing: -0.03em">4h 12m left</span><span style="color: var(--muted-fg)">Jurors lock a hidden vote. The publisher may reply.</span></div>
+<div style="padding: 24px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px"><span class="cap">02 reveal</span><span style="font-size: 24px; line-height: 36px; font-weight: 600; letter-spacing: -0.03em; color: var(--muted-fg)">12 hours</span><span style="color: var(--muted-fg)">Jurors open their votes. A vote not revealed loses its stake.</span></div>
+<div style="padding: 24px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px"><span class="cap">03 resolve</span><span style="font-size: 24px; line-height: 36px; font-weight: 600; letter-spacing: -0.03em; color: var(--muted-fg)">Needs 3 reveals</span><span style="color: var(--muted-fg)">Anyone can settle it. Fewer than three and it expires.</span></div>
+</div>
+</div>
+<div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start">
+<div style="flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px">
+<section class="panel" aria-label="Challenger" style="display: flex; flex-direction: column">
+<div class="row" style="padding: 14px 20px; border-bottom: 1px solid var(--border)"><span class="cap">challenger</span><span class="mono" style="font-size: 13px">0x8f…21</span></div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.02em">The owner can mint without a cap</div>
+<div><span class="mono" style="padding: 3px 8px; background: color-mix(in oklab, var(--destructive) 16%, transparent); color: var(--destructive); font-size: 12px; line-height: 18px">HIDDEN_MINT</span></div>
+<div class="mono" style="padding: 10px 12px; background: var(--muted); font-size: 12px; line-height: 18px; color: var(--muted-fg); overflow-wrap: anywhere">function mint(address to, uint256 amount) external onlyOwner</div>
+<a href="#evidence" style="color: var(--muted-fg); text-decoration: underline; text-underline-offset: 3px">Full evidence on IPFS</a>
+</div>
+</section>
+<section class="panel" aria-label="Publisher reply" style="display: flex; flex-direction: column">
+<div class="row" style="padding: 14px 20px; border-bottom: 1px solid var(--border)"><span class="cap">publisher reply</span><span class="cap">closes in 4h 12m</span></div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 12px; flex-grow: 1">
+<div style="font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.02em">No reply yet</div>
+<p style="margin: 0; color: var(--muted-fg)">The bound publisher can answer once, while jurors are still committing.</p>
+<button class="btn btn-s" type="button" style="align-self: flex-start; margin-top: auto">Submit reply</button>
+</div>
+</section>
+</div>
+<section class="panel" aria-label="Outcomes">
+<div style="padding: 14px 20px; border-bottom: 1px solid var(--border)"><span class="cap">how it can end</span></div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 560px; border-collapse: collapse; font-size: 14px; line-height: 20px">
+<thead><tr style="color: var(--muted-fg); text-align: left"><th scope="col" style="font-weight: 400; padding: 12px 12px 8px 20px">Outcome</th><th scope="col" style="font-weight: 400; padding: 12px 12px 8px">Challenger</th><th scope="col" style="font-weight: 400; padding: 12px 12px 8px">Majority jurors</th><th scope="col" style="font-weight: 400; padding: 12px 20px 8px 12px">Target</th></tr></thead>
+<tbody>
+<tr><th scope="row" style="text-align: left; font-weight: 600; padding: 12px 12px 12px 20px; border-top: 1px solid var(--border)">Upheld</th><td style="padding: 12px; border-top: 1px solid var(--border)">Stake back, half the pool</td><td style="padding: 12px; border-top: 1px solid var(--border)">Stake back, half the pool</td><td style="padding: 12px 20px 12px 12px; border-top: 1px solid var(--border); color: var(--destructive)">Confirmed danger</td></tr>
+<tr><th scope="row" style="text-align: left; font-weight: 600; padding: 12px 12px 12px 20px; border-top: 1px solid var(--border)">Rejected</th><td style="padding: 12px; border-top: 1px solid var(--border)">Stake lost, -5 reputation</td><td style="padding: 12px; border-top: 1px solid var(--border)">Stake back, the whole pool</td><td style="padding: 12px 20px 12px 12px; border-top: 1px solid var(--border)">Back to its tier</td></tr>
+<tr><th scope="row" style="text-align: left; font-weight: 600; padding: 12px 12px 12px 20px; border-top: 1px solid var(--border)">Tie</th><td style="padding: 12px; border-top: 1px solid var(--border)">Stake back</td><td style="padding: 12px; border-top: 1px solid var(--border)">Stake back</td><td style="padding: 12px 20px 12px 12px; border-top: 1px solid var(--border)">Back to its tier</td></tr>
+<tr><th scope="row" style="text-align: left; font-weight: 600; padding: 12px 12px 12px 20px; border-top: 1px solid var(--border)">Expired</th><td style="padding: 12px; border-top: 1px solid var(--border)">80% of the stake back</td><td style="padding: 12px; border-top: 1px solid var(--border)">Stake back if revealed</td><td style="padding: 12px 20px 12px 12px; border-top: 1px solid var(--border)">Back to its tier</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+<aside aria-label="Jury" class="panel" style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column">
+<div class="row" style="padding: 14px 20px; border-bottom: 1px solid var(--border)"><span class="cap">jury</span><span class="cap">votes stay hidden</span></div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid var(--border)">
+<div style="display: flex; gap: 6px" role="img" aria-label="2 of 3 jurors committed"><span style="flex: 1; height: 10px; background: var(--fg)"></span><span style="flex: 1; height: 10px; background: var(--fg)"></span><span style="flex: 1; height: 10px; background: var(--muted)"></span></div>
+<div style="font-size: 24px; line-height: 28px; font-weight: 600; letter-spacing: -0.03em">2 committed</div>
+<p style="margin: 0; color: var(--muted-fg)">One more juror is needed for a verdict.</p>
+</div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border)">
+<div class="row"><span style="color: var(--muted-fg)">Your stake</span><span class="mono" style="font-size: 13px">0.005 BNB</span></div>
+<div class="row"><span style="color: var(--muted-fg)">On the majority side</span><span class="mono" style="font-size: 13px">+3 reputation</span></div>
+<div class="row"><span style="color: var(--muted-fg)">Not revealed, or minority</span><span class="mono" style="font-size: 13px; color: var(--destructive)">stake lost</span></div>
+</div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 10px">
+<button class="btn btn-p" type="button">Join the jury</button>
+<p style="margin: 0; font-size: 13px; line-height: 20px; color: var(--muted-fg)">You are eligible: you have not attested this target, and your profile is older than this challenge.</p>
+</div>
+</aside>
+</div>
+<p class="cap" style="margin: 0; font-size: 11px; line-height: 16px">sample data for layout, not a real challenge</p>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"]},"$preview":{"width":1280,"height":1010}}'>
+class Component extends DCLogic {
+renderVals() {
+return { themeClass: (this.props.theme ?? 'dark') === 'light' ? 'is-light' : '' };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sealflare explore</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+body{margin:0}
+.sf{--bg:oklch(0.145 0 0);--fg:oklch(0.985 0 0);--card:oklch(0.205 0 0);--muted:oklch(0.269 0 0);--muted-fg:oklch(0.708 0 0);--border:oklch(1 0 0 / 10%);--input:oklch(1 0 0 / 15%);--ring:oklch(0.556 0 0);--primary:oklch(0.768 0.233 130.85);--primary-fg:oklch(0.274 0.072 132.109);--secondary:oklch(0.274 0.006 286.033);--secondary-fg:oklch(0.985 0 0);--destructive:oklch(0.704 0.191 22.216);--warning:oklch(0.828 0.189 84.429);--positive:oklch(0.768 0.233 130.85);background:var(--bg);color:var(--fg);font-family:'Instrument Sans',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif}
+.sf.is-light{--bg:oklch(1 0 0);--fg:oklch(0.145 0 0);--card:oklch(1 0 0);--muted:oklch(0.97 0 0);--muted-fg:oklch(0.5 0 0);--border:oklch(0.922 0 0);--input:oklch(0.87 0 0);--ring:oklch(0.708 0 0);--primary:oklch(0.841 0.238 128.85);--secondary:oklch(0.967 0.001 286.375);--secondary-fg:oklch(0.21 0.006 285.885);--destructive:oklch(0.577 0.245 27.325);--warning:oklch(0.555 0.163 48.998);--positive:oklch(0.532 0.157 131.589)}
+.sf *{box-sizing:border-box}
+.sf a{color:inherit;text-decoration:none}
+.sf button{cursor:pointer;font-family:inherit;border-radius:0}
+.sf :focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.mono{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+.cap{font-family:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;color:var(--muted-fg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 16px;border:0;font-size:14px;font-weight:500;white-space:nowrap;transition:filter .15s}
+.btn:hover{filter:brightness(1.08)}
+.btn-s{background:var(--secondary);color:var(--secondary-fg)}
+.sf-nav a{color:var(--muted-fg);transition:color .15s}
+.sf-nav a:hover{color:var(--fg)}
+.sf-appnav a{padding:19px 0}
+.sf-appnav a.on{color:var(--fg);font-weight:500;box-shadow:inset 0 -2px 0 var(--positive)}
+.seg{display:inline-flex;border:1px solid var(--border)}
+.seg button{height:36px;padding:0 14px;border:0;background:transparent;color:var(--muted-fg);font-size:14px;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg);font-weight:600}
+.t{width:100%;min-width:860px;border-collapse:collapse;font-size:14px;line-height:20px}
+.t th{font-weight:400;color:var(--muted-fg);text-align:left;padding:12px 12px 10px}
+.t td{padding:14px 12px;border-top:1px solid var(--border);vertical-align:middle}
+.t tbody tr{transition:background-color .15s}
+.t tbody tr:hover{background:var(--muted)}
+.t th:first-child,.t td:first-child{padding-left:20px}
+.t th:last-child,.t td:last-child{padding-right:20px;text-align:right}
+.v{display:inline-flex;align-items:center;gap:10px;font-weight:600}
+.n{font-family:'Geist Mono',ui-monospace,monospace;font-size:13px}
+.z{color:var(--muted-fg)}
+@media (max-width: 760px){.sf-appnav{order:3;flex:1 1 100% !important;flex-wrap:nowrap !important;overflow-x:auto;white-space:nowrap}}
+</style>
+</helmet>
+<div class="sf {{themeClass}}" style="min-height: 100vh; font-size: 14px; line-height: 22px">
+<header style="border-bottom: 1px solid var(--border)">
+<div class="sf-nav" style="max-width: 1240px; margin: 0 auto; padding: 0 clamp(20px, 3.2vw, 40px); min-height: 60px; display: flex; align-items: center; gap: 8px 32px; flex-wrap: wrap">
+<span style="font-size: 20px; font-weight: 600; letter-spacing: -0.04em">seal<span style="color: var(--positive)">flare</span></span>
+<nav aria-label="App" class="sf-appnav" style="display: flex; gap: 24px; flex-wrap: wrap; flex-grow: 1; font-size: 14px"><a href="#scan">Scan</a><a class="on" href="#explore">Explore</a><a href="#disputes">Disputes</a><a href="#bounties">Bounties</a><a href="#guardians">Guardians</a></nav>
+<button class="btn btn-s" type="button">Connect wallet</button>
+</div>
+</header>
+<main style="max-width: 1240px; margin: 0 auto; padding: 40px clamp(20px, 3.2vw, 40px) 64px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: flex-end; gap: 16px 24px; flex-wrap: wrap">
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px"><h1 style="margin: 0; font-size: 38px; line-height: 42px; font-weight: 600; letter-spacing: -0.04em">Explore</h1><p style="margin: 0; color: var(--muted-fg)">Every target that has been scanned and attested, newest first.</p></div>
+<div class="seg" role="group" aria-label="Kind"><button type="button" aria-pressed="true">All</button><button type="button" aria-pressed="false">Contracts</button><button type="button" aria-pressed="false">AI skills</button></div>
+<div class="seg" role="group" aria-label="Verdict"><button type="button" aria-pressed="true">Any verdict</button><button type="button" aria-pressed="false">Safe</button><button type="button" aria-pressed="false">Caution</button><button type="button" aria-pressed="false">Danger</button></div>
+</div>
+<section aria-label="Targets" style="border: 1px solid var(--border); background: var(--card)">
+<div style="overflow-x: auto">
+<table class="t">
+<thead><tr><th scope="col">Target</th><th scope="col">Verdict</th><th scope="col">Safe</th><th scope="col">Caution</th><th scope="col">Danger</th><th scope="col">Publisher</th><th scope="col">Last vote</th></tr></thead>
+<tbody>
+<tr><td><div class="mono" style="font-size: 14px">0x1234…abcd</div><div class="cap">smart contract</div></td><td><span class="v"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" style="stroke: var(--muted)"/><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" stroke-dasharray="38 13" transform="rotate(-70 11 11)" style="stroke: var(--warning)"/></svg>Caution flagged</span></td><td class="n">42</td><td class="n z">0</td><td class="n" style="color: var(--destructive)">3</td><td class="z">Not claimed</td><td class="z">2 hours ago</td></tr>
+<tr><td><div class="mono" style="font-size: 14px">swap-helper</div><div class="cap">ai skill  0x7a3f…d8e1</div></td><td><span class="v"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" style="stroke: var(--positive)"/></svg>Community safe</span></td><td class="n">9</td><td class="n z">0</td><td class="n z">0</td><td>Verified publisher</td><td class="z">5 hours ago</td></tr>
+<tr><td><div class="mono" style="font-size: 14px">demo-drainer-skill</div><div class="cap">ai skill  0x1d05…f02b</div></td><td><span class="v" style="color: var(--destructive)"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" style="stroke: var(--muted)"/><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" stroke-dasharray="28 23" transform="rotate(-50 11 11)" style="stroke: var(--destructive)"/></svg>Confirmed danger</span></td><td class="n z">0</td><td class="n z">0</td><td class="n" style="color: var(--destructive)">6</td><td class="z">Not claimed</td><td class="z">yesterday</td></tr>
+<tr><td><div class="mono" style="font-size: 14px">0x8f…a21</div><div class="cap">smart contract</div></td><td><span class="v"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" style="stroke: var(--positive)"/></svg>Warranty backed</span></td><td class="n">7</td><td class="n z">0</td><td class="n z">0</td><td>Verified, 0.5 BNB bond</td><td class="z">yesterday</td></tr>
+<tr><td><div class="mono" style="font-size: 14px">0x3c…f9a</div><div class="cap">smart contract</div></td><td><span class="v"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" style="stroke: var(--muted)"/><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" stroke-dasharray="38 13" transform="rotate(-70 11 11)" style="stroke: var(--warning)"/></svg>Under dispute</span></td><td class="n">4</td><td class="n">1</td><td class="n z">0</td><td>Third-party sponsor</td><td class="z">2 days ago</td></tr>
+<tr><td><div class="mono" style="font-size: 14px">price-feed-reader</div><div class="cap">ai skill  0xb7c2…19e4</div></td><td><span class="v z"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="none" stroke-width="4" stroke-dasharray="2.5 4" style="stroke: var(--ring)"/></svg>Not rated yet</span></td><td class="n z">0</td><td class="n z">0</td><td class="n z">0</td><td class="z">Not claimed</td><td class="z">scanned today</td></tr>
+</tbody>
+</table>
+</div>
+<div style="padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-between; align-items: center"><span class="cap">6 targets  indexed to the latest final block</span><button class="btn btn-s" type="button" disabled style="cursor: not-allowed; background: var(--muted); color: var(--muted-fg)">Load more</button></div>
+</section>
+<p class="cap" style="margin: 0; font-size: 11px; line-height: 16px">sample data for layout. The same table pattern serves Disputes, Bounties and Guardians.</p>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"]},"$preview":{"width":1280,"height":810}}'>
+class Component extends DCLogic {
+renderVals() {
+return { themeClass: (this.props.theme ?? 'dark') === 'light' ? 'is-light' : '' };
+}
+}
+</script>
+</body>
+</html>
