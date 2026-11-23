@@ -34,9 +34,9 @@ and Geist Mono, dark and light themes, and a round seal as the only round shape.
 
 | Lane | Folders | Owner |
 | :--- | :--- | :--- |
-| 1. On-chain | `contracts/`, plus the landing page, the docs page, and all service accounts and keys | founder |
-| 2. Scanning | `packages/scanner-core`, `packages/sandbox-worker` | second developer |
-| 3. Application | `apps/` except landing and docs, `packages/sdk`, `packages/skill` | third developer |
+| 1. On-chain | `contracts/`, plus the landing page, the docs page, and all service accounts and keys | founder (@zakyirsyaad) |
+| 2. Scanning | `packages/scanner-core`, `packages/sandbox-worker` | second developer (@Nant361) |
+| 3. Application | `apps/` except landing and docs, `packages/sdk`, `packages/skill` | third developer (@maziazi) |
 
 Stay inside your lane's folders. Two lanes never edit the same files.
 

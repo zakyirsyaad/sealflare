@@ -10,7 +10,7 @@
 
 **Spec:** [docs/ux.md](../ux.md) (seluruhnya; mengikat untuk layar, keadaan, alur, dan teks), [docs/architecture.md](../architecture.md) Bagian 4.4 sampai 4.9, 5, 6, 7, 8, 10. Visual: [docs/design](../design). Perjanjian yang mengikat: [shared/abi](../../shared/abi), [shared/schemas](../../shared/schemas), [shared/rules](../../shared/rules).
 
-**Pemegang:** developer ketiga. **Mulai:** 24 November 2026.
+**Pemegang:** developer ketiga (@maziazi). **Mulai:** 24 November 2026.
 
 ## Tonggak
 

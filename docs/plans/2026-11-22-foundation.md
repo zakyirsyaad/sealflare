@@ -14,10 +14,10 @@
 
 | Rencana | Isi | Pemegang | Status |
 | :--- | :--- | :--- | :--- |
-| **0. Fondasi** (dokumen ini) | `shared/`, stub, jaringan lokal, CI | founder | ditulis |
-| 1. On-chain | `Core`, `Court`, `Vault` versi lengkap, tes invarian dan fork, deploy | founder | ditulis setelah Rencana 0 selesai |
-| 2. Pemindaian | `scanner-core`, `sandbox-worker` | developer kedua | sama |
-| 3. Aplikasi | `apps/web`, `apps/internal`, `apps/indexer`, `sdk`, `skill` | developer ketiga | sama |
+| **0. Fondasi** (dokumen ini) | `shared/`, stub, jaringan lokal, CI | founder (@zakyirsyaad) | ditulis |
+| 1. On-chain | `Core`, `Court`, `Vault` versi lengkap, tes invarian dan fork, deploy | founder (@zakyirsyaad) | ditulis setelah Rencana 0 selesai |
+| 2. Pemindaian | `scanner-core`, `sandbox-worker` | developer kedua (@Nant361) | sama |
+| 3. Aplikasi | `apps/web`, `apps/internal`, `apps/indexer`, `sdk`, `skill` | developer ketiga (@maziazi) | sama |
 
 Jadwal yang mengikat: Rencana 0 selesai 23 November. Titik temu pertama 28 sampai 30 November. `Core` di mainnet paling lambat 1 Desember. Submisi 9 Desember 2026, 15:00 WIB.
 
