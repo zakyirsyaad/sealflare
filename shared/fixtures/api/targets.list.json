@@ -1,0 +1,50 @@
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377",
+        "targetType": "AI_SKILL_BUNDLE",
+        "label": "Swap helper skill",
+        "src": "gh:acme/skills@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:swap-helper",
+        "tier": "DISPUTED_CAUTION",
+        "safe": 4,
+        "caution": 0,
+        "danger": 0,
+        "publisherRole": "NONE",
+        "bond": "0",
+        "lastVoteAt": "2026-11-22T02:30:00.000Z"
+      },
+      {
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "targetType": "SMART_CONTRACT",
+        "label": "Agent ID registry",
+        "src": "0x60b9262456de011f7d15a54cdd8c48baaa8b022f",
+        "tier": "WARRANTY_BACKED_SAFE",
+        "safe": 5,
+        "caution": 0,
+        "danger": 0,
+        "publisherRole": "VERIFIED_PUBLISHER",
+        "bond": "500000000000000000",
+        "lastVoteAt": "2026-11-22T01:10:00.000Z"
+      },
+      {
+        "targetId": "0xa841358d96e76e68b66f4825ca18c94336f9d490b88071b0e10a50d9bcf03b6d",
+        "targetType": "SMART_CONTRACT",
+        "label": "Binance-Peg Ethereum",
+        "src": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+        "tier": "CAUTION_FLAGGED",
+        "safe": 2,
+        "caution": 3,
+        "danger": 0,
+        "publisherRole": "NONE",
+        "bond": "0",
+        "lastVoteAt": "2026-11-21T22:00:00.000Z"
+      }
+    ]
+  },
+  "meta": {
+    "finalizedBlock": "52000123",
+    "page": { "total": 3, "page": 1, "limit": 20 }
+  }
+}

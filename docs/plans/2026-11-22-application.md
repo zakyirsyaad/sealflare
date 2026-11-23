@@ -123,7 +123,7 @@ packages/skill/                        SKILL.md + skrip read-only
 **Interfaces:**
 - Produces (semua `…Response` sudah dibungkus `envelope`):
   - `SignalGroup = { votes: { safe: number; caution: number; danger: number }; weight: { safe: number; caution: number; danger: number }; flags: number }`
-  - `TargetSummary = { targetId; targetType; label: string; src: string; tier: TrustTier; safe: number; caution: number; danger: number; publisherRole: 'NONE' | 'THIRD_PARTY_SPONSOR' | 'VERIFIED_PUBLISHER'; bond: string; lastVoteAt: string | null }`
+  - `TargetSummary = { targetId; targetType; label: string; src: string | null; tier: TrustTier; safe: number; caution: number; danger: number; publisherRole: 'NONE' | 'THIRD_PARTY_SPONSOR' | 'VERIFIED_PUBLISHER'; bond: string; lastVoteAt: string | null }`
   - `TargetDetail = TargetSummary & { publisher: Address | null; pinnedCodehash; hasDelegatecall: boolean; activeFlags: number; signal: { newIds: SignalGroup; guardians: SignalGroup }; activeChallengeId: string | null; attestationCount: number; scan: ScanReport | null; sandbox: SandboxResult | null }`
   - `AttestationRow = { index: number; guardian: Address; verdict: Verdict; flags: number; weight: number; safeOrdinal: number; shortProof: string; evidenceURI: string; txHash; at: string; settled: boolean; castDuringDispute: boolean }`
   - `GuardianSummary = { address; score: number; weight: number; attestations: number; penaltyPending: boolean }`, `GuardianDetail = GuardianSummary & { createdAtBlock: string; history: ActivityItem[] }`
@@ -137,6 +137,8 @@ packages/skill/                        SKILL.md + skrip read-only
   - `TargetsListResponse`, `TargetDetailResponse`, `AttestationsListResponse`, `GuardiansListResponse`, `GuardianDetailResponse`, `ChallengesListResponse`, `ChallengeDetailResponse`, `BountiesListResponse`, `BountyDetailResponse`, `ActivityResponse`
 
 Jumlah wei selalu string desimal. Waktu selalu ISO. Selama fase commit, `jurors[].uphold` wajib `null`.
+
+Founder menyetujui dua penyesuaian kontrak baca. Alamat kontrak wajib untuk `SMART_CONTRACT`. Pada `AI_SKILL_BUNDLE`, `src` berupa referensi GitHub ber-commit tetap atau `null` jika sumbernya belum diketahui. `AttestationRow.evidenceURI` boleh berupa string kosong sesuai event `Attested`. Pembekuan skema menunggu regresi event → indexer → API pada Task 5–6.
 
 - [ ] **Step 1: Tulis tes yang gagal**
 
@@ -167,7 +169,8 @@ git add shared
 git commit -m "feat: add read-model schemas for targets, guardians, challenges, bounties and activity"
 ```
 
-Minta founder memeriksa commit ini hari itu juga: setelah disetujui, berkas ini ikut beku.
+Minta founder memeriksa kontrak skema ini. Bekukan setelah founder menyetujui dan regresi
+event → indexer → API di Task 5–6 lulus.
 
 ---
 
@@ -338,6 +341,8 @@ Tes memakai Anvil dengan stub (`pnpm chain` di `globalSetup`) dan PGlite. Anvil 
 ```ts
 test('indexes only up to the finalized block', async () => {})
 test('an attestation becomes a row with its frozen weight, both ordinals and its short proof', async () => {})
+test('indexes a skill TargetCreated event without a cached GitHub source', async () => {})
+test('keeps the Attested row when the emitted evidence URI is empty', async () => {})
 test('target counters equal the sum of their attestation rows', async () => {})
 test('running the same range twice inserts nothing new', async () => {})
 test('a crash between the event insert and the cursor update cannot happen: both are in one transaction', async () => {
@@ -372,9 +377,18 @@ git commit -m "feat: add the indexer for Core events, reading finalized blocks o
 
 **Interfaces:**
 - Consumes: skema Task 1; tabel Task 4 dan 5
-- Produces: `GET /targets?page&limit&type&tier&address`, `GET /targets/:id`, `GET /targets/:id/attestations?page&limit`; `signalOf(rows): { newIds: SignalGroup; guardians: SignalGroup }` (A9); setiap jawaban membawa `meta.finalizedBlock` dari tabel `cursor`
+- Produces: `GET /targets?page&limit&type&address`, `GET /targets/tier-candidates?type&address`, `GET /targets/:id`, `GET /targets/:id/attestations?page&limit`; `signalOf(rows): { newIds: SignalGroup; guardians: SignalGroup }` (A9); setiap jawaban membawa `meta.finalizedBlock` dari tabel `cursor`
 
-`tier` di jawaban diisi pemanggil (API publik) dari `Core.tierOf`; layanan internal mengembalikan `tier: null` di barisnya dan API publik yang melengkapinya. Dengan begitu tier tidak pernah dihitung dari data indexer.
+Rute target internal memakai skema lokal dengan `tier: null` untuk validasi di batas
+antarlayanan. Skema `TargetsListResponse` dan `TargetDetailResponse` dari Task 1 dipakai pada
+batas publik di Task 7, setelah tier setiap target diisi dari `Core.tierOf`. Skema respons
+daftar attestation dipakai di kedua batas.
+
+Kedua rute daftar memakai filter `type` dan `address` yang sama serta urutan
+`lastVoteAt DESC NULLS LAST, targetId ASC`. Rute kandidat memakai satu snapshot Postgres untuk
+baris dan kursor. Ambil paling banyak 501 baris. Bila ada baris ke-501, kembalikan HTTP 503
+(`INTERNAL`); batas awal untuk filter tier adalah 500 kandidat setelah filter internal.
+Rute kandidat mengembalikan seluruh kandidat dalam batas itu tanpa paginasi publik.
 
 - [ ] **Step 1: Tulis tes yang gagal**
 
@@ -387,6 +401,12 @@ test('the signal splits weight-1 votes from weight-2-and-above votes, with count
 })
 test('every answer carries the last finalized block', async () => {})
 test('a detail joins the cached scan when there is one and is null otherwise', async () => {})
+test('the internal list and detail accept tier null before the public API fills it', async () => {})
+test('tier candidates use the same type and address filters and deterministic order as the paged list', async () => {})
+test('tier candidates and finalizedBlock come from one snapshot even while the indexer advances', async () => {})
+test('tier candidates return all 500 rows at the limit and a 503 for 501 matching candidates', async () => {})
+test('a skill indexed from TargetCreated without a cached source has src null in list and detail responses', async () => {})
+test('an Attested event with an empty evidence URI is returned in the attestation list', async () => {})
 test('an unknown target is 404, not an empty object', async () => {})
 test('limit above 100 is rejected', async () => {})
 ```
@@ -420,6 +440,15 @@ Batas laju (A3): scan 20 per 10 menit per kunci IP; bukti 30 per jam per alamat.
 
 Alur `POST /api/evidence`: validasi `EvidenceRequest`; hitung `evidenceHashOf(utf8(reportJson))`; pulihkan penanda tangan dari `EvidenceUpload(evidenceHash, nonce, expiry)` dan cocokkan dengan `address`; `report.author` harus sama dengan `address`; `Core.isAgentIdHolder(address)`; `nonce/use`; unggah byte `reportJson` persis ke Pinata; jawab `{ evidenceURI, evidenceHash }`.
 
+Untuk `GET /api/targets`, validasi query memakai `ListQuery`. Tanpa filter tier, pakai halaman
+internal yang diminta dan isi tier untuk baris di halaman itu. Dengan filter tier, ambil
+snapshot kandidat Task 6 dan baca `Core.tierOf` dalam batch terbatas pada nomor blok chain yang
+sama selama satu permintaan. Saring kandidat sesuai tier sambil mempertahankan urutan data
+internal, hitung `meta.page.total` dari seluruh baris yang cocok, lalu ambil halaman yang
+diminta. `meta.finalizedBlock` tetap berasal dari snapshot indexer. Kegagalan baca tier,
+batas kandidat terlampaui, atau tenggat permintaan terlampaui menghasilkan HTTP 503
+(`INTERNAL`) tanpa data parsial.
+
 - [ ] **Step 1: Tulis tes yang gagal**
 
 ```ts
@@ -442,6 +471,12 @@ test.each([['a signature by another address', 'SIGNATURE_INVALID'], ['an expired
 test('a Pinata failure is UPLOAD_FAILED and the nonce is not consumed', async () => {})
 // targets
 test('the list fills tier from Core.tierOf, not from the indexer', async () => {})
+test('a matching target beyond the first candidate page appears in the first filtered page', async () => {})
+test('page two and an out-of-range page use the exact filtered total', async () => {})
+test('all tier reads in one request use the same block and preserve the candidate order', async () => {})
+test('candidate overflow and RPC failures return a 503 without a partial or empty success', async () => {})
+test('the detail fills tier from Core.tierOf and passes the public response schema', async () => {})
+test('a failed Core tier read returns an error envelope', async () => {})
 test('the answer carries meta.finalizedBlock', async () => {})
 test('the internal service being down is an error envelope, never an empty list', async () => {})
 ```
@@ -534,6 +569,8 @@ test('a partial scan lists the checks that did not run', async () => {})
 test('an unknown id with a src offers "Scan again"; without a src it says "This result is no longer cached."', async () => {})
 test('a lagging indexer shows how many blocks behind', async () => { /* "Data is 12 blocks behind." */ })
 test('a skill shows the repository, a short bundle hash and the version rated', async () => {})
+test('an indexed skill with src null opens by ID and hides Scan again when no query source is available', async () => {})
+test('an attestation with an empty evidence URI is shown without an evidence link', async () => {})
 test('loading shows a skeleton of the same shape; a failed load says on-chain data is safe and offers a retry', async () => {})
 test('at 375 px nothing overflows sideways and Attest sticks to the bottom edge', async () => { /* Playwright component atau e2e */ })
 ```
@@ -1087,7 +1124,6 @@ git commit -m "test: add end-to-end dispute, publish and narrow-screen checks"
 
 ## Perubahan yang perlu disetujui founder
 
-- **`shared/schemas/readModel.ts` (Task 1).** Tambahan yang sudah diizinkan; perlu diperiksa dan dibekukan pada hari pertama.
 - **Tautan resmi mendapatkan Agent ID** (`NEXT_PUBLIC_AGENT_ID_URL`). Tanpa itu, panel "Get an Agent ID" menunjuk ke tempat kosong.
 - **Variabel lingkungan dan akun** yang dipegang founder: Project ID WalletConnect, kunci RPC, kunci BscScan, token GitHub, JWT Pinata, URL dan kunci layanan internal.
 

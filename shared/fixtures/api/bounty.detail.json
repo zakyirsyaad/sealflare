@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "data": {
+    "id": "bounty-02",
+    "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+    "label": "Agent ID registry",
+    "requester": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "slots": 3,
+    "filled": 3,
+    "amount": "200000000000000000",
+    "createdAt": "2026-11-19T09:00:00.000Z",
+    "settleableAt": "2026-11-22T09:00:00.000Z",
+    "settled": false,
+    "fillers": [
+      {
+        "guardian": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "verdict": "SAFE"
+      },
+      {
+        "guardian": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+        "verdict": "SAFE"
+      },
+      {
+        "guardian": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "verdict": "CAUTION"
+      }
+    ]
+  },
+  "meta": {
+    "finalizedBlock": "52000123"
+  }
+}

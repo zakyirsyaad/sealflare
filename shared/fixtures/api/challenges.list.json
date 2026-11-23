@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "1",
+        "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377",
+        "label": "Swap helper skill",
+        "challenger": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+        "phase": "COMMIT",
+        "outcome": "PENDING",
+        "commitEndsAt": "2026-11-22T15:00:00.000Z",
+        "revealEndsAt": "2026-11-23T03:00:00.000Z",
+        "commits": 3,
+        "reveals": 0
+      },
+      {
+        "id": "2",
+        "targetId": "0xa841358d96e76e68b66f4825ca18c94336f9d490b88071b0e10a50d9bcf03b6d",
+        "label": "Binance-Peg Ethereum",
+        "challenger": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "phase": "REVEAL",
+        "outcome": "PENDING",
+        "commitEndsAt": "2026-11-22T03:00:00.000Z",
+        "revealEndsAt": "2026-11-22T15:00:00.000Z",
+        "commits": 4,
+        "reveals": 2
+      },
+      {
+        "id": "3",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "label": "Agent ID registry",
+        "challenger": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+        "phase": "CLOSED",
+        "outcome": "REJECTED",
+        "commitEndsAt": "2026-11-18T03:00:00.000Z",
+        "revealEndsAt": "2026-11-18T15:00:00.000Z",
+        "commits": 3,
+        "reveals": 3
+      }
+    ]
+  },
+  "meta": {
+    "finalizedBlock": "52000123",
+    "page": { "total": 3, "page": 1, "limit": 20 }
+  }
+}

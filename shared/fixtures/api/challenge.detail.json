@@ -1,0 +1,46 @@
+{
+  "success": true,
+  "data": {
+    "id": "1",
+    "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377",
+    "label": "Swap helper skill",
+    "challenger": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "phase": "COMMIT",
+    "outcome": "PENDING",
+    "commitEndsAt": "2026-11-22T15:00:00.000Z",
+    "revealEndsAt": "2026-11-23T03:00:00.000Z",
+    "commits": 3,
+    "reveals": 0,
+    "flags": 512,
+    "shortProof": "UNLIMITED_APPROVAL_REQUEST @ SKILL.md: approve(spender, type(uint256).max)",
+    "evidenceURI": "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+    "counterEvidenceURI": null,
+    "publisher": null,
+    "jurors": [
+      {
+        "address": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+        "weight": 3,
+        "revealed": false,
+        "uphold": null
+      },
+      {
+        "address": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+        "weight": 5,
+        "revealed": false,
+        "uphold": null
+      },
+      {
+        "address": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "weight": 1,
+        "revealed": false,
+        "uphold": null
+      }
+    ],
+    "upholdWeight": 0,
+    "rejectWeight": 0,
+    "payouts": []
+  },
+  "meta": {
+    "finalizedBlock": "52000123"
+  }
+}

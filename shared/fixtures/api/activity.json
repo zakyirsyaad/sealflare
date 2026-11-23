@@ -1,0 +1,74 @@
+{
+  "success": true,
+  "data": {
+    "needsAction": [
+      {
+        "kind": "REVEAL_DUE",
+        "targetId": "0xa841358d96e76e68b66f4825ca18c94336f9d490b88071b0e10a50d9bcf03b6d",
+        "challengeId": "2",
+        "dueAt": "2026-11-22T15:00:00.000Z",
+        "detail": "Reveal your vote before the reveal window closes."
+      },
+      {
+        "kind": "BOUNTY_SETTLEABLE",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "bountyId": "bounty-02",
+        "detail": "Settle the bounty and pay the fillers."
+      },
+      {
+        "kind": "XP_CLAIMABLE",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "detail": "Claim 2 XP from your early SAFE attestation."
+      }
+    ],
+    "balance": "15000000000000000",
+    "score": 42,
+    "weight": 3,
+    "toNextWeight": 8,
+    "history": [
+      {
+        "kind": "attestation",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "label": "Agent ID registry",
+        "result": "SAFE",
+        "xp": 2,
+        "at": "2026-11-22T01:10:00.000Z"
+      },
+      {
+        "kind": "juror",
+        "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377",
+        "label": "Swap helper skill",
+        "result": "Commit cast",
+        "xp": null,
+        "at": "2026-11-22T04:00:00.000Z"
+      },
+      {
+        "kind": "challenge",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "label": "Agent ID registry",
+        "result": "Rejected",
+        "xp": -5,
+        "at": "2026-11-18T16:00:00.000Z"
+      },
+      {
+        "kind": "bond",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "label": "Agent ID registry",
+        "result": "Bond finalized",
+        "xp": null,
+        "at": "2026-11-19T10:00:00.000Z"
+      },
+      {
+        "kind": "bounty",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "label": "Agent ID registry",
+        "result": "Bounty created",
+        "xp": null,
+        "at": "2026-11-19T09:00:00.000Z"
+      }
+    ]
+  },
+  "meta": {
+    "finalizedBlock": "52000123"
+  }
+}

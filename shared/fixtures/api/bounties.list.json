@@ -1,0 +1,35 @@
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "bounty-01",
+        "targetId": "0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377",
+        "label": "Swap helper skill",
+        "requester": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "slots": 4,
+        "filled": 2,
+        "amount": "100000000000000000",
+        "createdAt": "2026-11-21T09:00:00.000Z",
+        "settleableAt": null,
+        "settled": false
+      },
+      {
+        "id": "bounty-02",
+        "targetId": "0x2207d8fe3c025a72d53ae6bc382300fad26674f30e0eebb2026fe35545f4ece2",
+        "label": "Agent ID registry",
+        "requester": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+        "slots": 3,
+        "filled": 3,
+        "amount": "200000000000000000",
+        "createdAt": "2026-11-19T09:00:00.000Z",
+        "settleableAt": "2026-11-22T09:00:00.000Z",
+        "settled": false
+      }
+    ]
+  },
+  "meta": {
+    "finalizedBlock": "52000123",
+    "page": { "total": 2, "page": 1, "limit": 20 }
+  }
+}
