@@ -104,3 +104,38 @@ contract FakeCourt {
         vault = vault_;
     }
 }
+
+interface IWithdraw {
+    function withdraw() external;
+}
+
+/// Tries to withdraw again from inside `receive`, once, and swallows the failure so the outer
+/// withdrawal can complete. Records whether the reentrant call got through.
+contract ReentrantReceiver {
+    address public immutable vault;
+    bool public reentered;
+    bool public reentrySucceeded;
+
+    constructor(address vault_) {
+        vault = vault_;
+    }
+
+    function attack() external {
+        IWithdraw(vault).withdraw();
+    }
+
+    receive() external payable {
+        if (reentered) return;
+        reentered = true;
+        try IWithdraw(vault).withdraw() {
+            reentrySucceeded = true;
+        } catch {}
+    }
+}
+
+/// Refuses every BNB transfer.
+contract RejectingReceiver {
+    function pull(address vault) external {
+        IWithdraw(vault).withdraw();
+    }
+}

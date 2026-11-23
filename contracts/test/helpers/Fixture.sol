@@ -7,12 +7,13 @@ import {Core} from "../../src/Core.sol";
 import {ICore} from "../../src/interfaces/ICore.sol";
 import {ChallengeOutcome, TargetType, Verdict} from "../../src/interfaces/Types.sol";
 import {BindTypes} from "../../src/lib/BindTypes.sol";
+import {Vault} from "../../src/Vault.sol";
 import {MockAgentID} from "../../src/stubs/MockAgentID.sol";
-import {FakeCourt, FakeVault, TinyTarget} from "./Mocks.sol";
+import {FakeCourt, TinyTarget} from "./Mocks.sol";
 
 /// Deploys Core against MockAgentID and provides the actors and targets the Core tests use.
-/// `vault` and `court` stay zero until a test calls `wireFakeModules`; the real Vault and Court
-/// replace the fakes in Tasks 5 and 8.
+/// Deploys Core and the real Vault. `court` stays zero until a test calls `wireFakeModules`; the
+/// real Court replaces FakeCourt in Task 8.
 contract Fixture is Test {
     using stdStorage for StdStorage;
 
@@ -20,15 +21,16 @@ contract Fixture is Test {
     ICore internal core;
     address internal vault;
     address internal court;
+    address internal treasury = makeAddr("treasury");
 
     function setUp() public virtual {
         agentId = new MockAgentID();
         core = new Core(address(agentId));
+        vault = address(new Vault(address(core), treasury));
     }
 
-    /// Deploys FakeVault and FakeCourt pointing at Core and wires them in as the deployer.
+    /// Deploys FakeCourt pointing at Core and the real Vault, and wires both in as the deployer.
     function wireFakeModules() public {
-        vault = address(new FakeVault(address(core)));
         court = address(new FakeCourt(address(core), vault));
         core.setModules(court, vault);
     }
