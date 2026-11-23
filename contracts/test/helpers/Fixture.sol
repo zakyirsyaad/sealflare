@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {Core} from "../../src/Core.sol";
 import {ICore} from "../../src/interfaces/ICore.sol";
 import {TargetType, Verdict} from "../../src/interfaces/Types.sol";
+import {BindTypes} from "../../src/lib/BindTypes.sol";
 import {MockAgentID} from "../../src/stubs/MockAgentID.sol";
 import {TinyTarget} from "./Mocks.sol";
 
@@ -48,6 +49,38 @@ contract Fixture is Test {
         return core.attest(
             TargetType.SMART_CONTRACT, word(target), v, flags, keccak256("evidence"), "proof", "ipfs://evidence"
         );
+    }
+
+    /// Signs BindByOwner for `target` with the target's current bindNonce and Core's domain.
+    function signBindByOwner(uint256 pk, address target, address agentIdHolder, uint256 deadline)
+        public
+        view
+        returns (bytes memory)
+    {
+        bytes32 structHash = BindTypes.hashBindByOwner(target, agentIdHolder, core.bindNonce(target), deadline);
+        return signDigest(pk, core.DOMAIN_SEPARATOR(), structHash);
+    }
+
+    /// Signs BindByDeployer for `target` with the target's current bindNonce and Core's domain.
+    function signBindByDeployer(
+        uint256 pk,
+        address target,
+        address deployer_,
+        uint256 deployNonce,
+        address agentIdHolder,
+        uint256 deadline
+    ) public view returns (bytes memory) {
+        bytes32 structHash = BindTypes.hashBindByDeployer(
+            target, deployer_, deployNonce, agentIdHolder, core.bindNonce(target), deadline
+        );
+        return signDigest(pk, core.DOMAIN_SEPARATOR(), structHash);
+    }
+
+    /// An EIP-712 signature over `structHash` under `domain`, packed as r, s, v.
+    function signDigest(uint256 pk, bytes32 domain, bytes32 structHash) public pure returns (bytes memory) {
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domain, structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
+        return abi.encodePacked(r, s, v);
     }
 
     /// Moves a guardian's score without Core.settle (Task 4). GuardianView packs `score` into the

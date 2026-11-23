@@ -132,7 +132,17 @@ contract CoreTierTest is Fixture {
     }
 
     function test_verifySkillBundle_sponsorOnly_publisherIsZero() public {
-        vm.skip(true); // Public sponsor binding arrives in Task 3.
+        address sponsorAddr = makeAddr("sponsor");
+        agentId.setBalance(sponsorAddr, 1);
+        bytes32 bundle = keccak256("bundle");
+        vm.prank(sponsorAddr);
+        core.attest(TargetType.AI_SKILL_BUNDLE, bundle, Verdict.SAFE, 0, bytes32(0), "", "");
+        bytes32 skillId = core.targetIdOfSkill(bundle);
+        vm.prank(sponsorAddr);
+        core.sponsor(skillId);
+        assertEq(uint8(core.getTarget(skillId).publisherRole), uint8(PublisherRole.THIRD_PARTY_SPONSOR));
+        (, address publisher,,) = core.verifySkillBundle(bundle);
+        assertEq(publisher, address(0));
     }
 
     function test_verifyContract_gasIsBounded() public {

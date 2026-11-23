@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {IAgentID} from "./interfaces/IAgentID.sol";
 import {ICore} from "./interfaces/ICore.sol";
 import {IVault} from "./interfaces/IVault.sol";
 import {BytecodeScan} from "./lib/BytecodeScan.sol";
 import {
     AttestationView,
+    BindMethod,
     ChallengeOutcome,
     GuardianView,
     PublisherRole,
@@ -17,16 +19,18 @@ import {
     TrustTier,
     Verdict
 } from "./interfaces/Types.sol";
+import {BindTypes} from "./lib/BindTypes.sol";
 import {Constants} from "./lib/Constants.sol";
+import {CreateAddress} from "./lib/CreateAddress.sol";
 import {Ids} from "./lib/Ids.sol";
+import {OwnerRead} from "./lib/OwnerRead.sol";
 import {Rules} from "./lib/Rules.sol";
 
 /// Target registry and attestations. Holds no funds.
 ///
-/// Tasks 1 and 2 implement attestations, tier, firewall views and bytecode probing.
-/// Every other interface function carries a temporary `revert("not implemented")` body so the contract compiles; later tasks
-/// replace them and none may remain after Task 4. `court`, `vault` and `bindNonce` are passive
-/// storage getters that read zero until their tasks wire them.
+/// Tasks 1 to 3 implement attestations, tier, firewall views, bytecode probing and publisher
+/// binding. Every other interface function carries a temporary `revert("not implemented")` body so
+/// the contract compiles; Task 4 replaces them. `court` and `vault` read zero until Task 4 wires them.
 contract Core is ICore {
     address public immutable agentId;
     address public immutable deployer;
@@ -69,7 +73,16 @@ contract Core is ICore {
         GuardianView storage g = _ensureGuardian(msg.sender);
         Vote memory v = _recordVote(targetId, verdict, flags, g);
         emit Attested(
-            targetId, msg.sender, verdict, flags, v.weight, v.index, v.safeOrdinal, evidenceHash, shortProof, evidenceURI
+            targetId,
+            msg.sender,
+            verdict,
+            flags,
+            v.weight,
+            v.index,
+            v.safeOrdinal,
+            evidenceHash,
+            shortProof,
+            evidenceURI
         );
     }
 
@@ -97,7 +110,11 @@ contract Core is ICore {
         return _attestations[targetId][index];
     }
 
-    function attestationIndexOf(bytes32 targetId, address guardian) external view returns (bool attested, uint32 index) {
+    function attestationIndexOf(bytes32 targetId, address guardian)
+        external
+        view
+        returns (bool attested, uint32 index)
+    {
         uint32 plusOne = _indexPlusOne[targetId][guardian];
         return plusOne == 0 ? (false, 0) : (true, plusOne - 1);
     }
@@ -195,6 +212,90 @@ contract Core is ICore {
                 verifiedPublisherBond: bond > 0
             })
         );
+    }
+
+    // ---- publisher binding ----------------------------------------------------------------------
+
+    function bindByOwner(address target, address agentIdHolder, uint256 deadline, bytes calldata sig) external {
+        _checkBindRequest(agentIdHolder, deadline);
+        address owner = OwnerRead.ownerOf(target);
+        if (owner == address(0)) revert InvalidSignature();
+        _consumeSignature(
+            owner, target, BindTypes.hashBindByOwner(target, agentIdHolder, bindNonce[target], deadline), sig
+        );
+        _bind(_contractTarget(target), agentIdHolder, PublisherRole.VERIFIED_PUBLISHER, BindMethod.OWNER);
+    }
+
+    /// The signature is checked before the publisher state, so a replayed signature fails as
+    /// InvalidSignature and a fresh one on an already verified target as AlreadyVerifiedPublisher (D5).
+    function bindByDeployer(
+        address target,
+        address deployer_,
+        uint256 deployNonce,
+        address agentIdHolder,
+        uint256 deadline,
+        bytes calldata sig
+    ) external {
+        _checkBindRequest(agentIdHolder, deadline);
+        if (OwnerRead.ownerOf(target) != address(0)) revert TargetHasOwner();
+        if (deployer_ == address(0) || CreateAddress.compute(deployer_, deployNonce) != target) {
+            revert DeployerMismatch();
+        }
+        bytes32 structHash =
+            BindTypes.hashBindByDeployer(target, deployer_, deployNonce, agentIdHolder, bindNonce[target], deadline);
+        _consumeSignature(deployer_, target, structHash, sig);
+        bytes32 targetId = _contractTarget(target);
+        if (_targets[targetId].publisherRole == PublisherRole.VERIFIED_PUBLISHER) revert AlreadyVerifiedPublisher();
+        _bind(targetId, agentIdHolder, PublisherRole.VERIFIED_PUBLISHER, BindMethod.DEPLOYER);
+    }
+
+    /// The sender is part of the canonical hash, so a claim on someone else's bundle lands on a
+    /// target id the scanner never produces for that bundle.
+    function bindSkill(bytes32 contentHash) external returns (bytes32 targetId) {
+        if (!isAgentIdHolder(msg.sender)) revert NotAgentIdHolder();
+        bytes32 canonical = Ids.canonicalBundleHashOf(contentHash, msg.sender);
+        targetId = Ids.targetIdOfSkill(canonical);
+        _createTargetIfNew(TargetType.AI_SKILL_BUNDLE, canonical, targetId);
+        if (_targets[targetId].publisherRole == PublisherRole.VERIFIED_PUBLISHER) revert AlreadyVerifiedPublisher();
+        _bind(targetId, msg.sender, PublisherRole.VERIFIED_PUBLISHER, BindMethod.SKILL);
+    }
+
+    function sponsor(bytes32 targetId) external {
+        if (!isAgentIdHolder(msg.sender)) revert NotAgentIdHolder();
+        if (!_exists[targetId]) revert TargetNotFound();
+        if (_targets[targetId].publisherRole != PublisherRole.NONE) revert PublisherAlreadyBound();
+        _bind(targetId, msg.sender, PublisherRole.THIRD_PARTY_SPONSOR, BindMethod.SPONSOR);
+    }
+
+    /// Computed per call so a chain fork with a new chain id cannot reuse old signatures.
+    function DOMAIN_SEPARATOR() public view returns (bytes32) {
+        return BindTypes.domainSeparator(block.chainid, address(this));
+    }
+
+    function _checkBindRequest(address agentIdHolder, uint256 deadline) internal view {
+        if (!isAgentIdHolder(agentIdHolder)) revert NotAgentIdHolder();
+        if (block.timestamp > deadline) revert SignatureExpired();
+    }
+
+    /// Checks an EOA or ERC-1271 signature over the EIP-712 digest, then spends the target's nonce.
+    function _consumeSignature(address signer, address target, bytes32 structHash, bytes calldata sig) internal {
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+        if (!SignatureChecker.isValidSignatureNow(signer, digest, sig)) revert InvalidSignature();
+        bindNonce[target] += 1;
+    }
+
+    /// Registers a contract target with code on first binding, as attest would.
+    function _contractTarget(address target) internal returns (bytes32 targetId) {
+        if (target.code.length == 0) revert TargetHasNoCode();
+        targetId = Ids.targetIdOfContract(target);
+        _createTargetIfNew(TargetType.SMART_CONTRACT, bytes32(uint256(uint160(target))), targetId);
+    }
+
+    function _bind(bytes32 targetId, address publisher, PublisherRole role, BindMethod method) internal {
+        TargetView storage t = _targets[targetId];
+        t.publisher = publisher;
+        t.publisherRole = role;
+        emit PublisherBound(targetId, publisher, role, method);
     }
 
     // ---- attest internals ---------------------------------------------------------------------
@@ -297,22 +398,6 @@ contract Core is ICore {
         revert("not implemented");
     }
 
-    function bindByOwner(address, address, uint256, bytes calldata) external {
-        revert("not implemented");
-    }
-
-    function bindByDeployer(address, address, uint256, address, uint256, bytes calldata) external {
-        revert("not implemented");
-    }
-
-    function bindSkill(bytes32) external returns (bytes32) {
-        revert("not implemented");
-    }
-
-    function sponsor(bytes32) external {
-        revert("not implemented");
-    }
-
     function settle(bytes32, uint32, uint32) external {
         revert("not implemented");
     }
@@ -330,10 +415,6 @@ contract Core is ICore {
     }
 
     function adjustScore(address, bytes32, int32, ScoreReason) external {
-        revert("not implemented");
-    }
-
-    function DOMAIN_SEPARATOR() external view returns (bytes32) {
         revert("not implemented");
     }
 
