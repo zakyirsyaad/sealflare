@@ -1,0 +1,6 @@
+{
+  "name": "@sealflare/web", "version": "0.0.0", "private": true, "type": "module",
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start", "test": "vitest run", "test:coverage": "vitest run --coverage", "typecheck": "tsc --noEmit", "e2e": "playwright test" },
+  "dependencies": { "@sealflare/shared": "workspace:*", "next": "^16.4.6", "react": "^19.2.0", "react-dom": "^19.2.0", "server-only": "^0.0.1", "zod": "^4.6.7" },
+  "devDependencies": { "@playwright/test": "^1.56.0", "@testing-library/react": "^16.3.0", "@testing-library/user-event": "^14.6.1", "@testing-library/jest-dom": "^6.9.1", "@types/node": "^26.6.6", "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0", "@vitest/coverage-v8": "^5.1.1", "jsdom": "^27.0.0", "typescript": "^7.0.2", "vitest": "^5.1.1" }
+}

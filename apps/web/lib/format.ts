@@ -1,0 +1,31 @@
+import type { TrustTier } from '@sealflare/shared/rules'
+import type { TargetDetail } from '@sealflare/shared/schemas'
+import { copy } from './copy'
+
+export function shortAddress(address: string): string {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+export function formatBnb(wei: string | bigint): string {
+  if (!/^\d+$/.test(String(wei))) throw new RangeError('Wei must be a non-negative integer.')
+  const amount = BigInt(wei)
+  const whole = amount / 10n ** 18n
+  const fraction = (amount % 10n ** 18n).toString().padStart(18, '0').replace(/0+$/, '')
+  return fraction ? `${whole}.${fraction}` : String(whole)
+}
+export function timeLeft(until: Date, now: Date): string {
+  const diff = until.getTime() - now.getTime()
+  if (!Number.isFinite(diff)) throw new RangeError('A valid date is required.')
+  const minutes = Math.max(0, Math.ceil(diff / 60000))
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+export function tierLabel(tier: TrustTier): string {
+  const entry = copy.tiers[tier]
+  if (!entry) throw new RangeError('Unknown trust tier.')
+  return entry.label
+}
+export function tierReason(detail: Pick<TargetDetail, 'tier' | 'hasDelegatecall'>): string {
+  if (detail.tier === 'CAUTION_FLAGGED' && detail.hasDelegatecall) return copy.target.proxyReason
+  const entry = copy.tiers[detail.tier]
+  if (!entry) throw new RangeError('Unknown trust tier.')
+  return entry.reason
+}
