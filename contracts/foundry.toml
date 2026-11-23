@@ -19,3 +19,8 @@ runs = 512
 [lint]
 # Tests cast fuzz and vector values on purpose; stubs and scripts are local-only code.
 ignore = ["test/**/*.sol", "src/stubs/**/*.sol", "script/**/*.sol"]
+
+[invariant]
+runs = 256
+depth = 64
+fail_on_revert = false
