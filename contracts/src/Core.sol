@@ -3,10 +3,14 @@ pragma solidity 0.8.28;
 
 import {IAgentID} from "./interfaces/IAgentID.sol";
 import {ICore} from "./interfaces/ICore.sol";
+import {IVault} from "./interfaces/IVault.sol";
+import {BytecodeScan} from "./lib/BytecodeScan.sol";
 import {
     AttestationView,
     ChallengeOutcome,
     GuardianView,
+    PublisherRole,
+    TierInput,
     ScoreReason,
     TargetType,
     TargetView,
@@ -19,8 +23,8 @@ import {Rules} from "./lib/Rules.sol";
 
 /// Target registry and attestations. Holds no funds.
 ///
-/// Task 1 implements the constructor, `attest` and the read views. Every other interface function
-/// carries a temporary `revert("not implemented")` body so the contract compiles; later tasks
+/// Tasks 1 and 2 implement attestations, tier, firewall views and bytecode probing.
+/// Every other interface function carries a temporary `revert("not implemented")` body so the contract compiles; later tasks
 /// replace them and none may remain after Task 4. `court`, `vault` and `bindNonce` are passive
 /// storage getters that read zero until their tasks wire them.
 contract Core is ICore {
@@ -115,6 +119,82 @@ contract Core is ICore {
 
     function isAgentIdHolder(address account) public view returns (bool) {
         return IAgentID(agentId).balanceOf(account) > 0;
+    }
+
+    // ---- bytecode probe and firewall -----------------------------------------------------------
+
+    function probeBytecode(address target) external {
+        bytes memory code = target.code;
+        if (code.length == 0) revert TargetHasNoCode();
+        bytes32 targetId = Ids.targetIdOfContract(target);
+        _createTargetIfNew(TargetType.SMART_CONTRACT, bytes32(uint256(uint160(target))), targetId);
+        TargetView storage t = _targets[targetId];
+        if (!t.hasDelegatecall && BytecodeScan.hasDelegatecall(code)) {
+            t.hasDelegatecall = true;
+            emit DelegatecallFlagged(targetId, msg.sender);
+        }
+    }
+
+    function tierOf(bytes32 targetId) external view returns (TrustTier) {
+        TargetView storage t = _targets[targetId];
+        return _tierOf(targetId, t, _verifiedPublisherBond(targetId, t));
+    }
+
+    function verifyContract(address target)
+        external
+        view
+        returns (
+            TrustTier tier,
+            bool isUpgradeableProxy,
+            bytes32 pinnedCodehash,
+            uint32 activeFlags,
+            uint256 warrantyBondActive
+        )
+    {
+        bytes32 targetId = Ids.targetIdOfContract(target);
+        TargetView storage t = _targets[targetId];
+        warrantyBondActive = _verifiedPublisherBond(targetId, t);
+        return (
+            _tierOf(targetId, t, warrantyBondActive),
+            t.hasDelegatecall,
+            t.pinnedCodehash,
+            t.activeFlags,
+            warrantyBondActive
+        );
+    }
+
+    function verifySkillBundle(bytes32 canonicalBundleHash)
+        external
+        view
+        returns (TrustTier tier, address publisher, uint32 activeFlags, uint256 warrantyBondActive)
+    {
+        bytes32 targetId = Ids.targetIdOfSkill(canonicalBundleHash);
+        TargetView storage t = _targets[targetId];
+        warrantyBondActive = _verifiedPublisherBond(targetId, t);
+        publisher = t.publisherRole == PublisherRole.VERIFIED_PUBLISHER ? t.publisher : address(0);
+        return (_tierOf(targetId, t, warrantyBondActive), publisher, t.activeFlags, warrantyBondActive);
+    }
+
+    function _verifiedPublisherBond(bytes32 targetId, TargetView storage t) internal view returns (uint256) {
+        if (t.publisherRole != PublisherRole.VERIFIED_PUBLISHER || vault == address(0)) return 0;
+        return IVault(vault).activeBond(targetId);
+    }
+
+    function _tierOf(bytes32 targetId, TargetView storage t, uint256 bond) internal view returns (TrustTier) {
+        bool drift = _exists[targetId] && t.targetType == TargetType.SMART_CONTRACT
+            && address(uint160(uint256(t.target))).codehash != t.pinnedCodehash;
+        return Rules.tierOf(
+            TierInput({
+                confirmedDanger: t.confirmedDanger,
+                codehashDrift: drift,
+                activeDispute: t.activeChallengeId != 0,
+                safeWeight: t.safeWeight,
+                cautionWeight: t.cautionWeight,
+                dangerWeight: t.dangerWeight,
+                proxyMarker: t.hasDelegatecall,
+                verifiedPublisherBond: bond > 0
+            })
+        );
     }
 
     // ---- attest internals ---------------------------------------------------------------------
@@ -233,10 +313,6 @@ contract Core is ICore {
         revert("not implemented");
     }
 
-    function probeBytecode(address) external {
-        revert("not implemented");
-    }
-
     function settle(bytes32, uint32, uint32) external {
         revert("not implemented");
     }
@@ -257,10 +333,6 @@ contract Core is ICore {
         revert("not implemented");
     }
 
-    function tierOf(bytes32) external view returns (TrustTier) {
-        revert("not implemented");
-    }
-
     function DOMAIN_SEPARATOR() external view returns (bytes32) {
         revert("not implemented");
     }
@@ -270,14 +342,6 @@ contract Core is ICore {
     }
 
     function pendingPenalties(bytes32) external view returns (uint32) {
-        revert("not implemented");
-    }
-
-    function verifyContract(address) external view returns (TrustTier, bool, bytes32, uint32, uint256) {
-        revert("not implemented");
-    }
-
-    function verifySkillBundle(bytes32) external view returns (TrustTier, address, uint32, uint256) {
         revert("not implemented");
     }
 }
