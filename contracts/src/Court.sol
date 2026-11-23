@@ -12,6 +12,7 @@ import {
     JurorStatus,
     JurorView,
     PublisherRole,
+    ScoreReason,
     TargetView,
     Verdict
 } from "./interfaces/Types.sol";
@@ -20,9 +21,6 @@ import {Rules} from "./lib/Rules.sol";
 
 /// Disputes: challenge, counter evidence, commit, reveal, verdict, expiry. Holds no funds: every
 /// stake is forwarded to the Vault escrow of its challenge within the same call.
-///
-/// Task 8 implements opening, counter evidence, commit and reveal. `resolve` and `expire` carry a
-/// temporary `revert("not implemented")` body so the contract compiles; Task 9 replaces them.
 contract Court is ICourt {
     address public immutable core;
     address public immutable vault;
@@ -190,13 +188,156 @@ contract Court is ICourt {
         return Constants.expireForfeitBps(prior);
     }
 
-    // ---- not implemented yet (temporary bodies, removed by Task 9) ----------------------------
+    // ---- closing ------------------------------------------------------------------------------
 
-    function resolve(uint256) external {
-        revert("not implemented");
+    /// Recipients and amounts for one `distribute` call, sized for every juror plus the
+    /// challenger and the treasury. Zero amounts are never added.
+    struct Payout {
+        address[] to;
+        uint256[] amounts;
+        uint256 count;
+        uint256 sum;
     }
 
-    function expire(uint256) external {
-        revert("not implemented");
+    /// After the reveal window with at least three reveals. Order: checks, Court's own state,
+    /// bond, funds, scores, verdict, event (architecture 4.8).
+    function resolve(uint256 id) external {
+        ChallengeView storage c = _closable(id);
+        if (c.reveals < Constants.MIN_REVEALS) revert QuorumNotReached();
+        ChallengeOutcome outcome = c.upholdWeight > c.rejectWeight
+            ? ChallengeOutcome.UPHELD
+            : c.rejectWeight > c.upholdWeight ? ChallengeOutcome.REJECTED : ChallengeOutcome.TIED;
+        c.outcome = outcome;
+        activeChallengeOf[c.targetId] = 0;
+        uint16 slashBps = outcome == ChallengeOutcome.UPHELD ? Constants.BOND_SLASH_BPS : 0;
+        (uint256 slashed,) = IVault(vault).settleBond(id, slashBps);
+        Payout memory p = _resolvePayout(id, c, outcome, slashed);
+        IVault(vault).distribute(id, p.to, p.amounts);
+        _adjustScores(id, c, outcome);
+        ICore(core).applyVerdict(c.targetId, id, outcome, c.flags);
+        emit ChallengeResolved(id, outcome, c.upholdWeight, c.rejectWeight);
+    }
+
+    /// After the reveal window with fewer than three reveals. The challenger forfeits 20%, 50% or
+    /// 100% by the target's recent expiries and may not challenge this target again for 7 days.
+    function expire(uint256 id) external {
+        ChallengeView storage c = _closable(id);
+        if (c.reveals >= Constants.MIN_REVEALS) revert QuorumReached();
+        uint16 forfeitBps = nextExpireForfeitBps(c.targetId);
+        c.outcome = ChallengeOutcome.EXPIRED;
+        activeChallengeOf[c.targetId] = 0;
+        uint64[2] storage recent = _recentExpiries[c.targetId];
+        recent[1] = recent[0];
+        recent[0] = uint64(block.timestamp);
+        cooldownEndsAt[c.challenger][c.targetId] = uint64(block.timestamp) + Constants.CHALLENGE_COOLDOWN;
+        IVault(vault).settleBond(id, 0);
+        Payout memory p = _newPayout(id);
+        _add(p, c.challenger, Constants.CHALLENGE_STAKE * (Constants.BPS - forfeitBps) / Constants.BPS);
+        _addRevealedStakes(p, id);
+        _finish(p, _escrowTotal(c, 0));
+        IVault(vault).distribute(id, p.to, p.amounts);
+        ICore(core).applyVerdict(c.targetId, id, ChallengeOutcome.EXPIRED, c.flags);
+        emit ChallengeExpired(id, c.reveals, forfeitBps);
+    }
+
+    function _closable(uint256 id) internal view returns (ChallengeView storage) {
+        ChallengePhase phase = phaseOf(id);
+        if (phase == ChallengePhase.CLOSED) revert ChallengeClosed();
+        if (phase != ChallengePhase.AWAITING_CLOSE) revert WrongPhase(phase);
+        return _challenges[id];
+    }
+
+    /// Upheld: the challenger gets C + pool / 2 and each majority juror J + the other half / n.
+    /// Rejected: each majority juror gets J + pool / n. Tied: every revealed stake comes back.
+    /// The pool is everything in escrow that is not a stake being returned; the treasury takes
+    /// what rounding leaves (architecture 4.8, D13).
+    function _resolvePayout(uint256 id, ChallengeView storage c, ChallengeOutcome outcome, uint256 slashed)
+        internal
+        view
+        returns (Payout memory p)
+    {
+        p = _newPayout(id);
+        uint256 total = _escrowTotal(c, slashed);
+        if (outcome == ChallengeOutcome.TIED) {
+            _add(p, c.challenger, Constants.CHALLENGE_STAKE);
+            _addRevealedStakes(p, id);
+            _finish(p, total);
+            return p;
+        }
+        bool upholdWins = outcome == ChallengeOutcome.UPHELD;
+        uint256 n = _majorityCount(id, upholdWins);
+        uint256 pool = total - Constants.JURY_STAKE * n - (upholdWins ? Constants.CHALLENGE_STAKE : 0);
+        uint256 challengerShare = upholdWins ? pool / 2 : 0;
+        if (upholdWins) _add(p, c.challenger, Constants.CHALLENGE_STAKE + challengerShare);
+        uint256 each = Constants.JURY_STAKE + (pool - challengerShare) / n;
+        address[] storage js = _jurorList[id];
+        for (uint256 i = 0; i < js.length; ++i) {
+            if (_isMajority(_jurors[id][js[i]], upholdWins)) _add(p, js[i], each);
+        }
+        _finish(p, total);
+    }
+
+    function _adjustScores(uint256 id, ChallengeView storage c, ChallengeOutcome outcome) internal {
+        if (outcome != ChallengeOutcome.UPHELD && outcome != ChallengeOutcome.REJECTED) return;
+        bool upholdWins = outcome == ChallengeOutcome.UPHELD;
+        ICore c0 = ICore(core);
+        if (upholdWins) c0.adjustScore(c.challenger, c.targetId, Rules.XP_CHALLENGER_WON, ScoreReason.CHALLENGER_WON);
+        else c0.adjustScore(c.challenger, c.targetId, Rules.XP_CHALLENGER_LOST, ScoreReason.CHALLENGER_LOST);
+        address[] storage js = _jurorList[id];
+        for (uint256 i = 0; i < js.length; ++i) {
+            if (_isMajority(_jurors[id][js[i]], upholdWins)) {
+                c0.adjustScore(js[i], c.targetId, Rules.XP_JUROR_MAJORITY, ScoreReason.JUROR_MAJORITY);
+            }
+        }
+    }
+
+    function _isMajority(JurorView storage j, bool upholdWins) internal view returns (bool) {
+        return j.revealed && j.uphold == upholdWins;
+    }
+
+    function _majorityCount(uint256 id, bool upholdWins) internal view returns (uint256 n) {
+        address[] storage js = _jurorList[id];
+        for (uint256 i = 0; i < js.length; ++i) {
+            if (_isMajority(_jurors[id][js[i]], upholdWins)) ++n;
+        }
+    }
+
+    /// What this challenge's escrow holds: the challenger's stake, every juror stake, and the
+    /// bond slashed into it.
+    function _escrowTotal(ChallengeView storage c, uint256 slashed) internal view returns (uint256) {
+        return Constants.CHALLENGE_STAKE + Constants.JURY_STAKE * c.commits + slashed;
+    }
+
+    function _addRevealedStakes(Payout memory p, uint256 id) internal view {
+        address[] storage js = _jurorList[id];
+        for (uint256 i = 0; i < js.length; ++i) {
+            if (_jurors[id][js[i]].revealed) _add(p, js[i], Constants.JURY_STAKE);
+        }
+    }
+
+    function _newPayout(uint256 id) internal view returns (Payout memory p) {
+        uint256 size = _jurorList[id].length + 2;
+        p.to = new address[](size);
+        p.amounts = new uint256[](size);
+    }
+
+    function _add(Payout memory p, address account, uint256 amount) internal pure {
+        if (amount == 0) return;
+        p.to[p.count] = account;
+        p.amounts[p.count] = amount;
+        p.count += 1;
+        p.sum += amount;
+    }
+
+    /// Sends the remainder to the treasury, then trims both arrays to the entries used.
+    function _finish(Payout memory p, uint256 total) internal view {
+        _add(p, IVault(vault).treasury(), total - p.sum);
+        address[] memory to = p.to;
+        uint256[] memory amounts = p.amounts;
+        uint256 used = p.count;
+        assembly ("memory-safe") {
+            mstore(to, used)
+            mstore(amounts, used)
+        }
     }
 }
