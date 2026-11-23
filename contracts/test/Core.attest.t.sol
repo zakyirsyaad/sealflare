@@ -173,7 +173,7 @@ contract CoreAttestTest is Fixture {
     }
 
     function test_attest_safeOnConfirmedDanger_reverts() public {
-        wireFakeModules();
+        wireModules();
         address g = holder("g");
         address t = deployTarget();
         bytes32 id = attestAs(g, t, Verdict.DANGER, 0x01);

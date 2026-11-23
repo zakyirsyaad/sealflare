@@ -4,16 +4,20 @@ pragma solidity 0.8.28;
 import {StdStorage, stdStorage} from "forge-std/StdStorage.sol";
 import {Test} from "forge-std/Test.sol";
 import {Core} from "../../src/Core.sol";
+import {Court} from "../../src/Court.sol";
 import {ICore} from "../../src/interfaces/ICore.sol";
-import {ChallengeOutcome, TargetType, Verdict} from "../../src/interfaces/Types.sol";
+import {ICourt} from "../../src/interfaces/ICourt.sol";
+import {ChallengeOutcome, ChallengeView, TargetType, Verdict} from "../../src/interfaces/Types.sol";
 import {BindTypes} from "../../src/lib/BindTypes.sol";
+import {Constants} from "../../src/lib/Constants.sol";
 import {Vault} from "../../src/Vault.sol";
 import {MockAgentID} from "../../src/stubs/MockAgentID.sol";
-import {FakeCourt, TinyTarget} from "./Mocks.sol";
+import {TinyTarget} from "./Mocks.sol";
 
-/// Deploys Core against MockAgentID and provides the actors and targets the Core tests use.
-/// Deploys Core and the real Vault. `court` stays zero until a test calls `wireFakeModules`; the
-/// real Court replaces FakeCourt in Task 8.
+/// Deploys Core against MockAgentID, then Vault and Court, and provides the actors, targets and
+/// dispute helpers the tests use. Core's modules stay unset until a test calls `wireModules`, so
+/// the setModules tests can still run against a fresh Core. Court-only paths in Core and Vault
+/// are exercised either through Court itself or by pranking `court`.
 contract Fixture is Test {
     using stdStorage for StdStorage;
 
@@ -27,12 +31,55 @@ contract Fixture is Test {
         agentId = new MockAgentID();
         core = new Core(address(agentId));
         vault = address(new Vault(address(core), treasury));
+        court = address(new Court(address(core), vault));
     }
 
-    /// Deploys FakeCourt pointing at Core and the real Vault, and wires both in as the deployer.
-    function wireFakeModules() public {
-        court = address(new FakeCourt(address(core), vault));
+    /// Wires the real Court and Vault into Core as the deployer.
+    function wireModules() public {
         core.setModules(court, vault);
+    }
+
+    // ---- dispute helpers ------------------------------------------------------------------------
+
+    /// Opens a challenge with the exact stake and a flag valid for the target's type.
+    function openChallengeAs(address who, bytes32 targetId) public returns (uint256) {
+        uint32 flags = core.getTarget(targetId).targetType == TargetType.SMART_CONTRACT ? 0x01 : 0x0100;
+        vm.deal(who, who.balance + Constants.CHALLENGE_STAKE);
+        vm.prank(who);
+        return ICourt(court).openChallenge{value: Constants.CHALLENGE_STAKE}(
+            targetId, flags, keccak256("challenge"), "proof", "ipfs://challenge"
+        );
+    }
+
+    function commitAs(address juror, uint256 id, bool uphold, bytes32 salt) public {
+        bytes32 hash = ICourt(court).commitHashOf(id, juror, uphold, salt);
+        vm.deal(juror, juror.balance + Constants.JURY_STAKE);
+        vm.prank(juror);
+        ICourt(court).commitVote{value: Constants.JURY_STAKE}(id, hash);
+    }
+
+    function revealAs(address juror, uint256 id, bool uphold, bytes32 salt) public {
+        vm.prank(juror);
+        ICourt(court).revealVote(id, uphold, salt);
+    }
+
+    function toCommitPhaseEnd(uint256 id) public {
+        ChallengeView memory c = ICourt(court).getChallenge(id);
+        vm.warp(c.commitEndsAt);
+    }
+
+    function toRevealPhaseEnd(uint256 id) public {
+        ChallengeView memory c = ICourt(court).getChallenge(id);
+        vm.warp(c.revealEndsAt);
+    }
+
+    /// An Agent ID holder with a Guardian profile and the given score. The profile comes from a
+    /// SAFE vote on a target of its own, so it never counts as having attested the disputed one.
+    /// Call before the challenge opens, then roll a block, or the profile is too new to judge.
+    function juror(string memory name, int32 score) public returns (address who) {
+        who = holder(name);
+        attestAs(who, deployTarget(), Verdict.SAFE, 0);
+        setScore(who, score);
     }
 
     /// Confirms `targetId` dangerous through the Court-only path, as an upheld challenge would.

@@ -70,7 +70,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_setModules_twice_reverts() public {
-        wireFakeModules();
+        wireModules();
         vm.expectRevert(ICore.ModulesAlreadySet.selector);
         core.setModules(court, vault);
     }
@@ -127,7 +127,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_courtOnly_fromNonCourt_revert() public {
-        wireFakeModules();
+        wireModules();
         voteAs(0, Verdict.SAFE);
         expectCourtOnlyReverts(makeAddr("stranger"));
         expectCourtOnlyReverts(vault);
@@ -178,7 +178,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_settle_duringDispute_paysNothing_thenPaysAfterRejection() public {
-        wireFakeModules();
+        wireModules();
         address g = voteAs(0, Verdict.SAFE);
         vm.prank(court);
         core.markDisputed(id, 1);
@@ -193,7 +193,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_settle_voteCastDuringDispute_settlesWithZero() public {
-        wireFakeModules();
+        wireModules();
         voteAs(0, Verdict.CAUTION);
         vm.prank(court);
         core.markDisputed(id, 1);
@@ -216,7 +216,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_settle_dangerVote_paidOnlyAfterUpheldVerdict() public {
-        wireFakeModules();
+        wireModules();
         address g = voteAs(0, Verdict.DANGER);
         afterSettleDelay();
         core.settle(id, 0, 1);
@@ -233,7 +233,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_settle_safeVoteOnConfirmedDanger_isSkipped() public {
-        wireFakeModules();
+        wireModules();
         address g = voteAs(0, Verdict.SAFE);
         confirmDanger(id, 1, 0x01);
         afterSettleDelay();
@@ -245,7 +245,7 @@ contract CoreSettleTest is Fixture {
     // ---- applyPenalties ------------------------------------------------------------------------
 
     function test_applyPenalties_chargesFifteenOnce() public {
-        wireFakeModules();
+        wireModules();
         address g = voteAs(0, Verdict.SAFE);
         confirmDanger(id, 1, 0x01);
         vm.expectEmit(address(core));
@@ -267,14 +267,14 @@ contract CoreSettleTest is Fixture {
         afterSettleDelay();
         core.settle(id, 0, 1);
         assertEq(scoreOf(g), 2);
-        wireFakeModules();
+        wireModules();
         confirmDanger(id, 1, 0x01);
         core.applyPenalties(id, 0, 1);
         assertEq(scoreOf(g), -13);
     }
 
     function test_pendingSettlement_and_pendingPenalties_countWhatACallWouldChange() public {
-        wireFakeModules();
+        wireModules();
         safeVotes(3);
         voteAs(3, Verdict.DANGER);
         voteAs(4, Verdict.CAUTION);
@@ -298,7 +298,7 @@ contract CoreSettleTest is Fixture {
     // ---- Court-only writes ---------------------------------------------------------------------
 
     function test_markDisputed_setsActiveChallenge_tierIsDisputedCaution() public {
-        wireFakeModules();
+        wireModules();
         safeVotes(3);
         vm.expectEmit(address(core));
         emit ICore.DisputeMarked(id, 7);
@@ -309,7 +309,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_applyVerdict_upheld_setsConfirmedDangerAndFlags() public {
-        wireFakeModules();
+        wireModules();
         voteAs(0, Verdict.DANGER);
         vm.startPrank(court);
         core.markDisputed(id, 3);
@@ -324,7 +324,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_applyVerdict_rejected_clearsDisputeOnly() public {
-        wireFakeModules();
+        wireModules();
         safeVotes(3);
         vm.startPrank(court);
         core.markDisputed(id, 3);
@@ -337,7 +337,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_applyVerdict_wrongChallengeId_reverts() public {
-        wireFakeModules();
+        wireModules();
         voteAs(0, Verdict.SAFE);
         vm.startPrank(court);
         vm.expectRevert(ICore.NothingToSettle.selector);
@@ -350,14 +350,14 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_markDisputed_unknownTarget_reverts() public {
-        wireFakeModules();
+        wireModules();
         vm.prank(court);
         vm.expectRevert(ICore.TargetNotFound.selector);
         core.markDisputed(id, 1);
     }
 
     function test_adjustScore_createsProfileForNewAccount() public {
-        wireFakeModules();
+        wireModules();
         address juror = makeAddr("juror");
         vm.expectEmit(address(core));
         emit ICore.GuardianCreated(juror, uint64(block.number));
@@ -370,7 +370,7 @@ contract CoreSettleTest is Fixture {
     }
 
     function test_adjustScore_negativeScore_weightIsZero() public {
-        wireFakeModules();
+        wireModules();
         address challenger = makeAddr("challenger");
         vm.prank(court);
         core.adjustScore(challenger, id, -5, ScoreReason.CHALLENGER_LOST);

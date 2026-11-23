@@ -70,7 +70,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_courtOnly_fromOthers_revert() public {
-        wireFakeModules();
+        wireModules();
         expectAllCourtOnly(makeAddr("stranger"));
         expectAllCourtOnly(address(core));
     }
@@ -83,7 +83,7 @@ contract VaultEscrowTest is Fixture {
     // ---- stakes --------------------------------------------------------------------------------
 
     function test_depositStake_addsToThatEscrowOnly() public {
-        wireFakeModules();
+        wireModules();
         address challenger = makeAddr("challenger");
         vm.deal(court, 0.01 ether);
         vm.expectEmit(vault);
@@ -96,7 +96,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_depositStake_zeroValue_reverts() public {
-        wireFakeModules();
+        wireModules();
         vm.prank(court);
         vm.expectRevert(IVault.TransferFailed.selector);
         v.depositStake(1, makeAddr("challenger"));
@@ -105,7 +105,7 @@ contract VaultEscrowTest is Fixture {
     // ---- bond locking --------------------------------------------------------------------------
 
     function test_lockBond_withBond_locksCurrentPublishersBond() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.4 ether);
         vm.expectEmit(vault);
         emit IVault.BondLocked(1, skillId, publisher, 0.4 ether);
@@ -114,7 +114,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_lockBond_withoutBond_isSilentNoop() public {
-        wireFakeModules();
+        wireModules();
         vm.recordLogs();
         lock(1, skillId);
         lock(2, keccak256("unknown"));
@@ -124,7 +124,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_lockBond_ignoresFormerSponsorsBond() public {
-        wireFakeModules();
+        wireModules();
         (address ownerAddr, uint256 ownerPk) = makeAddrAndKey("owner");
         address owned = address(new OwnedTarget(ownerAddr));
         bytes32 id = attestAs(holder("attester"), owned, Verdict.SAFE, 0);
@@ -142,7 +142,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_finalize_whileLocked_reverts() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.3 ether);
         vm.prank(publisher);
         v.requestBondWithdrawal(skillId);
@@ -156,7 +156,7 @@ contract VaultEscrowTest is Fixture {
     // ---- settleBond ----------------------------------------------------------------------------
 
     function test_settleBond_halfSlash_movesHalfToEscrowAndUnlocks() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.4 ether);
         stake(1, makeAddr("challenger"), 0.01 ether);
         lock(1, skillId);
@@ -173,7 +173,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_settleBond_zeroSlash_onlyUnlocks() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.4 ether);
         lock(1, skillId);
         (uint256 slashed, uint256 released) = settleBondAs(1, 0);
@@ -185,7 +185,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_settleBond_nothingLocked_returnsZeros() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.4 ether);
         vm.recordLogs();
         (uint256 slashed, uint256 released) = settleBondAs(7, 5000);
@@ -195,7 +195,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_settleBond_twice_secondIsNoop() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.4 ether);
         lock(1, skillId);
         settleBondAs(1, 5000);
@@ -206,7 +206,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_settleBond_slashesBondEvenWhileWithdrawalPending() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.4 ether);
         vm.prank(publisher);
         v.requestBondWithdrawal(skillId);
@@ -221,7 +221,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_settleBond_oddWeiBond_roundsSlashDown() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 3);
         lock(1, skillId);
         (uint256 slashed, uint256 released) = settleBondAs(1, 5000);
@@ -232,7 +232,7 @@ contract VaultEscrowTest is Fixture {
     // ---- distribute ----------------------------------------------------------------------------
 
     function test_distribute_creditsRecipientsAndDrainsEscrow() public {
-        wireFakeModules();
+        wireModules();
         address a = makeAddr("a");
         address b = makeAddr("b");
         stake(1, a, 0.03 ether);
@@ -253,7 +253,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_distribute_sumAboveEscrow_revertsAndChangesNothing() public {
-        wireFakeModules();
+        wireModules();
         address a = makeAddr("a");
         stake(1, a, 0.03 ether);
         (address[] memory to, uint256[] memory amounts) = pair(a, 0.02 ether, a, 0.01 ether + 1);
@@ -265,7 +265,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_distribute_lengthMismatch_reverts() public {
-        wireFakeModules();
+        wireModules();
         stake(1, makeAddr("a"), 0.03 ether);
         address[] memory to = new address[](2);
         uint256[] memory amounts = new uint256[](1);
@@ -275,7 +275,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_distribute_cannotTouchAnotherEscrowOrBonds() public {
-        wireFakeModules();
+        wireModules();
         depositBondAs(publisher, skillId, 0.4 ether);
         address a = makeAddr("a");
         stake(1, a, 1);
@@ -289,7 +289,7 @@ contract VaultEscrowTest is Fixture {
     }
 
     function test_distribute_sameRecipientTwice_creditsBoth() public {
-        wireFakeModules();
+        wireModules();
         address a = makeAddr("a");
         stake(1, a, 0.03 ether);
         (address[] memory to, uint256[] memory amounts) = pair(a, 0.02 ether, a, 0.01 ether);
@@ -300,7 +300,7 @@ contract VaultEscrowTest is Fixture {
 
     function testFuzz_distribute_neverCreditsMoreThanEscrow(uint96 stakeAmount, uint96 a, uint96 b) public {
         vm.assume(stakeAmount > 0);
-        wireFakeModules();
+        wireModules();
         address x = makeAddr("x");
         address y = makeAddr("y");
         stake(1, x, stakeAmount);
