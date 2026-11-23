@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Starts a local Anvil node and deploys the stub contracts to it.
-# Addresses are written to shared/abi/addresses.local.json. Stop with Ctrl+C.
+# Starts a local Anvil node and deploys the stub contracts to it, or the real Core, Vault and
+# Court when REAL=1. Either way the addresses are written to shared/abi/addresses.local.json in
+# the same shape. Stop with Ctrl+C.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,10 +19,13 @@ for _ in $(seq 1 50); do
 done
 cast chain-id --rpc-url "$RPC_URL" >/dev/null || { echo "Anvil did not start on $RPC_URL" >&2; exit 1; }
 
-forge script DeployLocal --root "$ROOT/contracts" --rpc-url "$RPC_URL" \
+DEPLOY_SCRIPT="DeployLocal"
+if [ "${REAL:-0}" = "1" ]; then DEPLOY_SCRIPT="DeployReal"; fi
+
+forge script "$DEPLOY_SCRIPT" --root "$ROOT/contracts" --rpc-url "$RPC_URL" \
   --broadcast --unlocked --sender "$SENDER" >/dev/null
 
-echo "Local chain ready on $RPC_URL"
+echo "Local chain ready on $RPC_URL ($DEPLOY_SCRIPT)"
 cat "$ROOT/shared/abi/addresses.local.json"
 echo
 wait "$ANVIL_PID"

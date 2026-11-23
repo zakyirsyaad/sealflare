@@ -28,12 +28,16 @@ in `shared/abi` match the Solidity interfaces. CI runs the same command.
 
 ```bash
 pnpm chain          # Anvil on 127.0.0.1:8545 with the stub contracts; wait for "Local chain ready"
+pnpm chain:real     # the same, with the real Core, Vault and Court instead of the stubs
 pnpm chain:seed     # Agent IDs for the first five Anvil accounts and three sample targets
 pnpm chain:warp 43200   # move the clock forward, here by 12 hours
 ```
 
-Addresses are written to `shared/abi/addresses.local.json`. The stubs in `contracts/src/stubs` emit
-the final events and accept any caller. They are for local development only.
+Both write the addresses to `shared/abi/addresses.local.json` in the same shape, and `chain:seed`
+works with either. The stubs in `contracts/src/stubs` emit the final events and accept any caller,
+which makes UI work quick. The real contracts enforce every rule: Agent ID checks, stakes, phase
+windows, the 48 hour settlement delay. Use `chain:real` to check a flow end to end. Both are for
+local development only.
 
 ## Start your lane
 

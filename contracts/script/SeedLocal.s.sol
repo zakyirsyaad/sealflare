@@ -3,11 +3,24 @@ pragma solidity 0.8.28;
 
 import {Script} from "forge-std/Script.sol";
 import {TargetType, Verdict} from "../src/interfaces/Types.sol";
-import {CoreStub} from "../src/stubs/CoreStub.sol";
+import {ICore} from "../src/interfaces/ICore.sol";
 import {MockAgentID} from "../src/stubs/MockAgentID.sol";
+
+/// A sample target whose runtime code really contains DELEGATECALL, so the real Core's
+/// probeBytecode flags it just as the stub does.
+contract SampleProxy {
+    fallback() external {
+        assembly {
+            let ok := delegatecall(gas(), 0x1234, 0, 0, 0, 0)
+            if iszero(ok) { revert(0, 0) }
+        }
+    }
+}
 
 /// Gives Agent IDs to the first five Anvil accounts and creates three sample targets:
 /// a contract with three Safe votes, a contract marked as a proxy, and a skill voted Danger.
+/// Works against the stubs (`pnpm chain`) and the real contracts (`pnpm chain:real`), since it
+/// only calls functions both implement through ICore.
 contract SeedLocal is Script {
     uint256 internal constant LOCAL_CHAIN_ID = 31337;
     /// Anvil's public development mnemonic. It holds no real funds and is not a secret.
@@ -21,7 +34,7 @@ contract SeedLocal is Script {
         if (block.chainid != LOCAL_CHAIN_ID) revert NotLocalChain(block.chainid);
         string memory addresses = vm.readFile("../shared/abi/addresses.local.json");
         MockAgentID agentId = MockAgentID(vm.parseJsonAddress(addresses, ".agentId"));
-        CoreStub core = CoreStub(vm.parseJsonAddress(addresses, ".core"));
+        ICore core = ICore(vm.parseJsonAddress(addresses, ".core"));
         bytes32 skill =
             vm.parseJsonBytes32(vm.readFile("../shared/rules/vectors/ids.json"), ".skills[0].canonicalBundleHash");
 
@@ -30,7 +43,7 @@ contract SeedLocal is Script {
             agentId.setBalance(vm.addr(_key(i)), 1);
         }
         bytes32 safeTarget = _word(address(new MockAgentID()));
-        address proxyTarget = address(new MockAgentID());
+        address proxyTarget = address(new SampleProxy());
         core.probeBytecode(proxyTarget);
         vm.stopBroadcast();
 
