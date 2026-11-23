@@ -19,6 +19,9 @@ abstract contract CoreBase is ICore {
     mapping(bytes32 => mapping(address => uint32)) internal _indexPlusOne;
     mapping(address => GuardianView) internal _guardians;
     mapping(address => uint256) public bindNonce;
+    /// Attestation count when the target was confirmed dangerous. Only DANGER votes below this
+    /// index were cast before the verdict and can earn XP for it (architecture 4.6, D21).
+    mapping(bytes32 => uint32) internal _countAtVerdict;
 
     constructor(address agentId_) {
         agentId = agentId_;

@@ -205,14 +205,18 @@ contract Vault is IVault, ReentrancyGuard {
         return _bounties[id];
     }
 
-    /// The first `slots` attestations from `startIndex` by anyone but the requester. One address
-    /// attests once per target, so this reads at most `slots + 1` attestations.
+    /// The first `slots` attestations from `startIndex` by anyone but the requester, made before
+    /// the 7-day timeout. One address attests once per target, so this reads at most `slots + 2`
+    /// attestations: the fillers, the requester's own, and the first one past the deadline (D21).
     function _fillersOf(BountyView storage b) internal view returns (Fill memory f) {
         uint32 count = ICore(core).getTarget(b.targetId).attestationCount;
         f.fillers = new address[](b.slots);
         f.verdicts = new Verdict[](b.slots);
+        uint256 deadline = uint256(b.createdAt) + Constants.BOUNTY_TIMEOUT;
         for (uint32 i = b.startIndex; i < count && f.filled < b.slots; ++i) {
             AttestationView memory a = ICore(core).getAttestation(b.targetId, i);
+            // Attestations are in time order, so the first one past the deadline ends the scan.
+            if (a.timestamp >= deadline) break;
             if (a.guardian == b.requester) continue;
             f.fillers[f.filled] = a.guardian;
             f.verdicts[f.filled] = a.verdict;

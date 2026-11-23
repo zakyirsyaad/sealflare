@@ -387,4 +387,52 @@ contract CoreSettleTest is Fixture {
             assertEq(vm.indexOf(source, "not implemented"), type(uint256).max, files[i]);
         }
     }
+
+    // ---- review fixes --------------------------------------------------------------------------
+
+    function test_setModules_sameAddressForBoth_reverts() public {
+        address both = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        FakeCourt c = new FakeCourt(address(core), both);
+        assertEq(address(c), both);
+        vm.expectRevert(ICore.ModuleMismatch.selector);
+        core.setModules(both, both);
+    }
+
+    function test_markDisputed_whileAnotherIsActive_reverts() public {
+        wireModules();
+        voteAs(0, Verdict.SAFE);
+        vm.startPrank(court);
+        core.markDisputed(id, 1);
+        vm.expectRevert(ICore.ModuleMismatch.selector);
+        core.markDisputed(id, 2);
+        vm.stopPrank();
+        assertEq(core.getTarget(id).activeChallengeId, 1);
+    }
+
+    function test_settle_dangerVoteAfterVerdict_settlesWithZero() public {
+        wireModules();
+        voteAs(0, Verdict.DANGER);
+        confirmDanger(id, 1, 0x01);
+        address late = voteAs(1, Verdict.DANGER);
+        core.settle(id, 0, 2);
+        assertEq(scoreOf(voter(0)), 5);
+        assertEq(scoreOf(late), 0);
+        assertTrue(core.getAttestation(id, 1).settled);
+        assertEq(core.pendingSettlement(id), 0);
+    }
+
+    function test_settle_dangerVoteDuringDispute_settlesWithZero() public {
+        wireModules();
+        voteAs(0, Verdict.SAFE);
+        vm.prank(court);
+        core.markDisputed(id, 1);
+        address mid = voteAs(1, Verdict.DANGER);
+        assertTrue(core.getAttestation(id, 1).castDuringDispute);
+        vm.prank(court);
+        core.applyVerdict(id, 1, ChallengeOutcome.UPHELD, 0x01);
+        vm.expectEmit(address(core));
+        emit ICore.AttestationSettled(id, 1, 0);
+        core.settle(id, 0, 2);
+        assertEq(scoreOf(mid), 0);
+    }
 }

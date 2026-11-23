@@ -214,6 +214,19 @@ contract VaultBountyTest is Fixture {
         assertEq(v.balanceOf(filler(0)), 0.0285 ether);
     }
 
+    function test_settle_voteAfterTimeout_doesNotFillASlot() public {
+        uint256 bountyId = bounty(3, 0.09 ether);
+        voteAs(0, Verdict.SAFE);
+        voteAs(1, Verdict.SAFE);
+        vm.warp(block.timestamp + Constants.BOUNTY_TIMEOUT);
+        voteAs(2, Verdict.SAFE);
+        vm.expectEmit(vault);
+        emit IVault.BountySettled(bountyId, 1, 2, 0.0285 ether, 0.03 ether, 0.003 ether);
+        v.settleBounty(bountyId);
+        assertEq(v.balanceOf(requester), 0.03 ether);
+        assertEq(v.balanceOf(filler(2)), 0);
+    }
+
     function test_settle_timeoutWithNone_refundsEverything() public {
         uint256 bountyId = bounty(3, 0.09 ether);
         vm.warp(block.timestamp + Constants.BOUNTY_TIMEOUT);

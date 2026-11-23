@@ -18,11 +18,12 @@ abstract contract CoreSettlement is CoreBase {
     // ---- module wiring --------------------------------------------------------------------------
 
     /// One-shot: once `court` is set the deployer has no authority left. A module without code,
-    /// or one that points at another Core or another Vault, is rejected as a mismatch.
+    /// one contract posing as both, or one that points at another Core or another Vault, is
+    /// rejected as a mismatch.
     function setModules(address court_, address vault_) external {
         if (msg.sender != deployer) revert OnlyDeployer();
         if (court != address(0)) revert ModulesAlreadySet();
-        if (court_.code.length == 0 || vault_.code.length == 0) revert ModuleMismatch();
+        if (court_ == vault_ || court_.code.length == 0 || vault_.code.length == 0) revert ModuleMismatch();
         if (
             ICourt(court_).core() != address(this) || IVault(vault_).core() != address(this)
                 || ICourt(court_).vault() != vault_
@@ -34,8 +35,11 @@ abstract contract CoreSettlement is CoreBase {
 
     // ---- Court only ---------------------------------------------------------------------------
 
+    /// One active dispute per target. Court already enforces that; a second mark while one is
+    /// open could only come from a Court out of step with Core, so it is a mismatch (D21).
     function markDisputed(bytes32 targetId, uint256 challengeId) external onlyCourt {
         if (!_exists[targetId]) revert TargetNotFound();
+        if (_targets[targetId].activeChallengeId != 0) revert ModuleMismatch();
         _targets[targetId].activeChallengeId = challengeId;
         emit DisputeMarked(targetId, challengeId);
     }
@@ -49,9 +53,10 @@ abstract contract CoreSettlement is CoreBase {
         TargetView storage t = _targets[targetId];
         if (challengeId == 0 || t.activeChallengeId != challengeId) revert NothingToSettle();
         t.activeChallengeId = 0;
-        if (outcome == ChallengeOutcome.UPHELD) {
+        if (outcome == ChallengeOutcome.UPHELD && !t.confirmedDanger) {
             t.confirmedDanger = true;
             t.activeFlags |= flags;
+            _countAtVerdict[targetId] = t.attestationCount;
         }
         emit VerdictApplied(targetId, challengeId, outcome, flags);
     }
@@ -70,7 +75,7 @@ abstract contract CoreSettlement is CoreBase {
         uint256 end = _rangeEnd(list.length, start, count);
         for (uint256 i = start; i < end; ++i) {
             AttestationView storage a = list[i];
-            (bool ready, int32 delta, ScoreReason reason) = _settlementOf(a, t);
+            (bool ready, int32 delta, ScoreReason reason) = _settlementOf(targetId, i, a, t);
             if (!ready) continue;
             a.settled = true;
             emit AttestationSettled(targetId, uint32(i), delta);
@@ -95,7 +100,7 @@ abstract contract CoreSettlement is CoreBase {
         AttestationView[] storage list = _attestations[targetId];
         TargetView storage t = _targets[targetId];
         for (uint256 i = 0; i < list.length; ++i) {
-            (bool ready,,) = _settlementOf(list[i], t);
+            (bool ready,,) = _settlementOf(targetId, i, list[i], t);
             if (ready) ++pending;
         }
     }
@@ -110,8 +115,10 @@ abstract contract CoreSettlement is CoreBase {
 
     /// Whether `settle` would settle this attestation now, and for how much (architecture 4.6).
     /// A SAFE vote waits out its 48 hours, any open dispute, and is never paid on a confirmed
-    /// danger; a DANGER vote waits for the danger verdict; CAUTION never settles.
-    function _settlementOf(AttestationView storage a, TargetView storage t)
+    /// danger. A DANGER vote waits for the danger verdict, and earns +5 only if it was cast
+    /// before that verdict and outside any dispute; otherwise it settles for 0 (D21). CAUTION
+    /// never settles.
+    function _settlementOf(bytes32 targetId, uint256 index, AttestationView storage a, TargetView storage t)
         internal
         view
         returns (bool ready, int32 delta, ScoreReason reason)
@@ -119,7 +126,9 @@ abstract contract CoreSettlement is CoreBase {
         if (a.settled || a.verdict == Verdict.CAUTION) return (false, 0, reason);
         if (a.verdict == Verdict.DANGER) {
             if (!t.confirmedDanger) return (false, 0, reason);
-            return (true, Rules.attestationXp(Verdict.DANGER, 0, true, true), ScoreReason.DANGER_CONFIRMED);
+            bool earned = !a.castDuringDispute && index < _countAtVerdict[targetId];
+            delta = earned ? Rules.attestationXp(Verdict.DANGER, 0, true, true) : int32(0);
+            return (true, delta, ScoreReason.DANGER_CONFIRMED);
         }
         if (t.confirmedDanger || t.activeChallengeId != 0) return (false, 0, reason);
         if (block.timestamp < uint256(a.timestamp) + Constants.SETTLE_DELAY) return (false, 0, reason);
