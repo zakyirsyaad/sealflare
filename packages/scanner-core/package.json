@@ -1,0 +1,23 @@
+{
+  "name": "@sealflare/scanner-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./adapters": "./src/adapters/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "vitest": "^5.1.1"
+  },
+  "dependencies": {
+    "@sealflare/shared": "workspace:*",
+    "viem": "^2.58.4",
+    "zod": "^4.6.7"
+  }
+}
