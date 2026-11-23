@@ -272,6 +272,50 @@ contract CourtCloseTest is Fixture {
         assertEq(v.escrowOf(id), 0);
     }
 
+    function test_resolve_rejected_setsSevenDayCooldown() public {
+        bytes32 t = newTarget();
+        address ch = newChallenger();
+        (uint256 id,) = runVote(t, ch, zeros(3), 0, 7);
+        c.resolve(id);
+        uint64 endsAt = uint64(block.timestamp) + Constants.CHALLENGE_COOLDOWN;
+        assertEq(c.cooldownEndsAt(ch, t), endsAt);
+        vm.deal(ch, 1 ether);
+        vm.prank(ch);
+        vm.expectRevert(abi.encodeWithSelector(ICourt.InCooldown.selector, endsAt));
+        c.openChallenge{value: C}(t, 0x01, bytes32(0), "", "");
+        vm.warp(endsAt);
+        openChallengeAs(ch, t);
+    }
+
+    function test_resolve_tied_setsSevenDayCooldown() public {
+        int32[] memory scores = zeros(3);
+        scores[0] = 10; // weight 2 upholds, two weight 1 reject
+        bytes32 t = newTarget();
+        address ch = newChallenger();
+        (uint256 id,) = runVote(t, ch, scores, 0x01, 0x07);
+        c.resolve(id);
+        assertEq(uint8(c.getChallenge(id).outcome), uint8(ChallengeOutcome.TIED));
+        assertEq(c.cooldownEndsAt(ch, t), uint64(block.timestamp) + Constants.CHALLENGE_COOLDOWN);
+    }
+
+    function test_resolve_upheld_setsNoCooldown() public {
+        bytes32 t = newTarget();
+        address ch = newChallenger();
+        (uint256 id,) = runVote(t, ch, zeros(3), 7, 7);
+        c.resolve(id);
+        assertEq(c.cooldownEndsAt(ch, t), 0);
+    }
+
+    function test_resolve_rejected_cooldownIsPerChallengerAndTarget() public {
+        bytes32 t = newTarget();
+        bytes32 other = newTarget();
+        address ch = newChallenger();
+        (uint256 id,) = runVote(t, ch, zeros(3), 0, 7);
+        c.resolve(id);
+        openChallengeAs(ch, other);
+        openChallengeAs(newChallenger(), t);
+    }
+
     // ---- expire --------------------------------------------------------------------------------
 
     function test_expire_first_forfeitsTwentyPercent() public {

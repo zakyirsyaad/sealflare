@@ -233,7 +233,7 @@ Setiap attestation punya penanda "sudah diselesaikan", supaya XP tidak dibayar d
 - Kuorum dihitung dari jumlah reveal, bukan commit.
 - Stake juri yang commit tetapi tidak reveal hangus. Ini menutup taktik commit di dua sisi lalu hanya membuka yang menang.
 - Target berstatus `DISPUTED_CAUTION` hanya selama sengketa aktif.
-- *Cooldown* 7 hari untuk pasangan Agent ID dan target dipicu oleh `expire`.
+- *Cooldown* 7 hari untuk pasangan Agent ID dan target dipicu oleh setiap sengketa yang tidak berakhir dengan putusan bahaya: `expire`, serta `resolve` dengan hasil ditolak atau seri. Tanpa itu, tantangan yang kalah bisa dibuka ulang di blok berikutnya, sehingga target terus berstatus `DISPUTED_CAUTION`, bond penerbit terkunci, dan XP `SAFE` tertahan (keputusan founder, 23 November 2026).
 - Porsi stake penantang yang hangus saat `expire` naik untuk sengketa kedaluwarsa berulang pada target yang sama dalam 30 hari: 20%, lalu 50%, lalu 100%, siapa pun penantangnya. Ini membatasi penguncian target secara bergiliran.
 
 ### 4.8 Pembagian dana sengketa

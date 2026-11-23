@@ -209,6 +209,7 @@ contract Court is ICourt {
             : c.rejectWeight > c.upholdWeight ? ChallengeOutcome.REJECTED : ChallengeOutcome.TIED;
         c.outcome = outcome;
         activeChallengeOf[c.targetId] = 0;
+        if (outcome != ChallengeOutcome.UPHELD) _startCooldown(c);
         uint16 slashBps = outcome == ChallengeOutcome.UPHELD ? Constants.BOND_SLASH_BPS : 0;
         (uint256 slashed,) = IVault(vault).settleBond(id, slashBps);
         Payout memory p = _resolvePayout(id, c, outcome, slashed);
@@ -229,7 +230,7 @@ contract Court is ICourt {
         uint64[2] storage recent = _recentExpiries[c.targetId];
         recent[1] = recent[0];
         recent[0] = uint64(block.timestamp);
-        cooldownEndsAt[c.challenger][c.targetId] = uint64(block.timestamp) + Constants.CHALLENGE_COOLDOWN;
+        _startCooldown(c);
         IVault(vault).settleBond(id, 0);
         Payout memory p = _newPayout(id);
         _add(p, c.challenger, Constants.CHALLENGE_STAKE * (Constants.BPS - forfeitBps) / Constants.BPS);
@@ -238,6 +239,13 @@ contract Court is ICourt {
         IVault(vault).distribute(id, p.to, p.amounts);
         ICore(core).applyVerdict(c.targetId, id, ChallengeOutcome.EXPIRED, c.flags);
         emit ChallengeExpired(id, c.reveals, forfeitBps);
+    }
+
+    /// Every challenge that does not end in a danger verdict bars the same challenger from that
+    /// target for 7 days, so a lost or tied challenge cannot be reopened in the next block to
+    /// keep the target disputed and its bond locked (D22).
+    function _startCooldown(ChallengeView storage c) internal {
+        cooldownEndsAt[c.challenger][c.targetId] = uint64(block.timestamp) + Constants.CHALLENGE_COOLDOWN;
     }
 
     function _closable(uint256 id) internal view returns (ChallengeView storage) {
