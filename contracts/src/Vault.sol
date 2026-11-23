@@ -11,14 +11,22 @@ import {Constants} from "./lib/Constants.sol";
 /// and only up to what was credited to the caller. There is no `receive`, and no logic reads
 /// `address(this).balance`.
 ///
-/// Task 5 implements warranty bonds and balances. Escrow (Task 6) and bounties (Task 7) carry a
-/// temporary `revert("not implemented")` body so the contract compiles; those tasks replace them.
+/// Tasks 5 and 6 implement bonds, balances and dispute escrow. Bounties (Task 7) carry a
+/// temporary `revert("not implemented")` body so the contract compiles; Task 7 replaces them.
 contract Vault is IVault, ReentrancyGuard {
     address public immutable core;
     address public immutable treasury;
 
     mapping(bytes32 => mapping(address => BondView)) internal _bonds;
     mapping(address => uint256) public balanceOf;
+    mapping(uint256 => uint256) public escrowOf;
+
+    struct BondLock {
+        bytes32 targetId;
+        address depositor;
+    }
+
+    mapping(uint256 => BondLock) internal _locks;
 
     /// Zero for either address is rejected as TransferFailed: with no Core no publisher can ever
     /// be read, and with no treasury every fee would be credited to an account nobody controls (D16).
@@ -95,33 +103,79 @@ contract Vault is IVault, ReentrancyGuard {
         emit BalanceCredited(account, amount);
     }
 
-    // ---- not implemented yet (temporary bodies, removed by Tasks 6 and 7) ---------------------
+    // ---- dispute escrow (Court only) ----------------------------------------------------------
+
+    /// Court is read from Core on every call, so these stay closed until setModules has run.
+    modifier onlyCourt() {
+        address court = ICore(core).court();
+        if (court == address(0) || msg.sender != court) revert OnlyCourt();
+        _;
+    }
+
+    function depositStake(uint256 challengeId, address account) external payable onlyCourt {
+        if (msg.value == 0) revert TransferFailed();
+        escrowOf[challengeId] += msg.value;
+        emit StakeDeposited(challengeId, account, msg.value);
+    }
+
+    /// Locks the bond of the target's current publisher of record. No publisher or no bond is a
+    /// silent no-op, so Court can call this without knowing whether a bond exists (D8).
+    function lockBond(uint256 challengeId, bytes32 targetId) external onlyCourt {
+        TargetView memory t = ICore(core).getTarget(targetId);
+        if (t.publisherRole == PublisherRole.NONE) return;
+        BondView storage b = _bonds[targetId][t.publisher];
+        if (b.amount == 0) return;
+        b.lockedByChallengeId = challengeId;
+        _locks[challengeId] = BondLock(targetId, t.publisher);
+        emit BondLocked(challengeId, targetId, t.publisher, b.amount);
+    }
+
+    /// Moves `slashBps` of the locked bond into this challenge's escrow, rounding down, and
+    /// unlocks the rest, which stays a bond of its depositor. Without a lock it returns (0, 0).
+    /// A slashBps above 10,000 underflows and reverts.
+    function settleBond(uint256 challengeId, uint16 slashBps)
+        external
+        onlyCourt
+        returns (uint256 slashed, uint256 released)
+    {
+        BondLock memory l = _locks[challengeId];
+        if (l.depositor == address(0)) return (0, 0);
+        delete _locks[challengeId];
+        BondView storage b = _bonds[l.targetId][l.depositor];
+        slashed = b.amount * slashBps / Constants.BPS;
+        released = b.amount - slashed;
+        b.amount = released;
+        b.lockedByChallengeId = 0;
+        escrowOf[challengeId] += slashed;
+        emit BondSettled(challengeId, l.targetId, l.depositor, slashed, released);
+    }
+
+    /// Checks the whole sum against this challenge's escrow before crediting anyone, so a bad
+    /// list changes nothing. A length mismatch is rejected as EscrowExceeded too (D17).
+    function distribute(uint256 challengeId, address[] calldata recipients, uint256[] calldata amounts)
+        external
+        onlyCourt
+    {
+        if (recipients.length != amounts.length) revert EscrowExceeded();
+        uint256 total;
+        for (uint256 i = 0; i < amounts.length; ++i) {
+            total += amounts[i];
+        }
+        if (total > escrowOf[challengeId]) revert EscrowExceeded();
+        escrowOf[challengeId] -= total;
+        for (uint256 i = 0; i < recipients.length; ++i) {
+            emit Distributed(challengeId, recipients[i], amounts[i]);
+            _credit(recipients[i], amounts[i]);
+        }
+    }
+
+    // ---- not implemented yet (temporary bodies, removed by Task 7) ----------------------------
 
     function createBounty(bytes32, uint8) external payable returns (uint256) {
         revert("not implemented");
     }
 
     function settleBounty(uint256) external {
-        revert("not implemented");
-    }
-
-    function depositStake(uint256, address) external payable {
-        revert("not implemented");
-    }
-
-    function lockBond(uint256, bytes32) external {
-        revert("not implemented");
-    }
-
-    function settleBond(uint256, uint16) external returns (uint256, uint256) {
-        revert("not implemented");
-    }
-
-    function distribute(uint256, address[] calldata, uint256[] calldata) external {
-        revert("not implemented");
-    }
-
-    function escrowOf(uint256) external view returns (uint256) {
         revert("not implemented");
     }
 

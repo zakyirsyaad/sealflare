@@ -174,11 +174,6 @@ contract VaultBondTest is Fixture {
         assertEq(v.balanceOf(publisher), 0.3 ether);
     }
 
-    function test_finalize_whileLocked_reverts() public {
-        // Completed in Task 6, once Court can lock a bond through lockBond.
-        vm.skip(true);
-    }
-
     function test_formerSponsor_canStillWithdrawOwnBond() public {
         (address ownerAddr, uint256 ownerPk) = makeAddrAndKey("owner");
         address owned = address(new OwnedTarget(ownerAddr));
