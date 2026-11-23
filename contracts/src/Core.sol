@@ -2,8 +2,8 @@
 pragma solidity 0.8.28;
 
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {IAgentID} from "./interfaces/IAgentID.sol";
-import {ICore} from "./interfaces/ICore.sol";
+import {CoreBase} from "./CoreBase.sol";
+import {CoreSettlement} from "./CoreSettlement.sol";
 import {IVault} from "./interfaces/IVault.sol";
 import {BytecodeScan} from "./lib/BytecodeScan.sol";
 import {
@@ -26,28 +26,10 @@ import {Ids} from "./lib/Ids.sol";
 import {OwnerRead} from "./lib/OwnerRead.sol";
 import {Rules} from "./lib/Rules.sol";
 
-/// Target registry and attestations. Holds no funds.
-///
-/// Tasks 1 to 3 implement attestations, tier, firewall views, bytecode probing and publisher
-/// binding. Every other interface function carries a temporary `revert("not implemented")` body so
-/// the contract compiles; Task 4 replaces them. `court` and `vault` read zero until Task 4 wires them.
-contract Core is ICore {
-    address public immutable agentId;
-    address public immutable deployer;
-    address public court;
-    address public vault;
-
-    mapping(bytes32 => TargetView) internal _targets;
-    mapping(bytes32 => bool) internal _exists;
-    mapping(bytes32 => AttestationView[]) internal _attestations;
-    mapping(bytes32 => mapping(address => uint32)) internal _indexPlusOne;
-    mapping(address => GuardianView) internal _guardians;
-    mapping(address => uint256) public bindNonce;
-
-    constructor(address agentId_) {
-        agentId = agentId_;
-        deployer = msg.sender;
-    }
+/// Target registry, attestations, publisher binding and IFirewall. Holds no funds. Storage lives in
+/// CoreBase; module wiring, XP settlement and the Court-only entry points in CoreSettlement.
+contract Core is CoreSettlement {
+    constructor(address agentId_) CoreBase(agentId_) {}
 
     // ---- writes -------------------------------------------------------------------------------
 
@@ -132,10 +114,6 @@ contract Core is ICore {
         uint64 today = uint64(block.timestamp / 1 days);
         uint8 used = g.lastAttestDay == today ? g.attestsToday : 0;
         return Constants.DAILY_ATTEST_LIMIT - used;
-    }
-
-    function isAgentIdHolder(address account) public view returns (bool) {
-        return IAgentID(agentId).balanceOf(account) > 0;
     }
 
     // ---- bytecode probe and firewall -----------------------------------------------------------
@@ -321,28 +299,6 @@ contract Core is ICore {
         }
     }
 
-    function _createTargetIfNew(TargetType targetType, bytes32 target, bytes32 targetId) internal {
-        if (_exists[targetId]) return;
-        bytes32 pinned =
-            targetType == TargetType.SMART_CONTRACT ? address(uint160(uint256(target))).codehash : bytes32(0);
-        TargetView storage t = _targets[targetId];
-        t.targetType = targetType;
-        t.target = target;
-        t.pinnedCodehash = pinned;
-        t.createdAt = uint64(block.timestamp);
-        _exists[targetId] = true;
-        emit TargetCreated(targetId, targetType, target, pinned);
-    }
-
-    function _ensureGuardian(address account) internal returns (GuardianView storage g) {
-        g = _guardians[account];
-        if (!g.exists) {
-            g.exists = true;
-            g.createdAtBlock = uint64(block.number);
-            emit GuardianCreated(account, uint64(block.number));
-        }
-    }
-
     function _checkDailyQuota(GuardianView storage g) internal view {
         uint64 today = uint64(block.timestamp / 1 days);
         uint8 used = g.lastAttestDay == today ? g.attestsToday : 0;
@@ -390,39 +346,5 @@ contract Core is ICore {
             )
         );
         _indexPlusOne[targetId][msg.sender] = v.index + 1;
-    }
-
-    // ---- not implemented yet (temporary bodies, removed by Task 4) ----------------------------
-
-    function setModules(address, address) external {
-        revert("not implemented");
-    }
-
-    function settle(bytes32, uint32, uint32) external {
-        revert("not implemented");
-    }
-
-    function applyPenalties(bytes32, uint32, uint32) external {
-        revert("not implemented");
-    }
-
-    function markDisputed(bytes32, uint256) external {
-        revert("not implemented");
-    }
-
-    function applyVerdict(bytes32, uint256, ChallengeOutcome, uint32) external {
-        revert("not implemented");
-    }
-
-    function adjustScore(address, bytes32, int32, ScoreReason) external {
-        revert("not implemented");
-    }
-
-    function pendingSettlement(bytes32) external view returns (uint32) {
-        revert("not implemented");
-    }
-
-    function pendingPenalties(bytes32) external view returns (uint32) {
-        revert("not implemented");
     }
 }

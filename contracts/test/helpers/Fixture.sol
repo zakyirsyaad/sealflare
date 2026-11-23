@@ -5,14 +5,14 @@ import {StdStorage, stdStorage} from "forge-std/StdStorage.sol";
 import {Test} from "forge-std/Test.sol";
 import {Core} from "../../src/Core.sol";
 import {ICore} from "../../src/interfaces/ICore.sol";
-import {TargetType, Verdict} from "../../src/interfaces/Types.sol";
+import {ChallengeOutcome, TargetType, Verdict} from "../../src/interfaces/Types.sol";
 import {BindTypes} from "../../src/lib/BindTypes.sol";
 import {MockAgentID} from "../../src/stubs/MockAgentID.sol";
-import {TinyTarget} from "./Mocks.sol";
+import {FakeCourt, FakeVault, TinyTarget} from "./Mocks.sol";
 
 /// Deploys Core against MockAgentID and provides the actors and targets the Core tests use.
-/// `vault` and `court` stay zero for now: Vault arrives in Task 5 and Court in Task 8, and the
-/// fixture fills them in then. Core's module wiring (setModules) is not implemented yet either.
+/// `vault` and `court` stay zero until a test calls `wireFakeModules`; the real Vault and Court
+/// replace the fakes in Tasks 5 and 8.
 contract Fixture is Test {
     using stdStorage for StdStorage;
 
@@ -24,6 +24,21 @@ contract Fixture is Test {
     function setUp() public virtual {
         agentId = new MockAgentID();
         core = new Core(address(agentId));
+    }
+
+    /// Deploys FakeVault and FakeCourt pointing at Core and wires them in as the deployer.
+    function wireFakeModules() public {
+        vault = address(new FakeVault(address(core)));
+        court = address(new FakeCourt(address(core), vault));
+        core.setModules(court, vault);
+    }
+
+    /// Confirms `targetId` dangerous through the Court-only path, as an upheld challenge would.
+    function confirmDanger(bytes32 targetId, uint256 challengeId, uint32 flags) public {
+        vm.startPrank(court);
+        core.markDisputed(targetId, challengeId);
+        core.applyVerdict(targetId, challengeId, ChallengeOutcome.UPHELD, flags);
+        vm.stopPrank();
     }
 
     /// A named address holding one Agent ID and 10 BNB.

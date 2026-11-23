@@ -79,3 +79,28 @@ contract RevertingOwner {
         revert("no owner");
     }
 }
+
+/// Stands in for Vault in Core tests: a settable `core()` and no bonds.
+contract FakeVault {
+    address public core;
+
+    constructor(address core_) {
+        core = core_;
+    }
+
+    function activeBond(bytes32) external pure returns (uint256) {
+        return 0;
+    }
+}
+
+/// Stands in for Court in Core tests: settable `core()` and `vault()`. Tests call Core's
+/// Court-only functions by pranking this address.
+contract FakeCourt {
+    address public core;
+    address public vault;
+
+    constructor(address core_, address vault_) {
+        core = core_;
+        vault = vault_;
+    }
+}

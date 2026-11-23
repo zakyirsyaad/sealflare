@@ -105,7 +105,8 @@ contract CoreAttestTest is Fixture {
 
         bytes memory atLimit = new bytes(Constants.SHORT_PROOF_MAX_BYTES);
         vm.prank(g);
-        bytes32 id = core.attest(TargetType.SMART_CONTRACT, word(t), Verdict.SAFE, 0, keccak256("e"), atLimit, "ipfs://e");
+        bytes32 id =
+            core.attest(TargetType.SMART_CONTRACT, word(t), Verdict.SAFE, 0, keccak256("e"), atLimit, "ipfs://e");
         assertEq(id, Ids.targetIdOfContract(t));
     }
 
@@ -172,15 +173,14 @@ contract CoreAttestTest is Fixture {
     }
 
     function test_attest_safeOnConfirmedDanger_reverts() public {
-        // Enabled in Task 4, once applyVerdict can confirm danger; Court wiring lands in Task 8.
-        vm.skip(true);
+        wireFakeModules();
         address g = holder("g");
         address t = deployTarget();
         bytes32 id = attestAs(g, t, Verdict.DANGER, 0x01);
-        vm.prank(core.court());
-        core.applyVerdict(id, 1, ChallengeOutcome.UPHELD, 0x01);
+        confirmDanger(id, 1, 0x01);
+        address late = holder("late-safe");
         vm.expectRevert(ICore.SafeNotAllowedOnConfirmedDanger.selector);
-        attestAs(holder("late-safe"), t, Verdict.SAFE, 0);
+        attestAs(late, t, Verdict.SAFE, 0);
     }
 
     function test_attest_weightIsFrozenAtVoteTime() public {
