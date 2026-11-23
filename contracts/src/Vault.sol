@@ -4,15 +4,12 @@ pragma solidity 0.8.28;
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ICore} from "./interfaces/ICore.sol";
 import {IVault} from "./interfaces/IVault.sol";
-import {BondView, BountyView, PublisherRole, TargetView} from "./interfaces/Types.sol";
+import {AttestationView, BondView, BountyView, PublisherRole, TargetView, Verdict} from "./interfaces/Types.sol";
 import {Constants} from "./lib/Constants.sol";
 
 /// Every BNB the protocol holds. Pull payments only: money moves out solely through `withdraw`,
 /// and only up to what was credited to the caller. There is no `receive`, and no logic reads
 /// `address(this).balance`.
-///
-/// Tasks 5 and 6 implement bonds, balances and dispute escrow. Bounties (Task 7) carry a
-/// temporary `revert("not implemented")` body so the contract compiles; Task 7 replaces them.
 contract Vault is IVault, ReentrancyGuard {
     address public immutable core;
     address public immutable treasury;
@@ -27,6 +24,8 @@ contract Vault is IVault, ReentrancyGuard {
     }
 
     mapping(uint256 => BondLock) internal _locks;
+    mapping(uint256 => BountyView) internal _bounties;
+    uint256 internal _bountyCount;
 
     /// Zero for either address is rejected as TransferFailed: with no Core no publisher can ever
     /// be read, and with no treasury every fee would be credited to an account nobody controls (D16).
@@ -169,17 +168,94 @@ contract Vault is IVault, ReentrancyGuard {
         }
     }
 
-    // ---- not implemented yet (temporary bodies, removed by Task 7) ----------------------------
+    // ---- bounties ---------------------------------------------------------------------------
 
-    function createBounty(bytes32, uint8) external payable returns (uint256) {
-        revert("not implemented");
+    /// The slot fillers of one bounty, read from Core. The arrays are sized to the bounty's slots.
+    struct Fill {
+        uint8 filled;
+        uint64 lastAt;
+        address[] fillers;
+        Verdict[] verdicts;
+        uint8[3] counts;
     }
 
-    function settleBounty(uint256) external {
-        revert("not implemented");
+    /// Slots fill from the target's next attestation, so `startIndex` is Core's current count;
+    /// a target Core has not recorded yet starts at 0 (D9).
+    function createBounty(bytes32 targetId, uint8 slots) external payable returns (uint256 id) {
+        if (slots < Constants.BOUNTY_MIN_SLOTS || slots > Constants.BOUNTY_MAX_SLOTS) revert InvalidSlots();
+        if (msg.value == 0 || msg.value > Constants.MAX_BOUNTY) revert BountyAboveCap();
+        uint32 startIndex = ICore(core).getTarget(targetId).attestationCount;
+        id = ++_bountyCount;
+        _bounties[id] = BountyView(targetId, msg.sender, slots, msg.value, startIndex, uint64(block.timestamp), false);
+        emit BountyCreated(id, targetId, msg.sender, slots, msg.value, startIndex);
     }
 
-    function getBounty(uint256) external view returns (BountyView memory) {
-        revert("not implemented");
+    /// Settles once the slots are full and the last filler's 48 hours have passed, or once the
+    /// bounty is 7 days old with whatever slots it has (architecture 4.9, D10).
+    function settleBounty(uint256 id) external {
+        BountyView storage b = _bounties[id];
+        if (b.requester == address(0) || b.settled) revert BountyNotSettleable();
+        Fill memory f = _fillersOf(b);
+        if (!_isSettleable(b, f)) revert BountyNotSettleable();
+        b.settled = true;
+        _payOut(id, b, f);
+    }
+
+    function getBounty(uint256 id) external view returns (BountyView memory) {
+        return _bounties[id];
+    }
+
+    /// The first `slots` attestations from `startIndex` by anyone but the requester. One address
+    /// attests once per target, so this reads at most `slots + 1` attestations.
+    function _fillersOf(BountyView storage b) internal view returns (Fill memory f) {
+        uint32 count = ICore(core).getTarget(b.targetId).attestationCount;
+        f.fillers = new address[](b.slots);
+        f.verdicts = new Verdict[](b.slots);
+        for (uint32 i = b.startIndex; i < count && f.filled < b.slots; ++i) {
+            AttestationView memory a = ICore(core).getAttestation(b.targetId, i);
+            if (a.guardian == b.requester) continue;
+            f.fillers[f.filled] = a.guardian;
+            f.verdicts[f.filled] = a.verdict;
+            f.counts[uint8(a.verdict)] += 1;
+            f.lastAt = a.timestamp;
+            ++f.filled;
+        }
+    }
+
+    function _isSettleable(BountyView storage b, Fill memory f) internal view returns (bool) {
+        if (block.timestamp >= uint256(b.createdAt) + Constants.BOUNTY_TIMEOUT) return true;
+        return f.filled == b.slots && block.timestamp >= uint256(f.lastAt) + Constants.SETTLE_DELAY;
+    }
+
+    /// Every verdict with the top count is aligned, so a tie pays all tied fillers.
+    function _aligned(Fill memory f) internal pure returns (uint8 mask, uint8 alignedCount) {
+        uint8 top;
+        for (uint8 v = 0; v < 3; ++v) {
+            if (f.counts[v] > top) top = f.counts[v];
+        }
+        if (top == 0) return (0, 0);
+        for (uint8 v = 0; v < 3; ++v) {
+            if (f.counts[v] == top) {
+                mask |= uint8(1 << v);
+                alignedCount += top;
+            }
+        }
+    }
+
+    /// Full slots pay out the whole amount. A timeout pays only the filled slots' share and
+    /// refunds the rest. The 5% fee and every rounding remainder go to the treasury (D10, D13).
+    function _payOut(uint256 id, BountyView storage b, Fill memory f) internal {
+        (uint8 mask, uint8 alignedCount) = _aligned(f);
+        uint256 pool = f.filled == b.slots ? b.amount : b.amount / b.slots * f.filled;
+        uint256 fee = pool * Constants.BOUNTY_FEE_BPS / Constants.BPS;
+        uint256 paidPerSlot = alignedCount == 0 ? 0 : (pool - fee) / alignedCount;
+        uint256 refunded = b.amount - pool;
+        for (uint256 i = 0; i < f.filled; ++i) {
+            if (paidPerSlot != 0 && mask & (1 << uint8(f.verdicts[i])) != 0) _credit(f.fillers[i], paidPerSlot);
+        }
+        if (refunded != 0) _credit(b.requester, refunded);
+        uint256 toTreasury = pool - paidPerSlot * alignedCount;
+        if (toTreasury != 0) _credit(treasury, toTreasury);
+        emit BountySettled(id, mask, f.filled, paidPerSlot, refunded, fee);
     }
 }
