@@ -25,7 +25,7 @@ jobs:
         id: rpc
         run: |
           if [ -n "$BSC_RPC_URL" ]; then echo "set=true" >> "$GITHUB_OUTPUT"; else echo "BSC_RPC_URL is not set; skipping."; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.rpc.outputs.set == 'true'
         with:
           submodules: recursive
