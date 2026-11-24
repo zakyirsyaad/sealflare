@@ -6,7 +6,7 @@ import { Buffer } from 'node:buffer'
 import { z } from 'zod'
 import { CONSTANTS, EXCLUDED_PATH, MAX_PUBLISHER_SIG_BYTES, contentHash, BundleError, type BundleEntry } from '@sealflare/shared/rules'
 import { ScanError, SkillSource, type RepoFetcher, type RepoRef, type SkillRef } from '@sealflare/shared/schemas'
-import { requestJson, ResponseTooLarge } from './http'
+import { tooLarge, withGitHubApi, type GitHubOptions, type Get } from './github-api'
 
 const Name = z.string().regex(/^[A-Za-z0-9_.-]+$/).refine((value) => value !== '.' && value !== '..')
 const Ref = z.object({ owner: Name, repo: Name, commit: SkillSource.shape.commit.optional(), branch: Name.optional() })
@@ -22,23 +22,6 @@ const LooseEntry = z.object({ path: z.string(), sha: z.unknown().optional(), mod
 const Tree = z.object({ sha: Sha, truncated: z.boolean(), tree: z.array(LooseEntry) })
 type Entry = z.infer<typeof Entry>
 type LooseEntry = z.infer<typeof LooseEntry>
-const tooLarge = () => new ScanError('BUNDLE_TOO_LARGE', 'This skill is too large to scan.')
-
-function retryAfter(headers: Headers): number {
-  const value = headers.get('retry-after')
-  if (value && /^\d+$/.test(value)) return Math.max(1, Number(value))
-  const date = value ? Date.parse(value) : NaN
-  const reset = Number(headers.get('x-ratelimit-reset')) * 1000
-  return Math.max(1, Math.ceil(((Number.isFinite(date) ? date : reset || Date.now() + 60_000) - Date.now()) / 1000))
-}
-
-function rejectStatus(status: number, headers: Headers, repoLookup: boolean): void {
-  if (status === 429 || status === 403) {
-    throw new ScanError('RATE_LIMITED', 'GitHub rate limit reached.', { retryAfterSeconds: retryAfter(headers) })
-  }
-  if (status === 404 && repoLookup) throw new ScanError('REPO_NOT_PUBLIC', 'This repository is not public.')
-  if (status !== 200) throw new ScanError('NO_SKILL_FOUND', 'GitHub could not return the requested repository data.')
-}
 
 function strictEntries(entries: LooseEntry[]): Entry[] {
   const parsed = z.array(Entry).safeParse(entries)
@@ -68,27 +51,7 @@ function validateEntries(entries: LooseEntry[], folder: string): Entry[] {
   return blobs
 }
 
-type Options = { token?: string; fetch?: typeof fetch }
-type Get = (path: string, limit?: number) => Promise<unknown>
-
-function createApi(options: Options): Get {
-  const fetcher = options.fetch ?? fetch
-  const headers = { accept: 'application/vnd.github+json', 'x-github-api-version': '2026-03-10',
-    ...(options.token ? { authorization: `Bearer ${options.token}` } : {}) }
-  return async (path: string, limit = 8_388_608): Promise<unknown> => {
-    try {
-      const response = await requestJson(fetcher, `https://api.github.com${path}`, { headers }, limit)
-      rejectStatus(response.status, response.headers, /^\/repos\/[^/]+\/[^/]+$/.test(path))
-      return response.body
-    } catch (error) {
-      if (error instanceof ScanError) throw error
-      if (error instanceof ResponseTooLarge) throw tooLarge()
-      throw new ScanError('NO_SKILL_FOUND', 'GitHub could not return the requested repository data.')
-    }
-  }
-}
-
-async function treeFor(input: RepoRef, get: Get) {
+async function resolveRepository(input: RepoRef, get: Get) {
   const ref = Ref.parse(input), path = `/repos/${ref.owner}/${ref.repo}`
   if (ref.commit && ref.branch) throw new ScanError('INPUT_NOT_RECOGNIZED', 'Choose a commit or branch, not both.')
   const repo = z.object({ private: z.boolean(), default_branch: z.string().min(1) }).parse(await get(path))
@@ -96,12 +59,29 @@ async function treeFor(input: RepoRef, get: Get) {
   const commit = z.object({ sha: Sha, commit: z.object({ tree: z.object({ sha: Sha }) }) })
     .parse(await get(`${path}/commits/${encodeURIComponent(ref.commit ?? ref.branch ?? repo.default_branch)}`))
   if (ref.commit && commit.sha !== ref.commit) throw new ScanError('NO_SKILL_FOUND', 'The requested commit could not be resolved.')
-  const parsed = Tree.safeParse(await get(`${path}/git/trees/${commit.commit.tree.sha}?recursive=1`))
+  return { path, commit: commit.sha, sha: commit.commit.tree.sha }
+}
+
+async function readTree(path: string, sha: string, recursive: boolean, get: Get) {
+  const parsed = Tree.safeParse(await get(`${path}/git/trees/${sha}${recursive ? '?recursive=1' : ''}`))
   if (!parsed.success) throw new ScanError('NO_SKILL_FOUND', 'Invalid repository tree response.')
   const tree = parsed.data
   if (tree.truncated) throw tooLarge()
-  if (tree.sha !== commit.commit.tree.sha) throw new ScanError('NO_SKILL_FOUND', 'The requested tree could not be resolved.')
-  return { path, commit: commit.sha, entries: tree.tree }
+  if (tree.sha !== sha) throw new ScanError('NO_SKILL_FOUND', 'The requested tree could not be resolved.')
+  return tree.tree
+}
+
+async function selectedTree(path: string, rootSha: string, folder: string, get: Get) {
+  let sha = rootSha
+  for (const segment of folder ? folder.split('/') : []) {
+    const entries = await readTree(path, sha, false, get)
+    const matches = strictEntries(entries.filter(({ path }) => path === segment))
+    if (matches.length !== 1 || matches[0]!.type !== 'tree' || matches[0]!.mode !== '040000') {
+      throw new ScanError('NO_SKILL_FOUND', 'The selected skill folder is not a regular directory.')
+    }
+    sha = matches[0]!.sha
+  }
+  return readTree(path, sha, true, get)
 }
 
 async function blob(path: string, entry: Entry, folder: string, get: Get): Promise<BundleEntry> {
@@ -120,28 +100,51 @@ async function blob(path: string, entry: Entry, folder: string, get: Get): Promi
   return { path: entry.path.slice(folder ? folder.length + 1 : 0), kind: entry.mode === '120000' ? 'symlink' : 'file', bytes }
 }
 
-async function fetchBundle(input: SkillRef, get: Get): Promise<BundleEntry[]> {
-  const ref = Ref.extend({ commit: Sha, path: Path }).parse(input)
-  const tree = await treeFor(ref, get), entries = validateEntries(tree.entries, ref.path)
-  const bundle: BundleEntry[] = []
-  for (const entry of entries) bundle.push(await blob(tree.path, entry, ref.path, get))
-  try { contentHash(bundle) } catch (error) {
-    if (error instanceof BundleError && ['TOO_MANY_FILES', 'TOO_LARGE'].includes(error.code)) throw tooLarge()
-    throw new ScanError('NO_SKILL_FOUND', 'Invalid skill bundle.')
+async function downloadBlobs(path: string, entries: Entry[], get: Get, concurrency: number,
+  controller: AbortController,
+): Promise<BundleEntry[]> {
+  const bundle: BundleEntry[] = new Array(entries.length)
+  let next = 0
+  const worker = async () => {
+    while (!controller.signal.aborted) {
+      const index = next++
+      if (index >= entries.length) return
+      try { bundle[index] = await blob(path, entries[index]!, '', get) }
+      catch (error) { controller.abort(); throw error }
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, worker))
+  controller.signal.throwIfAborted()
   return bundle
 }
 
-export function createGitHubFetcher(options: Options = {}): RepoFetcher {
-  const get = createApi(options)
+async function fetchBundle(input: SkillRef, options: GitHubOptions): Promise<BundleEntry[]> {
+  const ref = Ref.extend({ commit: Sha, path: Path }).parse(input)
+  return withGitHubApi(options, async ({ get, checkBlobBudget }, controller) => {
+    const tree = await resolveRepository(ref, get)
+    const entries = validateEntries(await selectedTree(tree.path, tree.sha, ref.path, get), '')
+    checkBlobBudget(entries.length)
+    const bundle = await downloadBlobs(tree.path, entries, get, options.maxConcurrency ?? 4, controller)
+    try { contentHash(bundle) } catch (error) {
+      if (error instanceof BundleError && ['TOO_MANY_FILES', 'TOO_LARGE'].includes(error.code)) throw tooLarge()
+      throw new ScanError('NO_SKILL_FOUND', 'Invalid skill bundle.')
+    }
+    return bundle
+  })
+}
+
+export function createGitHubFetcher(options: GitHubOptions = {}): RepoFetcher {
+  z.object({ maxConcurrency: z.number().int().min(1).max(8).optional(),
+    timeoutMs: z.number().int().min(1).max(120_000).optional() }).parse(options)
   return {
-    listSkillFolders: async (ref) => {
-      const tree = await treeFor(ref, get)
-      const candidates = tree.entries.filter((entry) => entry.path === 'SKILL.md' || entry.path.endsWith('/SKILL.md'))
+    listSkillFolders: (ref) => withGitHubApi(options, async ({ get }) => {
+      const tree = await resolveRepository(ref, get)
+      const entries = await readTree(tree.path, tree.sha, true, get)
+      const candidates = entries.filter((entry) => entry.path === 'SKILL.md' || entry.path.endsWith('/SKILL.md'))
       const folders = strictEntries(candidates).filter((entry) => entry.type === 'blob' && ['100644', '100755'].includes(entry.mode))
         .map(({ path }) => path === 'SKILL.md' ? '' : path.slice(0, -'/SKILL.md'.length))
       return { commit: tree.commit, folders: [...new Set(folders)].sort() }
-    },
-    fetchBundle: (input) => fetchBundle(input, get),
+    }),
+    fetchBundle: (input) => fetchBundle(input, options),
   }
 }

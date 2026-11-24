@@ -69,3 +69,16 @@ test('invalid addresses are refused before sending the key', async () => {
   await expect(createExplorerAdapter({ apiKey: 'key', fetch: fetcher }).getSource('0x12')).rejects.toThrow()
   expect(fetcher).not.toHaveBeenCalled()
 })
+
+test.each([' ', '\n', '\r\n\t'])('whitespace %j around a wrapped source bundle is accepted', async (padding) => {
+  const content = '  contract A {}\n'
+  const source = `${padding}{${JSON.stringify({ language: 'Solidity', sources: { 'A.sol': { content } } })}}${padding}`
+  const explorer = createExplorerAdapter({ apiKey: 'key', fetch: async () => ok(result(source)) })
+  expect((await explorer.getSource(ADDRESS))?.files).toEqual([{ path: 'A.sol', content }])
+})
+
+test('plain source whitespace remains intact', async () => {
+  const content = ' \ncontract A {}\n\t'
+  const explorer = createExplorerAdapter({ apiKey: 'key', fetch: async () => ok(result(content)) })
+  expect((await explorer.getSource(ADDRESS))?.files).toEqual([{ path: 'Token.sol', content }])
+})
