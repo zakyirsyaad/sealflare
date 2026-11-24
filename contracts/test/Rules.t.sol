@@ -132,7 +132,10 @@ contract RulesTest is VectorTest {
         }
     }
 
-    function testFuzz_settleNeverChargesThePenalty(uint8 verdict, uint32 ordinal, bool eligible, bool danger) public pure {
+    function testFuzz_settleNeverChargesThePenalty(uint8 verdict, uint32 ordinal, bool eligible, bool danger)
+        public
+        pure
+    {
         int32 xp = Rules.attestationXp(Verdict(verdict % 3), ordinal, eligible, danger);
         assertGe(xp, 0);
     }

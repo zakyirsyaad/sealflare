@@ -87,6 +87,12 @@ pnpm chain:seed    # Agent IDs for five local accounts and three sample targets
 ```
 
 - Write the failing test first, watch it fail, then implement. `pnpm verify` must pass before a commit.
+- Every change reaches `main` through a pull request: one branch and one PR per plan task. `main`
+  needs passing CI (TypeScript, contracts, ABI, web build, secret scan) and one approval, and
+  merges are squash only, so the PR title becomes the commit message on `main` and must follow
+  the format below. Nobody approves their own PR.
+- `pnpm verify` does not run the formatter: run `forge fmt` in `contracts/` before committing
+  Solidity. Frozen files are excluded in `foundry.toml`.
 - Commit messages: `<type>: <description>` with type one of feat, fix, refactor, docs, test, chore,
   perf, ci. No `Co-Authored-By` trailer.
 - Commit only when asked. Never push, deploy, or send a mainnet transaction on your own.

@@ -1,0 +1,45 @@
+name: fork
+
+# BSC mainnet fork tests at the block fixed in contracts/test/fork/ForkBase.sol. They need an RPC
+# that serves historical state at that block (an archive node), stored as the BSC_RPC_URL secret.
+# Without the secret the job is skipped.
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fork:
+    name: BSC fork tests
+    runs-on: ubuntu-latest
+    env:
+      BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
+      # A public Agent ID holder and its token id (keccak256 of its handle), used by the
+      # soulbound and attestation checks.
+      AGENT_ID_HOLDER: "0x8ff4e0af28ee59fa1c799b10fe50ed4da1ad5f92"
+    steps:
+      - name: Check for the RPC secret
+        id: rpc
+        run: |
+          if [ -n "$BSC_RPC_URL" ]; then echo "set=true" >> "$GITHUB_OUTPUT"; else echo "BSC_RPC_URL is not set; skipping."; fi
+      - uses: actions/checkout@v4
+        if: steps.rpc.outputs.set == 'true'
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        if: steps.rpc.outputs.set == 'true'
+        with:
+          version: v1.7.1
+      - name: Fork tests
+        if: steps.rpc.outputs.set == 'true'
+        # bash with pipefail, so a failing cast call is not hidden by the tr after it.
+        shell: bash
+        run: |
+          handle=$(cast call 0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F "handleOf(address)(string)" "$AGENT_ID_HOLDER" --rpc-url "$BSC_RPC_URL" | tr -d '"')
+          if [ -z "$handle" ]; then echo "Could not read the holder's handle from BSC_RPC_URL." >&2; exit 1; fi
+          AGENT_ID_TOKEN=$(cast to-dec "$(cast keccak "$handle")")
+          export AGENT_ID_TOKEN
+          FOUNDRY_PROFILE=fork forge test --root contracts -vv
