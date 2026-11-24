@@ -14,6 +14,7 @@ read the result through `IFirewall`. It is a hackathon project with a hard deadl
 | How it looks | [docs/design/README.md](docs/design/README.md), then the files it points to |
 | What to build next in your lane | [docs/plans](docs/plans): `onchain`, `scanning`, `application` |
 | How to run things | [README.md](README.md) |
+| Which outside accounts and keys exist, and where each variable lives | [docs/service-accounts.md](docs/service-accounts.md) |
 
 If two documents disagree: `docs/architecture.md` wins over `sealflare.md`, and the frozen code in
 `shared/` and `contracts/src/interfaces/` wins over any prose about it.
