@@ -1,23 +1,10 @@
-# Lane owners, from AGENTS.md. The last matching line wins, so the founder's
-# frozen and owned paths come after the lane folders they sit inside.
+# Every path is owned by the founder, so every developer pull request needs the founder's
+# approval (the "main: founder review" ruleset requires a code owner review). The founder's own
+# pull requests merge through the ruleset's admin bypass and still need green CI.
+#
+# Lanes, from AGENTS.md, for who builds what (not for review):
+#   Lane 1, on-chain:    contracts/, apps/web/app/(site)/, shared/   @zakyirsyaad
+#   Lane 2, scanning:    packages/scanner-core/, packages/sandbox-worker/   @Nant361
+#   Lane 3, application: apps/, packages/sdk/, packages/skill/   @maziazi
 
-# Anything not listed below
-*                               @zakyirsyaad
-
-# Lane 2: scanning
-/packages/scanner-core/         @Nant361
-/packages/sandbox-worker/       @Nant361
-
-# Lane 3: application
-/apps/                          @maziazi
-/packages/sdk/                  @maziazi
-/packages/skill/                @maziazi
-
-# Lane 1: on-chain, plus the landing and docs pages inside the web app
-/contracts/                     @zakyirsyaad
-/apps/web/app/(site)/           @zakyirsyaad
-
-# Frozen agreements: every change needs the founder
-/shared/                        @zakyirsyaad
-/contracts/src/interfaces/      @zakyirsyaad
-/.github/                       @zakyirsyaad
+*       @zakyirsyaad
