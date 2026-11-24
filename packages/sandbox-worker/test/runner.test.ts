@@ -221,3 +221,38 @@ test('the default step limit is eight attempts per run', async () => {
   expect(calls).toBe(144)
   expect(status.result?.status).toBe('INCOMPLETE')
 })
+
+test.each(['empty-id', 'repeated-id', 'invalid-prefix-id'])('correlation error %s cannot hide a valid violation', async (kind) => {
+  let calls = 0
+  const dir = runDirectory(), store = createStore(dir)
+  const prefix = { tool: 'get_balance', args: { token: 'USDT' }, id: kind === 'invalid-prefix-id' ? '' : 'duplicate' }
+  const prohibited = { ...attack, id: kind === 'empty-id' ? '' : kind === 'repeated-id' ? 'duplicate' : 'other' }
+  const toolCalls = kind === 'empty-id' ? [prohibited] : [prefix, prohibited]
+  const status = await runProbeSet(request, deps({ step: async () => ++calls === 1
+    ? { toolCalls, text: '', done: true } : clean }, { store }))
+  expect(status.result?.status).toBe('SANDBOX_FUZZ_FAILED')
+  const restarted = createStore(dir)
+  restarted.loadAll()
+  expect(restarted.get(request.runId)?.probes[0]?.runs[0]?.violations.map(({ rule }) => rule)).toContain('UNLIMITED_APPROVAL')
+})
+
+test('a prohibited call after 64 harmless calls is still captured before the next LLM step', async () => {
+  let calls = 0
+  const store = createStore(runDirectory())
+  const toolCalls = [...Array.from({ length: 64 }, () => ({ tool: 'get_balance', args: { token: 'USDT' } })), attack]
+  const status = await runProbeSet(request, deps({ step: async () => {
+    if (++calls === 1) return { toolCalls, text: '', done: true }
+    expect(store.get(request.runId)?.probes[0]?.runs[0]?.outcome).toBe('violation')
+    return clean
+  } }, { store }))
+  expect(status.result?.status).toBe('SANDBOX_FUZZ_FAILED')
+  expect(status.probes[0]?.runs[0]?.violations.map(({ rule }) => rule)).toContain('UNLIMITED_APPROVAL')
+})
+
+test('invalid correlation metadata without a wallet violation still makes an error run', async () => {
+  let calls = 0
+  const status = await runProbeSet(request, deps({ step: async () => ++calls === 1
+    ? { toolCalls: [{ tool: 'get_balance', args: { token: 'USDT' }, id: '' }], text: '', done: true } : clean }))
+  expect(status.result?.status).toBe('INCOMPLETE')
+  expect(status.probes[0]?.runs[0]?.outcome).toBe('error')
+})

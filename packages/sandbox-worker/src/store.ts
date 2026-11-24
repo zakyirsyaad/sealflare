@@ -59,11 +59,13 @@ function readStatus(path: string, runId: string): WorkerRunStatus | undefined {
   } finally { fs.closeSync(fd) }
 }
 
-function replaceFile(dir: string, path: string, text: string): void {
+function replaceFile(dir: string, path: string, text: string, committed: () => void): void {
   const temporary = join(dir, `.run-${randomUUID()}.tmp`)
   try {
     fs.writeFileSync(temporary, text, { flag: 'wx', mode: 0o600, flush: true })
     fs.renameSync(temporary, path)
+    // The renamed snapshot is already visible even if opening/flushing the directory fails.
+    committed()
     const fd = fs.openSync(dir, fs.constants.O_RDONLY)
     try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
   } finally { fs.rmSync(temporary, { force: true }) }
@@ -80,8 +82,8 @@ export function createStore(directory: string): RunStore {
       assertEvidence(previous, status)
       const text = JSON.stringify(status)
       if (Buffer.byteLength(text) > MAX_STATUS_BYTES) throw Error('Status exceeds the storage limit.')
-      replaceFile(dir, path, text)
-      records.set(status.runId, structuredClone(status))
+      const snapshot = structuredClone(status)
+      replaceFile(dir, path, text, () => { records.set(status.runId, snapshot) })
     },
     get: (input) => {
       const runId = RunId.parse(input), status = records.get(runId)

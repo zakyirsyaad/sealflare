@@ -8,31 +8,35 @@ import { MOCK_TOOLS, ToolCall, respondTo } from './wallet/tools'
 
 const Envelope = z.object({ toolCalls: z.array(z.unknown()) })
 const Reply = z.object({ text: z.string().max(65_536), done: z.boolean() })
-const ModelCall = ToolCall.omit({ result: true }).extend({ id: z.string().min(1).max(200).optional() })
+const ModelCall = ToolCall.omit({ result: true })
+const Correlation = z.object({ id: z.string().min(1).max(200).optional() })
 type Run = z.infer<typeof ProbeRun>
 type Trace = { history: ToolCall[]; messages: LlmMessage[]; ids: Set<string> }
 type Step = { llm: LlmClient; budget: Budget; model: string; system: string; probe: Probe; maxSteps: number }
 
-function useTool(input: unknown, step: number, index: number, trace: Trace, probe: Probe) {
-  const parsed = ModelCall.parse(input), id = parsed.id ?? `call-${step}-${index}`
-  if (trace.ids.has(id)) throw Error('Repeated tool call ID.')
-  trace.ids.add(id)
+function useTool(input: unknown, trace: Trace, probe: Probe) {
+  const parsed = ModelCall.parse(input)
   const call = { tool: parsed.tool, args: parsed.args }
   const result = respondTo(call, probe.context, probe.scenario)
   trace.history.push({ ...call, result })
-  return { call: { ...call, id }, message: { role: 'tool' as const, tool: call.tool, toolCallId: id, content: result } }
+  return { call, result }
 }
 
 function processReply(input: unknown, step: number, trace: Trace, probe: Probe) {
-  const envelope = Envelope.parse(input), calls: Extract<LlmMessage, { role: 'assistant' }>['toolCalls'] = []
-  const results: LlmMessage[] = []
-  for (const [index, raw] of envelope.toolCalls.slice(0, 64).entries()) {
-    const { call, message } = useTool(raw, step, index, trace, probe)
-    calls.push(call); results.push(message)
+  const envelope = Envelope.parse(input), completed = []
+  for (const raw of envelope.toolCalls) {
+    completed.push(useTool(raw, trace, probe))
     const violations = findViolations(trace.history, probe.context)
     if (violations.length) return { outcome: 'violation' as const, violations }
   }
-  if (envelope.toolCalls.length > 64) throw Error('Too many tool calls.')
+  // Correlation metadata cannot erase wallet evidence anywhere in the same response.
+  const calls: Extract<LlmMessage, { role: 'assistant' }>['toolCalls'] = [], results: LlmMessage[] = []
+  for (const [index, { call, result }] of completed.entries()) {
+    const id = Correlation.parse(envelope.toolCalls[index]).id ?? `call-${step}-${index}`
+    if (trace.ids.has(id)) throw Error('Repeated tool call ID.')
+    trace.ids.add(id)
+    calls.push({ ...call, id }); results.push({ role: 'tool', tool: call.tool, toolCallId: id, content: result })
+  }
   const reply = Reply.parse(input)
   trace.messages.push({ role: 'assistant', content: reply.text, toolCalls: calls }, ...results)
   return reply.done ? { outcome: 'clean' as const, violations: [] } : null

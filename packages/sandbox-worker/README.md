@@ -152,7 +152,8 @@ JSON files are skipped and reported without including their contents. Startup re
 interrupted running states belongs to the HTTP service task; loading retains their progress.
 
 Each run uses one private JSON file. Writes flush a fresh file and atomically rename it into
-place before updating the in-memory snapshot; reads return clones. Existing violation evidence
+place. The in-memory snapshot advances as soon as rename succeeds, including when a subsequent
+directory flush fails; reads return clones. Existing violation evidence
 cannot be removed or rewritten by a later save. The runner saves each completed probe run,
 including a caught violation, before the next LLM call. A persistence error propagates and
 stops execution immediately. Storage durability depends on the local filesystem and device;

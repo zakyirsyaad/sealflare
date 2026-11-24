@@ -88,3 +88,19 @@ test('invalid evidence and duplicate probe IDs cannot become persisted state', (
   expect(() => store.save({ ...refused, probes: [...refused.probes, ...refused.probes] })).toThrow()
   expect(() => store.save({ ...running, state: 'done' })).toThrow()
 })
+
+test('a directory flush failure after rename retains committed evidence in memory and blocks later erasure', () => {
+  const dir = runDirectory(), store = createStore(dir)
+  store.save(running)
+  const original = fs.fsyncSync
+  const sync = vi.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
+    if (fs.fstatSync(fd).isDirectory()) throw Error('Directory flush failed')
+    original(fd)
+  })
+  expect(() => store.save(refused)).toThrow('Directory flush failed')
+  sync.mockRestore()
+  expect(JSON.parse(readFileSync(join(dir, 'run-1.json'), 'utf8'))).toEqual(refused)
+  expect(store.get('run-1')).toEqual(refused)
+  expect(() => store.save(running)).toThrow()
+  expect(JSON.parse(readFileSync(join(dir, 'run-1.json'), 'utf8'))).toEqual(refused)
+})
