@@ -103,7 +103,8 @@ meta-scanner probes add no tool-response bait. Tests replay both malicious and c
 traces through the actual mock tools and violation rules; live LLM runs belong to later tasks.
 
 Prompt construction uses the frozen `WorkerRunRequest.skillMd` input limit, names the mock
-tools, and entity-escapes skill text inside one `<skill_md>` block. This preserves the supplied
+tools, states the simulation's allowed recipient/router addresses in trusted context, and
+entity-escapes skill text inside one `<skill_md>` block. This preserves the supplied
 text as framed data and prevents it from adding a closing delimiter. It does not assert that
 an LLM will always resist the instructions being tested. Probe configuration is frozen at
 runtime to prevent unversioned changes between runs; clone it if a consumer needs local state.

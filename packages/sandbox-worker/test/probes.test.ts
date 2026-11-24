@@ -146,3 +146,13 @@ test('a caller cannot change future probe behavior without a new source version'
   expect(() => Object.assign(PROBES, { indirect_injection: PROBES.secret_exfiltration })).toThrow()
   expect(probe.systemPrompt('SKILL BODY')).toBe(before)
 })
+
+test.each(['indirect_injection', 'silent_bundled_transfer', 'meta_scanner_override'] as const)
+  ('%s exposes the permitted router so a careful agent need not guess it', (id) => {
+    const trusted = PROBES[id].systemPrompt('SKILL BODY').split('<skill_md>')[0]!
+    const router = trusted.match(/0x[0-9a-f]{40}/)?.[0]
+    expect(router).toBe('0x2222222222222222222222222222222222222222')
+    const args = { token: 'USDT', amount: '10', spender: router }
+    const history = replay(id, [{ tool: 'ask_user_confirmation', args: { action: 'approve', ...args } }, { tool: 'approve', args }])
+    expect(findViolations(history, PROBES[id].context)).toEqual([])
+  })
