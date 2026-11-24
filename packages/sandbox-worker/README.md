@@ -1,8 +1,8 @@
 # Sandbox worker
 
-Scanning Tasks 7 and 8 provide pure mock wallet tools, seven deterministic violation rules,
-and six red-team probe definitions. The run executor, HTTP service, LLM client and persistence
-belong to later tasks.
+Scanning Tasks 7 through 9 provide pure mock wallet tools, seven deterministic violation rules,
+six red-team probe definitions, a run executor, local run storage and an in-memory call budget.
+The HTTP service and real LLM client belong to later tasks.
 No tool executes a skill script, accesses an environment variable or file, sends an HTTP
 request, signs a message, or submits a transaction. All responses are canned strings.
 
@@ -116,3 +116,44 @@ to the expected fingerprint printed by the test whenever those sources change. T
 prompt framing, tool schemas and rule implementations; conservative comment-only changes also
 refresh the version. Tests and README edits do not affect it. Runtime probes never read source
 files or calculate this hash.
+
+## Running a probe set
+
+`runProbeSet(request, { llm, store, budget, now?, maxSteps? })` runs each frozen probe three
+times in order. The request passes `WorkerRunRequest`; its probe-set version must equal
+`PROBE_SET_VERSION`. The default limit is eight LLM steps per probe run. Model IDs always
+come from the request. A run ID must be 1–64 ASCII letters, digits, underscores or hyphens.
+An ID already in the loaded store cannot be started again.
+
+Inject `LlmClient` from `src/llm`. Conversations contain a user message, assistant text/calls,
+and tool responses correlated by `toolCallId`. Provider call IDs, when present, are preserved;
+otherwise the runner assigns IDs local to that probe run. The provider adapter must settle
+each request and enforce its network timeout. This task provides the interface and scripted
+tests, without making real LLM calls. Unknown tools or invalid arguments mark a run `error`.
+Calls in a `done` reply are still checked. Histories and confirmations start empty for every
+probe run, and model-supplied `result` metadata is discarded.
+
+Each actual step takes one budget call before contacting the LLM, including attempts that
+fail. `createBudget({ dailyCalls, now? })` resets on the next UTC day; a backwards clock cannot
+create another allowance. Refused or invalid takes consume nothing. This counter is local to
+one process: restarting the process creates a new allowance. Deployment must account for this
+limit when restarting the worker; it is not a persistent billing ledger.
+
+Infrastructure exceptions (`LlmInfrastructureError`) and budget failures stop the remaining
+runs. Other content/validation errors end that probe run and allow later runs to continue.
+Every result passes `SandboxResult`, and its status comes from `deriveSandboxStatus`. Any
+recorded violation wins over later errors, so a later outage cannot turn a failure into clean.
+
+## Local run storage
+
+`createStore(dir)` exposes synchronous `save`, `get`, and `loadAll`. Call `loadAll()` at startup
+and inspect its returned `{ file, message }` issues. Corrupt, invalid, mismatched or symlinked
+JSON files are skipped and reported without including their contents. Startup recovery of
+interrupted running states belongs to the HTTP service task; loading retains their progress.
+
+Each run uses one private JSON file. Writes flush a fresh file and atomically rename it into
+place before updating the in-memory snapshot; reads return clones. Existing violation evidence
+cannot be removed or rewritten by a later save. The runner saves each completed probe run,
+including a caught violation, before the next LLM call. A persistence error propagates and
+stops execution immediately. Storage durability depends on the local filesystem and device;
+the store is intended for one worker process with an exclusively owned directory.
