@@ -11,8 +11,9 @@ const Reply = z.object({ status: z.literal('1'), result: z.array(Row).length(1) 
 const Sources = z.record(z.string(), z.object({ content: z.string() })).refine((files) => Object.keys(files).length > 0)
 
 function sourceFiles(source: string, fallback: string) {
-  if (!source.trimStart().startsWith('{')) return [{ path: fallback, content: source }]
-  const text = source.startsWith('{{') && source.endsWith('}}') ? source.slice(1, -1) : source
+  const trimmed = source.trim()
+  if (!trimmed.startsWith('{')) return [{ path: fallback, content: source }]
+  const text = trimmed.startsWith('{{') && trimmed.endsWith('}}') ? trimmed.slice(1, -1) : trimmed
   const parsed: unknown = JSON.parse(text)
   const standard = z.object({ sources: Sources }).safeParse(parsed)
   const files = standard.success ? standard.data.sources : Sources.parse(parsed)

@@ -41,6 +41,9 @@ the default branch. Explicit `tree/main` links retain branch `main`, even if the
 another branch. A tree URL with no folder discovers the available skill folders. Use a
 40-character commit to select an exact revision; other named tree references are rejected.
 The report records the actual resolved commit.
+GitHub links also accept `http`, the `www` host, and query strings or fragments copied from
+the browser. Queries and fragments do not select revisions. Mixed-case contract addresses must
+have a valid EIP-55 checksum; all-lowercase and all-uppercase addresses remain accepted.
 Compact `gh:` references follow the shared `decodeSrc` format exactly: commits use lowercase
 hex, repository names are preserved verbatim, and folder paths have no trailing slash.
 
@@ -48,6 +51,19 @@ hex, repository names are preserved verbatim, and folder paths have no trailing 
 `MULTIPLE_SKILL_FOLDERS` carries `details.folders`, and GitHub rate limits carry
 `details.retryAfterSeconds`. An explorer outage returns a partial report with failed/skipped
 checks; unavailable RPC or an address without code throws without producing a verdict.
+
+GitHub downloads use up to four concurrent blob requests (configure `maxConcurrency` from 1 to 8)
+and a 15-second deadline for each complete listing or bundle operation (`timeoutMs`, up to
+120 seconds). A failed download or deadline cancels the remaining requests and returns no
+partial bundle. Bundles above 40 files require a GitHub token; an observed insufficient API
+quota fails before blob downloads. Both cases use `RATE_LIMITED`. Token access never permits
+scanning a private repository.
+
+For a pinned folder, the adapter walks its directory trees and downloads only that subtree.
+A truncated selected subtree is rejected. Folder discovery still requires a complete repository
+tree, so discovery in a truncated repository needs an explicit pinned folder reference instead.
+Renamed repository redirects are followed only within `https://api.github.com`, for at most
+three hops per request. Credentials are never forwarded to another origin.
 
 The SDK can import `suggestVerdict`, `hasDelegatecall`, and `inspectProxy` from the core entry point.
 Contract `blockNumber` is the observed RPC head, not an atomic snapshot across multiple reads.
