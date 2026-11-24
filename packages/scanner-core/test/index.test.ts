@@ -35,6 +35,36 @@ test('SDK inspection helpers are usable through the package entry point', async 
   expect(suggestVerdict([], [], ['dry_run'])).toBe('CAUTION')
 })
 
+test('a revision-only GitHub URL still discovers the skill subfolder', async () => {
+  const input = parseScanInput(`https://github.com/acme/skills/tree/${'a'.repeat(40)}`)
+  if (input.kind !== 'skill') throw Error('Expected skill input')
+  const report = await createScanner().scanSkill(input, { repo: {
+    listSkillFolders: async () => ({ commit: 'a'.repeat(40), folders: ['swap'] }),
+    fetchBundle: async (ref) => { expect(ref.path).toBe('swap'); return loadSkill('clean') },
+  } })
+  expect(report.source).toMatchObject({ path: 'swap' })
+})
+
+test('tree/main keeps its selected branch through scanner resolution', async () => {
+  const input = parseScanInput('https://github.com/acme/skills/tree/main')
+  if (input.kind !== 'skill') throw Error('Expected skill input')
+  const report = await createScanner().scanSkill(input, { repo: {
+    listSkillFolders: async (ref) => {
+      expect(ref).toMatchObject({ branch: 'main' })
+      return { commit: 'a'.repeat(40), folders: ['swap'] }
+    },
+    fetchBundle: async (ref) => { expect(ref).toEqual({ owner: 'acme', repo: 'skills', commit: 'a'.repeat(40), path: 'swap' }); return loadSkill('clean') },
+  } })
+  expect(report.source).toMatchObject({ commit: 'a'.repeat(40), path: 'swap' })
+})
+
+test('ambiguous branch-plus-commit inputs are rejected before repository I/O', async () => {
+  const ref = { owner: 'acme', repo: 'skills', commit: 'a'.repeat(40), branch: 'main', path: 'swap' }
+  const repo = { listSkillFolders: vi.fn(), fetchBundle: vi.fn(async () => loadSkill('clean')) }
+  await expect(createScanner().scanSkill(ref, { repo })).rejects.toMatchObject({ code: 'INPUT_NOT_RECOGNIZED' })
+  expect(repo.fetchBundle).not.toHaveBeenCalled()
+})
+
 function coreFiles(path: string): string[] {
   return readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
     if (entry.name === 'adapters') return []

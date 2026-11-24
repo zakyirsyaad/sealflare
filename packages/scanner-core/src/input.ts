@@ -4,12 +4,13 @@ import { AddressSchema, ScanError, SkillSource } from '@sealflare/shared/schemas
 const Name = z.string().regex(/^[A-Za-z0-9_.-]+$/).refine((value) => value !== '.' && value !== '..')
 const Path = SkillSource.shape.path.refine((value) => !/[\u0000-\u001f\u007f]/.test(value) && value.isWellFormed())
 const SkillInput = z.object({ kind: z.literal('skill'), owner: Name, repo: Name,
-  commit: SkillSource.shape.commit.optional(), path: Path.optional() })
+  commit: SkillSource.shape.commit.optional(), branch: z.literal('main').optional(), path: Path.optional() })
 export type ScanInput = { kind: 'contract'; address: z.infer<typeof AddressSchema> } | z.infer<typeof SkillInput>
 
-function skill(owner: string, repo: string, path?: string, commit?: string): ScanInput {
+function skill(owner: string, repo: string, path?: string, commit?: string, branch?: 'main'): ScanInput {
   return SkillInput.parse({ kind: 'skill', owner, repo: repo.replace(/\.git$/, ''),
-    ...(path === undefined ? {} : { path }), ...(commit === undefined ? {} : { commit: commit.toLowerCase() }) })
+    ...(path === undefined ? {} : { path }), ...(commit === undefined ? {} : { commit: commit.toLowerCase() }),
+    ...(branch === undefined ? {} : { branch }) })
 }
 
 function githubUrl(text: string): ScanInput {
@@ -21,13 +22,13 @@ function githubUrl(text: string): ScanInput {
   if (!owner || !repo) throw Error('Missing repository name.')
   if (parts.length === 2) return skill(owner, repo)
   if (marker !== 'tree' || !revision) throw Error('Not a skill folder URL.')
-  const path = parts.slice(4).join('/')
+  const path = parts.length === 4 ? undefined : parts.slice(4).join('/')
   if (/^[0-9a-fA-F]{40}$/.test(revision)) return skill(owner, repo, path, revision)
-  if (revision === 'main') return skill(owner, repo, path)
+  if (revision === 'main') return skill(owner, repo, path, undefined, 'main')
   throw Error('A pinned commit is required for non-main references.')
 }
 
-/** Unpinned inputs resolve the repository default branch through the injected RepoFetcher. */
+/** Bare repos use the default branch; explicit main links retain their selected branch. */
 export function parseScanInput(text: string): ScanInput {
   try {
     const value = z.string().trim().min(1).max(4096).parse(text)

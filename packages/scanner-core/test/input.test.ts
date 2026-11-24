@@ -7,10 +7,12 @@ test.each([
   ['  0x1234567890abcdef1234567890abcdef12345678\n', { kind: 'contract', address: '0x1234567890abcdef1234567890abcdef12345678' }],
   ['https://github.com/acme/skills', { kind: 'skill', owner: 'acme', repo: 'skills' }],
   ['https://github.com/acme/skills.git', { kind: 'skill', owner: 'acme', repo: 'skills' }],
-  ['github.com/acme/skills/tree/main/swap-helper', { kind: 'skill', owner: 'acme', repo: 'skills', path: 'swap-helper' }],
+  ['github.com/acme/skills/tree/main/swap-helper', { kind: 'skill', owner: 'acme', repo: 'skills', branch: 'main', path: 'swap-helper' }],
+  ['https://github.com/acme/skills/tree/main', { kind: 'skill', owner: 'acme', repo: 'skills', branch: 'main' }],
   [`https://github.com/acme/skills/tree/${commit}/a/b`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: 'a/b' }],
   [`gh:acme/skills@${commit}:swap-helper`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: 'swap-helper' }],
   [`gh:acme/skills@${commit}:`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: '' }],
+  [`https://github.com/acme/skills/tree/${commit}`, { kind: 'skill', owner: 'acme', repo: 'skills', commit }],
   ['https://github.com/acme/skills/', { kind: 'skill', owner: 'acme', repo: 'skills' }],
   [`https://github.com/acme/skills/tree/${'A'.repeat(40)}/x%20y`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: 'x y' }],
 ])('parses %s', (input, expected) => expect(parseScanInput(input)).toEqual(expected))

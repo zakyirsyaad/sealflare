@@ -36,10 +36,11 @@ https://github.com/owner/repo/tree/<40-character commit>/skill-folder
 gh:owner/repo@<40-character commit>:skill-folder
 ```
 
-An empty path in the compact form selects the repository root. Unpinned inputs, including the
-`tree/main` convenience form in the scanning plan, resolve the repository's default branch.
-That branch may have a different name. Use a 40-character commit to select an exact revision;
-other named tree references are rejected. The report records the actual resolved commit.
+An empty path in the compact form selects the repository root. Bare repository links resolve
+the default branch. Explicit `tree/main` links retain branch `main`, even if the default is
+another branch. A tree URL with no folder discovers the available skill folders. Use a
+40-character commit to select an exact revision; other named tree references are rejected.
+The report records the actual resolved commit.
 
 `ScanError` from `@sealflare/shared/schemas` exposes `code` and optional `details`. In particular,
 `MULTIPLE_SKILL_FOLDERS` carries `details.folders`, and GitHub rate limits carry

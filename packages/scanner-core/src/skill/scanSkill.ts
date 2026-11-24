@@ -7,7 +7,8 @@ import { skillChecks, type SkillCheck } from './checks/index'
 
 const NAME = z.string().regex(/^[A-Za-z0-9_.-]+$/).refine((value) => value !== '.' && value !== '..')
 const REFERENCE = z.object({ owner: NAME, repo: NAME, commit: SkillSource.shape.commit.optional(),
-  path: SkillSource.shape.path.optional() })
+  branch: NAME.optional(), path: SkillSource.shape.path.optional() })
+  .refine((value) => !(value.commit && value.branch), 'Choose a commit or branch, not both.')
 
 async function resolveRef(ref: RepoRef & { path?: string }, repo: RepoFetcher): Promise<SkillRef> {
   const input = REFERENCE.safeParse(ref)
