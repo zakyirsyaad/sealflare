@@ -19,7 +19,8 @@ export interface ExplorerAdapter {
   getSource(address: Address): Promise<{ verified: boolean; files: { path: string; content: string }[]; abi?: unknown } | null>
 }
 
-export type RepoRef = { owner: string; repo: string; commit?: string }
+/** Select at most one of commit or branch. Neither means the default branch. */
+export type RepoRef = { owner: string; repo: string; commit?: string; branch?: string }
 export type SkillRef = { owner: string; repo: string; commit: string; path: string }
 
 export interface RepoFetcher {
