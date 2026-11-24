@@ -17,8 +17,11 @@ const Entry = z.object({ path: Path.refine((value) => value !== ''), sha: Sha,
   type: z.enum(['blob', 'tree', 'commit']), size: z.number().int().nonnegative().optional(),
 }).refine((entry) => entry.mode === '040000' ? entry.type === 'tree'
   : entry.mode === '160000' ? entry.type === 'commit' : entry.type === 'blob' && entry.size !== undefined)
-const Tree = z.object({ sha: Sha, truncated: z.boolean(), tree: z.array(Entry) })
+const LooseEntry = z.object({ path: z.string(), sha: z.unknown().optional(), mode: z.unknown().optional(),
+  type: z.unknown().optional(), size: z.unknown().optional() })
+const Tree = z.object({ sha: Sha, truncated: z.boolean(), tree: z.array(LooseEntry) })
 type Entry = z.infer<typeof Entry>
+type LooseEntry = z.infer<typeof LooseEntry>
 const tooLarge = () => new ScanError('BUNDLE_TOO_LARGE', 'This skill is too large to scan.')
 
 function retryAfter(headers: Headers): number {
@@ -29,17 +32,23 @@ function retryAfter(headers: Headers): number {
   return Math.max(1, Math.ceil(((Number.isFinite(date) ? date : reset || Date.now() + 60_000) - Date.now()) / 1000))
 }
 
-function rejectStatus(status: number, headers: Headers): void {
-  if (status === 429 || status === 403 && (headers.has('retry-after') || headers.get('x-ratelimit-remaining') === '0')) {
+function rejectStatus(status: number, headers: Headers, repoLookup: boolean): void {
+  if (status === 429 || status === 403) {
     throw new ScanError('RATE_LIMITED', 'GitHub rate limit reached.', { retryAfterSeconds: retryAfter(headers) })
   }
-  if (status === 404 || status === 403) throw new ScanError('REPO_NOT_PUBLIC', 'This repository is not public.')
+  if (status === 404 && repoLookup) throw new ScanError('REPO_NOT_PUBLIC', 'This repository is not public.')
   if (status !== 200) throw new ScanError('NO_SKILL_FOUND', 'GitHub could not return the requested repository data.')
 }
 
-function validateEntries(entries: Entry[], folder: string): Entry[] {
+function strictEntries(entries: LooseEntry[]): Entry[] {
+  const parsed = z.array(Entry).safeParse(entries)
+  if (!parsed.success) throw new ScanError('NO_SKILL_FOUND', 'Invalid file in the selected repository paths.')
+  return parsed.data
+}
+
+function validateEntries(entries: LooseEntry[], folder: string): Entry[] {
   const prefix = folder ? `${folder}/` : ''
-  const selected = entries.filter((entry) => entry.path.startsWith(prefix) || entry.path === folder)
+  const selected = strictEntries(entries.filter((entry) => entry.path.startsWith(prefix) || entry.path === folder))
   if (selected.some((entry) => entry.mode === '160000' || entry.type === 'commit')) {
     throw new ScanError('NO_SKILL_FOUND', 'A skill bundle cannot include a submodule.')
   }
@@ -69,7 +78,7 @@ function createApi(options: Options): Get {
   return async (path: string, limit = 8_388_608): Promise<unknown> => {
     try {
       const response = await requestJson(fetcher, `https://api.github.com${path}`, { headers }, limit)
-      rejectStatus(response.status, response.headers)
+      rejectStatus(response.status, response.headers, /^\/repos\/[^/]+\/[^/]+$/.test(path))
       return response.body
     } catch (error) {
       if (error instanceof ScanError) throw error
@@ -127,8 +136,8 @@ export function createGitHubFetcher(options: Options = {}): RepoFetcher {
   return {
     listSkillFolders: async (ref) => {
       const tree = await treeFor(ref, get)
-      const folders = tree.entries.filter((entry) => entry.type === 'blob' && ['100644', '100755'].includes(entry.mode)
-        && (entry.path === 'SKILL.md' || entry.path.endsWith('/SKILL.md')))
+      const candidates = tree.entries.filter((entry) => entry.path === 'SKILL.md' || entry.path.endsWith('/SKILL.md'))
+      const folders = strictEntries(candidates).filter((entry) => entry.type === 'blob' && ['100644', '100755'].includes(entry.mode))
         .map(({ path }) => path === 'SKILL.md' ? '' : path.slice(0, -'/SKILL.md'.length))
       return { commit: tree.commit, folders: [...new Set(folders)].sort() }
     },

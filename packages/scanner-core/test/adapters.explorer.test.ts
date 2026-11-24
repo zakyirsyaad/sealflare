@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { createExplorerAdapter } from '../src/adapters/explorer'
-import { ADDRESS, abiWith } from './contract.fixtures'
+import { ADDRESS, abiWith, cleanRpc } from './contract.fixtures'
+import { scanContract } from '../src/contract/scanContract'
 
 const result = (SourceCode = 'contract Token {}', ABI = JSON.stringify(abiWith('mint'))) => ({
   SourceCode, ABI, ContractName: 'Token', CompilerVersion: 'v0.8.28+commit.7893614a',
@@ -32,7 +33,7 @@ test('an explicitly unverified result is not an explorer outage', async () => {
   expect(await explorer.getSource(ADDRESS)).toEqual({ verified: false, files: [] })
 })
 
-test.each(['http', 'rate-limit', 'network', 'non-json', 'malformed-source', 'empty-result', 'broken-abi'])('%s returns null', async (mode) => {
+test.each(['http', 'rate-limit', 'network', 'non-json', 'malformed-source', 'empty-result'])('%s returns null', async (mode) => {
   const fetcher: typeof fetch = async () => {
     if (mode === 'network') throw Error('test-secret')
     if (mode === 'http') return new Response('oops', { status: 500 })
@@ -43,6 +44,24 @@ test.each(['http', 'rate-limit', 'network', 'non-json', 'malformed-source', 'emp
     return ok(result('contract Token {}', 'bad ABI'))
   }
   expect(await createExplorerAdapter({ apiKey: 'test-secret', fetch: fetcher }).getSource(ADDRESS)).toBeNull()
+})
+
+test.each([
+  JSON.stringify([{ type: 'function', name: 'mint', constant: false, payable: false, inputs: [] }]), 'bad ABI',
+])('unsupported ABI preserves verified source while withholding ABI inspection', async (abi) => {
+  const source = await createExplorerAdapter({ apiKey: 'key', fetch: async () => ok(result('contract Token {}', abi)) }).getSource(ADDRESS)
+  expect(source?.verified).toBe(true)
+  expect(source?.files).toEqual([{ path: 'Token.sol', content: 'contract Token {}' }])
+  expect(source?.abi).toBeUndefined()
+})
+
+test('a verified legacy ABI passes source verification and leaves the report at CAUTION', async () => {
+  const explorer = createExplorerAdapter({ apiKey: 'key', fetch: async () => ok(result('contract Token {}',
+    JSON.stringify([{ type: 'function', name: 'mint', constant: false, inputs: [] }]))) })
+  const report = await scanContract(ADDRESS, { rpc: cleanRpc(), explorer })
+  expect(report.checks).toContainEqual({ id: 'source_verified', status: 'passed' })
+  expect(report.checks).toContainEqual({ id: 'admin_functions', status: 'skipped' })
+  expect(report.suggestedVerdict).toBe('CAUTION')
 })
 
 test('invalid addresses are refused before sending the key', async () => {

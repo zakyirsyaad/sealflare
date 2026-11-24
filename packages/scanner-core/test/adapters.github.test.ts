@@ -43,9 +43,22 @@ test.each(['count', 'bytes'] as const)('exceeding the %s limit is rejected befor
   expect(fetcher.mock.calls.some(([url]) => String(url).includes('/blobs/'))).toBe(false)
 })
 
-test.each([403, 404])('HTTP %s maps to REPO_NOT_PUBLIC', async (status) => {
+test.each([404])('repository metadata HTTP %s maps to REPO_NOT_PUBLIC', async (status) => {
   const fetcher: typeof fetch = async () => new Response('', { status })
   await expect(createGitHubFetcher({ fetch: fetcher }).listSkillFolders(ref)).rejects.toMatchObject({ code: 'REPO_NOT_PUBLIC' })
+})
+
+test.each([{}, { 'x-ratelimit-remaining': '100' }])('a secondary rate limit 403 without Retry-After is retryable', async (headers) => {
+  const fetcher: typeof fetch = async () => new Response('', { status: 403, headers })
+  await expect(createGitHubFetcher({ fetch: fetcher }).listSkillFolders(ref)).rejects.toMatchObject({
+    code: 'RATE_LIMITED', details: { retryAfterSeconds: 60 },
+  })
+})
+
+test.each(['/commits/', '/blobs/'])('a missing resource at %s in a known-public repo is not called private', async (part) => {
+  const base = githubFixture()
+  const fetcher: typeof fetch = async (url, init) => String(url).includes(part) ? new Response('', { status: 404 }) : base(url, init)
+  await expect(createGitHubFetcher({ fetch: fetcher }).fetchBundle(pinned)).rejects.toMatchObject({ code: 'NO_SKILL_FOUND' })
 })
 
 test.each([403, 429])('HTTP %s with Retry-After is RATE_LIMITED', async (status) => {
@@ -115,4 +128,13 @@ test.each([
   const fetcher = githubFixture([entry('swap/SKILL.md'), { ...entry('swap/helper.js', '100644', 'malicious helper', 2), ...value }])
   await expect(createGitHubFetcher({ fetch: fetcher }).fetchBundle(pinned)).rejects.toMatchObject({ code: 'NO_SKILL_FOUND' })
   expect(fetcher.mock.calls.some(([url]) => String(url).includes('/blobs/'))).toBe(false)
+})
+
+test.each([
+  entry(`vendor/${'x'.repeat(450)}`), entry('vendor/a\\b'), entry('vendor/legacy', '100664'),
+])('an unsupported entry outside the skill folder does not break discovery or scanning', async (outside) => {
+  const fetcher = githubFixture([entry('swap/SKILL.md'), { ...outside, sha: 'd'.repeat(40) }])
+  const repo = createGitHubFetcher({ fetch: fetcher })
+  expect(await repo.listSkillFolders(ref)).toEqual({ commit: COMMIT, folders: ['swap'] })
+  expect((await repo.fetchBundle(pinned)).map(({ path }) => path)).toEqual(['SKILL.md'])
 })

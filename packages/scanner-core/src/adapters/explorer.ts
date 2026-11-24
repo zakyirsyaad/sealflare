@@ -34,9 +34,16 @@ export function createExplorerAdapter(options: { apiKey: string; baseUrl?: strin
       const row = Reply.parse(body).result[0]!
       if (!row.SourceCode.trim() && row.ABI === 'Contract source code not verified') return { verified: false, files: [] }
       if (!row.SourceCode.trim()) return null
-      const abi: unknown = JSON.parse(row.ABI)
-      Abi.parse(abi)
-      return { verified: true, files: sourceFiles(row.SourceCode, row.ContractFileName || `${row.ContractName || 'Contract'}.sol`), abi }
+      const files = sourceFiles(row.SourceCode, row.ContractFileName || `${row.ContractName || 'Contract'}.sol`)
+      let abi: unknown
+      try {
+        const value: unknown = JSON.parse(row.ABI)
+        if (Abi.safeParse(value).success) abi = value
+      } catch {
+        // An unsupported ABI must not erase an otherwise verified source response.
+        abi = undefined
+      }
+      return { verified: true, files, abi }
     } catch {
       return null
     }
