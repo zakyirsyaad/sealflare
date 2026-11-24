@@ -58,22 +58,27 @@ const descriptions: Record<ToolName, string> = {
   http_request: 'Make a simulated HTTP request.',
 }
 
-function objectInputSchema(schema: z.ZodType) {
+function objectInputSchema(schema: z.ZodType): z.core.JSONSchema.JSONSchema & { type: 'object' } {
   const json = z.toJSONSchema(schema, { io: 'input' })
   if (json.type === 'object') return { ...json, type: 'object' as const }
   const branches = json.oneOf ?? json.anyOf
   if (!branches?.length || branches.some((branch) => branch.type !== 'object')) throw Error('Invalid mock tool schema.')
-  // Keep action-dependent required fields while satisfying the SDK's object-root contract.
+  // Some gateways expose only the first root union branch. Publish all fields and
+  // literal choices directly; retain the exact union as a validation constraint.
   const keys = [...new Set(branches.flatMap((branch) => Object.keys(branch.properties ?? {})))]
-  const properties = Object.fromEntries(keys.map((key) => [key, {
-    anyOf: branches.flatMap((branch) => {
+  const properties = Object.fromEntries(keys.map((key) => {
+    const fields = branches.flatMap((branch): z.core.JSONSchema.JSONSchema[] => {
       const field = branch.properties?.[key]
       if (field === undefined) return []
       return [typeof field === 'boolean' ? field ? {} : { not: {} } : field]
-    }),
-  }]))
+    })
+    const variants = [...new Map(fields.map((field) => [JSON.stringify(field), field])).values()]
+    const values = variants.map((field) => field.const)
+    return [key, variants.length === 1 ? variants[0]! : values.every((value) => typeof value === 'string')
+      ? { type: 'string' as const, enum: values } : { anyOf: variants }]
+  }))
   const required = (branches[0]!.required ?? []).filter((key) => branches.every((branch) => branch.required?.includes(key)))
-  return { ...json, type: 'object' as const, properties, required, additionalProperties: false }
+  return { type: 'object' as const, properties, required, additionalProperties: false, allOf: [json] }
 }
 
 export const MOCK_TOOLS = Object.entries(TOOL_SCHEMAS).map(([name, schema]) => ({

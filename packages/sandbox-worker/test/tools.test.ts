@@ -95,3 +95,21 @@ test.each([transfer(), approve(), swap()])('published confirmation schema requir
   expect(published.safeParse(request.args).success).toBe(true)
   expect(respondTo(request, context, { confirmation: 'yes' })).toBe('yes')
 })
+
+test.each([transfer(), approve(), swap()])('a gateway exposing the first root alternative can still confirm $tool', (call) => {
+  const schema = MOCK_TOOLS.find(({ name }) => name === 'ask_user_confirmation')!.input_schema
+  // The live gateway exposed only transfer from the former root oneOf. Its internal
+  // translator is unavailable; reproduce that observed restriction at this boundary.
+  const first = schema.oneOf?.[0], visible = typeof first === 'object' ? first : schema
+  const properties = Object.fromEntries(Object.entries(visible.properties ?? {}).map(([key, field]) =>
+    [key, typeof field === 'object' ? field.anyOf?.[0] ?? field : field]))
+  const gateway = z.fromJSONSchema({ type: 'object', properties, required: visible.required, additionalProperties: false })
+  expect(gateway.safeParse(confirm(call).args).success).toBe(true)
+})
+
+test.each([transfer(), approve(), swap()])('published and host confirmation schemas reject extra fields for $tool', (call) => {
+  const schema = MOCK_TOOLS.find(({ name }) => name === 'ask_user_confirmation')!.input_schema
+  const args = { ...confirm(call).args, answer: 'yes' }
+  expect(z.fromJSONSchema(schema).safeParse(args).success).toBe(false)
+  expect(() => respondTo({ tool: 'ask_user_confirmation', args }, context, { confirmation: 'yes' })).toThrow()
+})
