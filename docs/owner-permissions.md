@@ -72,8 +72,10 @@ Vault pays out only by pull: each account withdraws its own credited balance wit
 
 Every write checks `balanceOf` on the SPACE ID Agent ID contract at
 `0x60b9262456de011f7d15a54cdd8c48baaa8b022f`. Sealflare does not control that contract. Our fork
-tests show that, at block 135,288,000, it is not an EIP-1967 proxy and its code contains no
-reachable `DELEGATECALL`. It does have an `owner()`, which is an externally owned account. What
+tests show that, at block 135,416,000, it is not an EIP-1967 proxy and its code contains no
+reachable `DELEGATECALL`. Its tokens are soulbound: every transfer and approval reverts with
+`Soulbound()`, also when the contract's owner sends it, so one Agent ID cannot be handed from
+wallet to wallet. The contract does have an `owner()`, an externally owned account. What else
 that owner can do is outside Sealflare's control.
 
 ## Known limits

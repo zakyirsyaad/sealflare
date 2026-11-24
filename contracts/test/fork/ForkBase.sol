@@ -7,8 +7,8 @@ import {Test} from "forge-std/Test.sol";
 /// it every fork test is skipped rather than failed, so `pnpm verify` never depends on the network.
 /// Run them with `BSC_RPC_URL=<url> pnpm test:fork`.
 abstract contract ForkBase is Test {
-    /// A block from 23 November 2026. Moving it forward only needs the expectations rechecked.
-    uint256 internal constant FORK_BLOCK = 135_288_000;
+    /// A block from 24 November 2026. Moving it forward only needs the expectations rechecked.
+    uint256 internal constant FORK_BLOCK = 135_416_000;
 
     address internal constant AGENT_ID = 0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F;
     /// Owner of the Agent ID contract at FORK_BLOCK; an EOA.

@@ -565,14 +565,14 @@ Harus dicek sebelum `Core` dirilis:
 - Alamat kontrak Agent ID dan sifat *non-transferable*-nya.
 - Apakah kontrak Agent ID itu proxy atau punya fungsi mint dan burn milik admin. `Core` bergantung permanen pada perilaku `balanceOf`-nya. Caranya: jalankan Layer 1 Sealflare terhadap kontrak itu.
 
-Hasil tes fork 23 November 2026, di blok 135.288.000 (`contracts/test/fork`):
+Hasil tes fork 24 November 2026, di blok 135.416.000 (`contracts/test/fork`), dengan satu pemegang Agent ID nyata:
 
 | Asumsi | Hasil |
 | :--- | :--- |
 | Alamat | `0x60b9262456de011f7d15a54cdd8c48baaa8b022f` berisi kode (8.756 byte), `name()` = "SPACE ID Agent ID", ERC-721 (galat `ERC721NonexistentToken` dari OpenZeppelin v5) |
 | Proxy | Bukan proxy EIP-1967: slot implementasi, admin, dan beacon kosong. `BytecodeScan` tidak menemukan `DELEGATECALL` yang bisa dicapai. Kode di alamat itu tidak bisa diganti |
 | Admin | Ada `owner()`: `0x457C1fd14750c6c30886A2f2B57F1eF44B095882`, sebuah EOA. Selector `mint(address)` dan `burn(uint256)` tidak ada, tetapi fungsi admin dengan nama lain belum bisa dipastikan: halaman sumber BscScan memasang verifikasi anti-bot. **Belum terjawab, perlu dicek founder di BscScan** |
-| *Non-transferable* | Selector `transferFrom`, `safeTransferFrom`, `approve`, dan `setApprovalForAll` ada di bytecode; apakah semuanya menolak belum terbukti. Tes `test_fork_agentIdIsNotTransferable` menjawabnya begitu `AGENT_ID_HOLDER` dan `AGENT_ID_TOKEN` diisi. **Belum terjawab** |
+| *Non-transferable* | **Terjawab: soulbound.** `transferFrom`, `safeTransferFrom`, `approve`, dan `setApprovalForAll` semuanya menolak dengan galat kustom `Soulbound()` (`0xa4420a95`), termasuk `transferFrom` yang dikirim `owner()` kontrak. Di BscScan jumlah transfer (269.102) hampir sama dengan jumlah pemegang (269.101): praktis semua transfer adalah mint |
 | Satu pengguna satu Agent ID | `tokenOfOwnerByIndex` tidak ada; token ID tidak berurutan. Belum terjawab dari on-chain |
 - Jaminan satu pengguna satu Agent ID.
 - Definisi "alamat Agent ID unik" untuk syarat minimal 30.
