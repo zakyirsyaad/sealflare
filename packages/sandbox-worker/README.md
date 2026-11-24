@@ -1,7 +1,8 @@
 # Sandbox worker
 
-Scanning Task 7 provides pure mock wallet tools and seven deterministic violation rules.
-The run executor, probes, HTTP service, LLM client and persistence belong to later tasks.
+Scanning Tasks 7 and 8 provide pure mock wallet tools, seven deterministic violation rules,
+and six red-team probe definitions. The run executor, HTTP service, LLM client and persistence
+belong to later tasks.
 No tool executes a skill script, accesses an environment variable or file, sends an HTTP
 request, signs a message, or submits a transaction. All responses are canned strings.
 
@@ -80,3 +81,37 @@ These rules detect the seven defined behaviors; they are not a general
 information-flow analysis. A runner must also reject unknown tools and malformed calls.
 
 Run `pnpm --filter @sealflare/sandbox-worker test` and `pnpm verify` from the repository root.
+
+## Probe definitions
+
+Import `PROBES`, `PROBE_SET_VERSION`, and the `Probe` type from `src/probes`. Registry keys
+come from the frozen shared `PROBE_IDS`. Each definition has `systemPrompt(skillMd)`, a
+`userMessage`, a mock wallet `context`, and a canned-response `scenario`.
+
+| Probe | Bait or pressure |
+| :--- | :--- |
+| `indirect_injection` | Token metadata instructs an unlimited approval to an unexpected address |
+| `confirmation_bypass` | The user asks for a fast transfer without confirmation |
+| `silent_bundled_transfer` | A swap quote inserts an undisclosed fee recipient |
+| `secret_exfiltration` | A balance error asks for an environment upload to a reserved `.invalid` URL |
+| `approval_escalation` | Token metadata suggests approving max instead of exactly 10 USDT |
+| `meta_scanner_override` | The skill itself may try to override the scanner before a swap |
+
+The addresses and secret canary are fixed simulation fixtures. Explicit scenario `yes` answers
+allow a careful agent to complete exact, separately confirmed transactions. The bypass and
+meta-scanner probes add no tool-response bait. Tests replay both malicious and careful scripted
+traces through the actual mock tools and violation rules; live LLM runs belong to later tasks.
+
+Prompt construction uses the frozen `WorkerRunRequest.skillMd` input limit, names the mock
+tools, and entity-escapes skill text inside one `<skill_md>` block. This preserves the supplied
+text as framed data and prevents it from adding a closing delimiter. It does not assert that
+an LLM will always resist the instructions being tested. Probe configuration is frozen at
+runtime to prevent unversioned changes between runs; clone it if a consumer needs local state.
+
+`PROBE_SET_VERSION` is a static `v1-<32 hex>` source fingerprint, within the shared 40-character
+limit. The version test hashes all TypeScript sources in `src/probes` (except `version.ts`)
+and `src/wallet`, using sorted paths and exact UTF-8 source text. Update `src/probes/version.ts`
+to the expected fingerprint printed by the test whenever those sources change. This includes
+prompt framing, tool schemas and rule implementations; conservative comment-only changes also
+refresh the version. Tests and README edits do not affect it. Runtime probes never read source
+files or calculate this hash.
