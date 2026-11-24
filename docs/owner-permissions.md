@@ -72,14 +72,21 @@ Vault pays out only by pull: each account withdraws its own credited balance wit
 
 Every write checks `balanceOf` on the SPACE ID Agent ID contract at
 `0x60b9262456de011f7d15a54cdd8c48baaa8b022f`. Sealflare does not control that contract. Our fork
-tests show that, at block 135,416,000, it is not an EIP-1967 proxy and its code contains no
+tests show that, at block 135,458,000, it is not an EIP-1967 proxy and its code contains no
 reachable `DELEGATECALL`. Its tokens are soulbound: every transfer and approval reverts with
 `Soulbound()`, also when the contract's owner sends it, so one Agent ID cannot be handed from
-wallet to wallet. The contract does have an `owner()`, an externally owned account. What else
-that owner can do is outside Sealflare's control.
+wallet to wallet. The contract has an owner, an externally owned account at
+`0x457C1fd14750c6c30886A2f2B57F1eF44B095882`, which is also the signer that approves new
+registrations. The owner cannot move or burn an Agent ID and cannot pause the contract, but it
+can mint an Agent ID to any address with `adminRegister`. Sealflare counts every Agent ID as one
+person, so whoever holds that key could create as many guardians and jurors as they like. This
+is a trust assumption on SPACE ID that Sealflare cannot remove. At that block, ownership was
+being handed to a Safe multisig (`0x082b3370974E3DA99c6e3572A7FcBd2222f9a350`, 3 of 6 signers)
+that had not yet accepted it.
 
 ## Known limits
 
+- Sealflare is only as sybil-resistant as Agent ID. Its owner can mint Agent IDs at will.
 - A skill bundle without a manifest cannot be claimed by a publisher.
 - A contract created by a factory or with `CREATE2` that has no `owner()` cannot prove who owns
   it, so it can only have a sponsor.

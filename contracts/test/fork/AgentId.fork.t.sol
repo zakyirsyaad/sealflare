@@ -24,6 +24,10 @@ contract AgentIdForkTest is ForkBase {
     address internal constant SAMPLE_TARGET = 0x55d398326f99059fF775485246999027B3197955;
     /// The Agent ID contract's custom error for any transfer or approval: Soulbound().
     bytes4 internal constant SOULBOUND = 0xa4420a95;
+    /// OpenZeppelin Ownable's OwnableUnauthorizedAccount(address).
+    bytes4 internal constant OWNABLE_UNAUTHORIZED = 0x118cdaa7;
+    /// Safe multisig named as pendingOwner at FORK_BLOCK.
+    address internal constant PENDING_OWNER = 0x082b3370974E3DA99c6e3572A7FcBd2222f9a350;
 
     function test_fork_agentIdHasCode() public view {
         assertGt(AGENT_ID.code.length, 0);
@@ -99,4 +103,57 @@ contract AgentIdForkTest is ForkBase {
         nft.transferFrom(h, to, tokenId);
         assertEq(nft.ownerOf(tokenId), h);
     }
+
+    /// The admin surface of Agent ID at FORK_BLOCK: four setters behind onlyOwner, and the owner
+    /// is also the signer that approves self-registration.
+    function test_fork_adminFunctionsAreOwnerOnly() public {
+        IAgentIDAdmin admin = IAgentIDAdmin(AGENT_ID);
+        assertEq(admin.signer(), AGENT_ID_OWNER, "owner is also the registration signer");
+        address stranger = address(0xdEaD);
+        bytes memory denied = abi.encodeWithSelector(OWNABLE_UNAUTHORIZED, stranger);
+
+        vm.startPrank(stranger);
+        vm.expectRevert(denied);
+        admin.adminRegister("sealflareprobe", address(0xBEEF));
+        vm.expectRevert(denied);
+        admin.setSigner(stranger);
+        vm.expectRevert(denied);
+        admin.setLengthBounds(1, 64);
+        vm.expectRevert(denied);
+        admin.setURIParts("a", "b");
+        vm.stopPrank();
+    }
+
+    /// The owner can mint an Agent ID to any address without a signature. Sealflare treats every
+    /// Agent ID as one person, so this is a trust assumption on the Agent ID owner (sybil jurors).
+    function test_fork_ownerCanMintAgentIdToAnyAddress() public {
+        address fresh = address(uint160(uint256(keccak256("sealflare.fork.fresh"))));
+        assertEq(IAgentID(AGENT_ID).balanceOf(fresh), 0);
+        vm.prank(AGENT_ID_OWNER);
+        IAgentIDAdmin(AGENT_ID).adminRegister("sealflareprobe", fresh);
+        assertEq(IAgentID(AGENT_ID).balanceOf(fresh), 1);
+    }
+
+    /// Ownership is moving through Ownable2Step to a Safe 1.3.0 with a 3 of 6 threshold. Recorded so
+    /// a rerun at a later block shows whether the transfer was accepted.
+    function test_fork_pendingOwnerIsAMultisig() public view {
+        address pending = IAgentIDAdmin(AGENT_ID).pendingOwner();
+        assertEq(pending, PENDING_OWNER);
+        assertEq(ISafe(pending).getThreshold(), 3);
+        assertEq(ISafe(pending).getOwners().length, 6);
+    }
+}
+
+interface IAgentIDAdmin {
+    function signer() external view returns (address);
+    function pendingOwner() external view returns (address);
+    function adminRegister(string calldata handle, address to) external;
+    function setSigner(address signer_) external;
+    function setLengthBounds(uint8 minLen, uint8 maxLen) external;
+    function setURIParts(string calldata base, string calldata suffix) external;
+}
+
+interface ISafe {
+    function getThreshold() external view returns (uint256);
+    function getOwners() external view returns (address[] memory);
 }
