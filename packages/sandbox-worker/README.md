@@ -190,7 +190,8 @@ internal service failure; new admissions and status reads then return 503 until 
 
 Validation failures return 400. Raw JSON bodies also have a bounded byte limit, counted from
 the actual stream rather than trusting `Content-Length`. Admission checks capacity without
-spending it; the runner charges each actual LLM attempt. The busy lock lasts through evidence
+spending it; 202 requires the initial persistence operation to finish successfully, and the
+runner charges each actual LLM attempt. The busy lock lasts through evidence
 upload. Upload errors retain the durable result without an evidence URI.
 
 The same local JSON file now carries private `_recovery` identity metadata: bundle hash, model,

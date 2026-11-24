@@ -14,7 +14,7 @@ import { runProbeSet } from './runner'
 import { readRunRequest, RequestError } from './httpBody'
 
 type Dependencies = { env: Env; llm: LlmClient; store: RunStore; budget: Budget; upload: (json: string) => Promise<string> }
-type State = { busy: boolean; faulted: boolean }
+type State = { busy: boolean; faulted: boolean; started: boolean }
 const digest = (value: string) => crypto.createHash('sha256').update(value).digest()
 
 async function performRun(request: WorkerRunRequest, deps: Dependencies, state: State): Promise<void> {
@@ -23,6 +23,7 @@ async function performRun(request: WorkerRunRequest, deps: Dependencies, state: 
     latest = WorkerRunStatus.parse(status)
     if (identity) metadata = identity
     deps.store.save(status, identity)
+    if (identity) state.started = true
   } }
   try {
     const completed = await runProbeSet(request, { ...deps, store: tracked })
@@ -37,7 +38,7 @@ async function performRun(request: WorkerRunRequest, deps: Dependencies, state: 
     try {
       const progress = latest ?? deps.store.get(request.runId), identity = metadata ?? deps.store.recovery(request.runId)
       if (!progress || !identity) throw Error('Run state could not be recovered.')
-      if (progress.state === 'running') deps.store.save(interrupted(progress, identity))
+      if (progress.state === 'running') deps.store.save(interrupted(progress, identity), identity)
     } catch { /* Leave the worker faulted; never replace caught evidence with older progress. */ }
   }
 }
@@ -51,9 +52,9 @@ function admit(request: WorkerRunRequest, deps: Dependencies, state: State): Res
   }
   if (state.busy) return Response.json(WorkerRunResponse.parse({ accepted: false, reason: 'BUSY' }), { status: 429 })
   if (!deps.budget.canTake(1)) return Response.json(WorkerRunResponse.parse({ accepted: false, reason: 'DAILY_LIMIT' }), { status: 429 })
-  state.busy = true
+  state.busy = true; state.started = false
   void performRun(request, deps, state).then(() => { state.busy = false }, () => { state.faulted = true; state.busy = false })
-  if (!deps.store.get(request.runId)) {
+  if (!state.started) {
     state.faulted = true
     return Response.json({ error: 'Run could not be persisted.' }, { status: 503 })
   }
@@ -62,7 +63,7 @@ function admit(request: WorkerRunRequest, deps: Dependencies, state: State): Res
 
 export function createApp(deps: Dependencies): Hono {
   recoverStore(deps.store)
-  const app = new Hono(), state: State = { busy: false, faulted: false }, expected = digest(deps.env.WORKER_BEARER_KEY)
+  const app = new Hono(), state: State = { busy: false, faulted: false, started: false }, expected = digest(deps.env.WORKER_BEARER_KEY)
   app.onError((_error, c) => { state.faulted = true; return c.json({ error: 'Worker is unavailable.' }, 503) })
   app.get('/healthz', (c) => c.json({ healthy: !state.faulted }, state.faulted ? 503 : 200))
   app.use('*', async (c, next) => {

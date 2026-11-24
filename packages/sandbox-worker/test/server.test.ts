@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import fs from 'node:fs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -242,5 +243,37 @@ test('an understated Content-Length cannot bypass the actual body limit', async 
   const response = await app.request('/runs', { method: 'POST', headers: { authorization: `Bearer ${bearer}`, 'content-length': '1' },
     body: 'x'.repeat(500_000) })
   expect(response.status).toBe(413)
+  expect(dependencies.llm.step).not.toHaveBeenCalled()
+})
+
+test('an initial post-rename flush failure returns 503 rather than acknowledging durable admission', async () => {
+  const dependencies = httpDeps(), app = createApp(dependencies), original = fs.fsyncSync
+  let failed = false
+  const sync = vi.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
+    if (!failed && fs.fstatSync(fd).isDirectory()) { failed = true; throw Error('Initial directory flush failed') }
+    original(fd)
+  })
+  const response = await post(app)
+  sync.mockRestore()
+  expect(response.status).toBe(503)
+  expect((await app.request('/healthz')).status).toBe(503)
+  expect(dependencies.llm.step).not.toHaveBeenCalled()
+  expect(dependencies.budget.used()).toBe(0)
+})
+
+test('recovery from a first-write failure retains identity so an identical retry remains idempotent after restart', async () => {
+  const dependencies = httpDeps(), base = dependencies.store
+  let failed = false
+  const store = { ...base, save: ((status, metadata) => {
+    if (!failed) { failed = true; throw Error('Initial write failed') }
+    base.save(status, metadata)
+  }) as typeof base.save }
+  const app = createApp({ ...dependencies, store })
+  expect((await post(app)).status).toBe(503)
+  await vi.waitFor(() => expect(base.get(request.runId)?.state).toBe('done'))
+  expect(base.recovery(request.runId)).toBeDefined()
+  const restarted = createApp({ ...dependencies, store: createStore(dependencies.env.RUN_DIR) })
+  expect((await post(restarted)).status).toBe(202)
+  expect(WorkerRunStatus.parse((await statusOf(restarted)).body).result?.status).toBe('INCOMPLETE')
   expect(dependencies.llm.step).not.toHaveBeenCalled()
 })
