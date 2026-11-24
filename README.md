@@ -47,6 +47,10 @@ local development only.
 | 2. Scanning | `packages/scanner-core`, `packages/sandbox-worker` | `rules` (bundle hash, flags), `schemas` (scan, sandbox, scanner, internal) | `fixtures/bundles`, `fixtures/scans`, `fixtures/sandbox`, and a fake LLM |
 | 3. Application | `apps/` except the landing page and docs, `packages/sdk`, `packages/skill` | `abi`, `rules`, `schemas` (api, evidence, shortProof) | The stub contracts on the local chain, and `fixtures/api` as a fake API |
 
+Your lane's tasks are cards on the [Sealflare project](https://github.com/users/zakyirsyaad/projects/6),
+and `.github/CODEOWNERS` asks your lane's owner to review pull requests that touch its folders. See
+[AGENTS.md](AGENTS.md) for how the board is used.
+
 ## What is frozen
 
 Everything under `shared/` and `contracts/src/interfaces/` is an agreement between the three lanes:

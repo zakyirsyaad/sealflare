@@ -41,9 +41,19 @@ and Geist Mono, dark and light themes, and a round seal as the only round shape.
 Stay inside your lane's folders. Two lanes never edit the same files. `.github/CODEOWNERS` maps the
 same folders to their owners, so a pull request asks the right person for review.
 
-Every plan task is a card on the [Sealflare project](https://github.com/users/zakyirsyaad/projects/6),
-with its lane and owner set. Move your card to In Progress when you start a task and to Done when
-its commit lands on `main`. Convert the card to an issue if it needs discussion.
+Work is tracked on the private [Sealflare project](https://github.com/users/zakyirsyaad/projects/6).
+Every plan task is a card, named `[Lane n] title` after its plan task, and the founder's work outside
+the plans has `[Founder]` cards. Each card has:
+
+- **Lane**: `0. Foundation`, `1. On-chain`, `2. Scanning` or `3. Application`.
+- **Status**: Todo, In Progress or Done.
+- **Stage**: `M1`, `M2` or `Release`, the milestone the task must be finished for.
+- **Assignee**: the lane owner.
+
+Use one board view with Status as columns, sliced by Lane, and filter `assignee:@me` for your own
+cards. Move your card to In Progress when you start a task and to Done when its commit lands on
+`main`. Cards are drafts; convert one to an issue if it needs discussion. The board has no due
+dates: the only deadline is the hackathon's.
 
 ## Frozen agreements
 

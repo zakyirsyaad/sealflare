@@ -41,15 +41,19 @@ pnpm abi:check     # export, then fail if git diff shows any change in shared/ab
 `abi:check` failing means the interfaces and the exported ABIs drifted. Both sides are frozen;
 do not fix it by editing either side on your own. Stop and ask the founder.
 
-## Current state (verified 2026-11-22)
+## Current state (verified 2026-11-25)
 
-- The only workspace package is `shared/` (`@sealflare/shared`). `apps/` and `packages/` do not
-  exist yet; the lane plans create them.
-- `contracts/` holds the frozen interfaces and libs (`Constants`, `Rules`, `Ids`, `BindTypes`),
-  local-only stubs (`CoreStub`, `CourtStub`, `VaultStub`, `MockAgentID`), deploy and seed scripts,
-  and the vector tests. The production `Core`, `Court`, `Vault` are not written yet.
-- Plan 0 (foundation) is done and tagged `v0-frozen`. The next work is in
-  `docs/plans/2026-11-22-onchain.md`, `-scanning.md`, `-application.md`, executed task by task.
+- Workspace packages: `shared/` (`@sealflare/shared`), `packages/scanner-core` and `apps/web`.
+  `packages/sandbox-worker`, `packages/sdk`, `packages/skill`, `apps/indexer` and `apps/internal`
+  do not exist yet; the lane plans create them.
+- `contracts/` holds the production `Core` (split into `CoreBase`, `CoreSettlement`, `Core`),
+  `Court` and `Vault`, next to the frozen interfaces and libs and the local-only stubs. Unit, fuzz,
+  invariant and end-to-end tests run in `pnpm verify`; BSC fork tests run with
+  `BSC_RPC_URL=<url> pnpm test:fork`. `pnpm chain` runs the stubs and `pnpm chain:real` the real
+  contracts.
+- Progress: foundation done and tagged `v0-frozen`. On-chain Tasks 1 to 11 done and Task 12 waits
+  for the testnet rehearsal. Scanning Tasks 1 and 2 and Application Tasks 1 and 2 done. The
+  [Sealflare project](https://github.com/users/zakyirsyaad/projects/6) is the live list.
 - `shared/rules/vectors/*.json` is the single source of truth for tier, weight, XP, flags and
   target ids. TypeScript tests (`shared/test`) and Solidity tests (`contracts/test/VectorTest.sol`)
   run against the same files; `foundry.toml` grants read access to that folder. Import the rules,
