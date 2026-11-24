@@ -92,7 +92,16 @@ contract CoreStub is ICore {
         targetId = _touch(targetType, target);
         Recorded memory r = _record(targetId, verdict, flags);
         emit Attested(
-            targetId, msg.sender, verdict, flags, r.weight, r.index, r.safeOrdinal, evidenceHash, shortProof, evidenceURI
+            targetId,
+            msg.sender,
+            verdict,
+            flags,
+            r.weight,
+            r.index,
+            r.safeOrdinal,
+            evidenceHash,
+            shortProof,
+            evidenceURI
         );
     }
 
@@ -125,7 +134,15 @@ contract CoreStub is ICore {
 
         _attestations[targetId].push(
             AttestationView(
-                msg.sender, verdict, flags, r.weight, r.safeOrdinal, uint64(block.timestamp), false, false, t.activeChallengeId != 0
+                msg.sender,
+                verdict,
+                flags,
+                r.weight,
+                r.safeOrdinal,
+                uint64(block.timestamp),
+                false,
+                false,
+                t.activeChallengeId != 0
             )
         );
         _indexPlusOne[targetId][msg.sender] = uint256(r.index) + 1;
@@ -136,9 +153,7 @@ contract CoreStub is ICore {
         _bind(_touch(TargetType.SMART_CONTRACT, _word(target)), agentIdHolder, BindMethod.OWNER);
     }
 
-    function bindByDeployer(address target, address, uint256, address agentIdHolder, uint256, bytes calldata)
-        external
-    {
+    function bindByDeployer(address target, address, uint256, address agentIdHolder, uint256, bytes calldata) external {
         bindNonce[target] += 1;
         _bind(_touch(TargetType.SMART_CONTRACT, _word(target)), agentIdHolder, BindMethod.DEPLOYER);
     }
@@ -289,7 +304,11 @@ contract CoreStub is ICore {
         return (tierOf(targetId), t.hasDelegatecall, t.pinnedCodehash, t.activeFlags, _bond(targetId));
     }
 
-    function verifySkillBundle(bytes32 canonicalBundleHash) external view returns (TrustTier, address, uint32, uint256) {
+    function verifySkillBundle(bytes32 canonicalBundleHash)
+        external
+        view
+        returns (TrustTier, address, uint32, uint256)
+    {
         bytes32 targetId = Ids.targetIdOfSkill(canonicalBundleHash);
         TargetView storage t = _targets[targetId];
         address verified = t.publisherRole == PublisherRole.VERIFIED_PUBLISHER ? t.publisher : address(0);

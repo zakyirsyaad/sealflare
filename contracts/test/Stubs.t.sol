@@ -141,7 +141,9 @@ contract StubsTest is Test {
         vm.deal(challenger, 1 ether);
         uint64 commitEnds = uint64(block.timestamp) + 12 hours;
         vm.expectEmit(address(court));
-        emit ICourt.ChallengeOpened(1, targetId, challenger, 2, keccak256("e"), "p", "ipfs://c", commitEnds, commitEnds + 12 hours);
+        emit ICourt.ChallengeOpened(
+            1, targetId, challenger, 2, keccak256("e"), "p", "ipfs://c", commitEnds, commitEnds + 12 hours
+        );
         vm.prank(challenger);
         uint256 id = court.openChallenge{value: Constants.CHALLENGE_STAKE}(targetId, 2, keccak256("e"), "p", "ipfs://c");
         assertEq(id, 1);

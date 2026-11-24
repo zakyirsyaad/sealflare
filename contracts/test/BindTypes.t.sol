@@ -10,9 +10,12 @@ contract BindTypesTest is VectorTest {
         string memory json = _read("eip712.json");
         assertEq(BindTypes.BIND_BY_OWNER_TYPEHASH, vm.parseJsonBytes32(json, ".BindByOwner.typeHash"));
         assertEq(BindTypes.BIND_BY_DEPLOYER_TYPEHASH, vm.parseJsonBytes32(json, ".BindByDeployer.typeHash"));
-        assertEq(BindTypes.BIND_BY_OWNER_TYPEHASH, keccak256(bytes(vm.parseJsonString(json, ".BindByOwner.typeString"))));
         assertEq(
-            BindTypes.BIND_BY_DEPLOYER_TYPEHASH, keccak256(bytes(vm.parseJsonString(json, ".BindByDeployer.typeString")))
+            BindTypes.BIND_BY_OWNER_TYPEHASH, keccak256(bytes(vm.parseJsonString(json, ".BindByOwner.typeString")))
+        );
+        assertEq(
+            BindTypes.BIND_BY_DEPLOYER_TYPEHASH,
+            keccak256(bytes(vm.parseJsonString(json, ".BindByDeployer.typeString")))
         );
     }
 
