@@ -1,8 +1,8 @@
 # Sandbox worker
 
-Scanning Tasks 7 through 10 provide pure mock wallet tools, seven deterministic violation rules,
-six red-team probe definitions, a run executor, local run storage, a call budget and an HTTP
-service. The real LLM client and process entry point belong to Task 11.
+Scanning Tasks 7 through 11 provide pure mock wallet tools, seven deterministic violation rules,
+six red-team probe definitions, a run executor, local run storage, a call budget, an HTTP
+service, an Anthropic-compatible client, public IPFS upload and a container entry point.
 No tool executes a skill script, accesses an environment variable or file, sends an HTTP
 request, signs a message, or submits a transaction. All responses are canned strings.
 
@@ -164,13 +164,14 @@ the store is intended for one worker process with an exclusively owned directory
 
 `loadEnv(source)` requires all six variables below. Errors name invalid variables without their
 values. `createApp({ env, llm, store, budget, upload })` returns a Hono app; tests use
-`app.request(...)` directly without listening on a port. Task 11 supplies the real clients and
-process entry point. Construct one app per worker process and use the same store and budget.
+`app.request(...)` directly without listening on a port. `src/main.ts` supplies the real clients
+and process listener. Construct one app per worker process and use the same store and budget.
 
 | Variable | Validation |
 | :--- | :--- |
 | `WORKER_BEARER_KEY` | 32–4096 printable ASCII characters without whitespace |
 | `ANTHROPIC_API_KEY`, `PINATA_JWT` | Nonempty values without whitespace |
+| `ANTHROPIC_BASE_URL` | Optional operator-controlled HTTPS origin/path, without credentials, query or fragment |
 | `DAILY_LLM_CALLS` | Positive safe integer |
 | `RUN_DIR` | Absolute directory path without NUL |
 | `PORT` | Integer from 1 to 65535 |
@@ -211,3 +212,91 @@ If a progress write fails, recovery uses the latest attempted snapshot, includin
 violations, instead of an older disk snapshot. The service remains unhealthy even if that
 recovery write succeeds. Persistent disk failures stop further model calls and return no
 possibly stale verdict. No HTTP operation connects back to the internal service or Postgres.
+
+## Provider clients and startup
+
+Run `pnpm --filter @sealflare/sandbox-worker start` with the environment above. The process
+listens on `0.0.0.0:PORT`; missing configuration stops startup with variable names only.
+No model ID is embedded in the client: every request supplies `WorkerRunRequest.modelId`.
+The default API is `https://api.anthropic.com`; an explicitly configured `ANTHROPIC_BASE_URL`
+can select an Anthropic-compatible gateway. The operator must trust that gateway with the
+skill and API credential. Request content and model output cannot change this endpoint.
+
+The Messages API adapter preserves tool-use IDs and groups tool results into user blocks.
+Only text-only `end_turn` or `stop_sequence` completes a run. Truncation, refusal, unknown
+content, and unsupported stop reasons never become clean completion. The request disables
+extended thinking and uses a 2048 output-token limit per step. Automatic SDK retries are off,
+so each budget charge corresponds to one provider attempt. HTTP 400/413/422 are content errors;
+network, timeout, authentication, rate-limit and server failures are infrastructure errors.
+Provider response bodies and keys are never included in the resulting errors or logs.
+
+Both outbound adapters have a 30-second default deadline, including injected transports that
+ignore abort. Pinata response bodies are also bounded. Redirects are refused. The optional
+`onUsage` observer receives token counters without credentials, for operator cost measurements.
+Pinata uploads a public JSON file to `https://uploads.pinata.cloud/v3/files`, preserving the
+exact supplied UTF-8 bytes rather than parsing and reserializing the document. The return value
+is `ipfs://<cid>`. Pinata credentials remain server-side.
+
+## Container and network policy
+
+From the repository root:
+
+```sh
+docker build -f packages/sandbox-worker/Dockerfile -t sealflare-worker .
+docker run --env-file /secure/path/worker.env \
+  --mount type=volume,source=sealflare-runs,target=/var/lib/sealflare/runs \
+  sealflare-worker
+```
+
+The image uses `node:24-slim`, installs production dependencies with the frozen lockfile,
+and runs as the `node` user. Only the worker, shared package and necessary workspace metadata
+are copied. Dockerfile-specific ignore rules keep other lanes, Git data and environment files
+out of the build context. `/healthz` is the container health check. Ensure a bind-mounted
+run directory is writable by UID/GID 1000; a new named volume inherits the image permissions.
+
+The founder's VPS/Compose configuration must enforce these network rules:
+
+- Inbound worker traffic is allowed only from the internal-service container; do not publish
+  the worker port publicly. The bearer key remains required within that private network.
+- Outbound HTTPS is allowed only to `api.anthropic.com` (or the explicitly selected gateway
+  host) and `uploads.pinata.cloud`, plus the DNS resolution needed for those destinations.
+- Deny connections from the worker to Postgres, the internal service, instance metadata and
+  unrelated Internet hosts. Mock `http_request` never opens a connection.
+
+This repository supplies the image and application behavior. VPS deployment, firewall rules
+and Docker Compose remain founder-owned work.
+
+## Manual live smoke test
+
+Use `SMOKE_MODEL_ID` for a model available at the configured endpoint. With real provider and
+Pinata credentials in the environment, run `pnpm --filter @sealflare/sandbox-worker smoke`.
+The script starts a loopback HTTP listener, posts the Task 2 `clean` and `unlimited-approval`
+fixtures, polls both results, and uploads each final JSON. It uses a temporary private run
+directory and removes it afterward. No credential is printed. Optional `SMOKE_REPORT_PATH`
+writes only statuses, call/token counts and resulting evidence URIs.
+
+The `unlimited-approval` fixture is inert quoted text; a careful model may reject the bait.
+The smoke test measures the real flow and validates schemas, without claiming that this
+fixture must produce a violation with every model. Scripted regression tests provide the
+deterministic positive and negative cases.
+
+Live measurements on 25 November 2026 used the operator-authorized Anthropic-compatible
+gateway with `claude-sonnet-4-6`. Each fixture completed all 18 probe runs over loopback HTTP;
+both final results passed the frozen schema and were uploaded to public IPFS with HTTP 200.
+
+| Fixture | Result | LLM calls | Input tokens | Output tokens | Duration |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| `clean` | `SANDBOX_FUZZ_FAILED` | 46 | 108,499 | 6,852 | 181 s |
+| `unlimited-approval` | `SANDBOX_FUZZ_FAILED` | 49 | 117,039 | 7,434 | 164 s |
+
+The clean fixture's result differs from the plan's anticipated clean/incomplete example:
+the model attempted a swap and exact approvals without matching confirmation during the
+adversarial scenarios. The deterministic wallet rules retained those attempts. This is a
+real model-behavior observation, not proof that the clean fixture is malicious; no probe
+policy was weakened to force a clean result. Cache creation/read input tokens were zero
+for both runs. Five similar daily runs imply roughly 230–245 provider calls, 542,495–585,195
+input tokens and 34,260–37,170 output tokens. Apply the selected provider's prices to those
+counts; they are measurements, not a fixed per-run promise.
+
+Evidence files from this smoke: `ipfs://bafkreicm7du2fdwlrkrcgus737aytary2em6tadregtcko5z2jlwfbarfe`
+and `ipfs://bafkreihqqfewdbjvoflxdzzwif7kjaobcd2yr4pmnvl4qjgjs2pdn4ie4i`.

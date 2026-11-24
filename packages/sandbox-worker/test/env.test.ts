@@ -38,3 +38,12 @@ test.each(['0', '65536', '1.5', 'not-a-port'])('invalid port %s is rejected', (P
 test.each(['', 'relative/path', '/tmp/\0bad'])('invalid run directory %j is rejected', (RUN_DIR) => {
   expect(() => loadEnv({ ...envSource, RUN_DIR })).toThrow(/RUN_DIR/)
 })
+
+test('a configured HTTPS Anthropic-compatible endpoint is retained for the operator-selected gateway', () => {
+  expect(loadEnv({ ...envSource, ANTHROPIC_BASE_URL: 'https://gateway.example' }).ANTHROPIC_BASE_URL).toBe('https://gateway.example')
+})
+
+test.each(['http://gateway.example', 'https://user:pass@gateway.example', 'https://gateway.example/?key=credential'])
+  ('unsafe provider URL %s is rejected without echoing it', (ANTHROPIC_BASE_URL) => {
+    expect(() => loadEnv({ ...envSource, ANTHROPIC_BASE_URL })).toThrow(/ANTHROPIC_BASE_URL/)
+  })

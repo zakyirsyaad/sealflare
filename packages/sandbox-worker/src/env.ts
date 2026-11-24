@@ -1,10 +1,12 @@
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
+import { ProviderUrl } from './providerUrl'
 
 const Secret = z.string().min(1).max(4096).regex(/^\S+$/)
 const PositiveInteger = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(Number.MAX_SAFE_INTEGER))
 const Environment = z.object({
   WORKER_BEARER_KEY: Secret.min(32).regex(/^[!-~]+$/), ANTHROPIC_API_KEY: Secret, PINATA_JWT: Secret,
+  ANTHROPIC_BASE_URL: ProviderUrl.optional(),
   DAILY_LLM_CALLS: PositiveInteger,
   RUN_DIR: z.string().min(1).max(4096).refine((value) => isAbsolute(value) && !value.includes('\0')),
   PORT: PositiveInteger.pipe(z.number().max(65_535)),
