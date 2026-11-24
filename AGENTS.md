@@ -38,7 +38,12 @@ and Geist Mono, dark and light themes, and a round seal as the only round shape.
 | 2. Scanning | `packages/scanner-core`, `packages/sandbox-worker` | second developer (@Nant361) |
 | 3. Application | `apps/` except landing and docs, `packages/sdk`, `packages/skill` | third developer (@maziazi) |
 
-Stay inside your lane's folders. Two lanes never edit the same files.
+Stay inside your lane's folders. Two lanes never edit the same files. `.github/CODEOWNERS` maps the
+same folders to their owners, so a pull request asks the right person for review.
+
+Every plan task is a card on the [Sealflare project](https://github.com/users/zakyirsyaad/projects/6),
+with its lane and owner set. Move your card to In Progress when you start a task and to Done when
+its commit lands on `main`. Convert the card to an issue if it needs discussion.
 
 ## Frozen agreements
 

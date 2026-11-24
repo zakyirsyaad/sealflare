@@ -1,0 +1,23 @@
+# Lane owners, from AGENTS.md. The last matching line wins, so the founder's
+# frozen and owned paths come after the lane folders they sit inside.
+
+# Anything not listed below
+*                               @zakyirsyaad
+
+# Lane 2: scanning
+/packages/scanner-core/         @Nant361
+/packages/sandbox-worker/       @Nant361
+
+# Lane 3: application
+/apps/                          @maziazi
+/packages/sdk/                  @maziazi
+/packages/skill/                @maziazi
+
+# Lane 1: on-chain, plus the landing and docs pages inside the web app
+/contracts/                     @zakyirsyaad
+/apps/web/app/(site)/           @zakyirsyaad
+
+# Frozen agreements: every change needs the founder
+/shared/                        @zakyirsyaad
+/contracts/src/interfaces/      @zakyirsyaad
+/.github/                       @zakyirsyaad
