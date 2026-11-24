@@ -48,7 +48,7 @@ local development only.
 | 3. Application | `apps/` except the landing page and docs, `packages/sdk`, `packages/skill` | `abi`, `rules`, `schemas` (api, evidence, shortProof) | The stub contracts on the local chain, and `fixtures/api` as a fake API |
 
 Your lane's tasks are cards on the [Sealflare project](https://github.com/users/zakyirsyaad/projects/6),
-and `.github/CODEOWNERS` asks your lane's owner to review pull requests that touch its folders. See
+and every pull request needs green CI and the founder's approval before it merges. See
 [AGENTS.md](AGENTS.md) for how the board is used.
 
 ## What is frozen

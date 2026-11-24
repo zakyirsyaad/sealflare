@@ -38,8 +38,8 @@ and Geist Mono, dark and light themes, and a round seal as the only round shape.
 | 2. Scanning | `packages/scanner-core`, `packages/sandbox-worker` | second developer (@Nant361) |
 | 3. Application | `apps/` except landing and docs, `packages/sdk`, `packages/skill` | third developer (@maziazi) |
 
-Stay inside your lane's folders. Two lanes never edit the same files. `.github/CODEOWNERS` maps the
-same folders to their owners, so a pull request asks the right person for review.
+Stay inside your lane's folders. Two lanes never edit the same files. Every pull request from a
+developer needs the founder's approval: `.github/CODEOWNERS` names the founder on every path.
 
 Work is tracked on the private [Sealflare project](https://github.com/users/zakyirsyaad/projects/6).
 Every plan task is a card, named `[Lane n] title` after its plan task, and the founder's work outside
@@ -87,10 +87,12 @@ pnpm chain:seed    # Agent IDs for five local accounts and three sample targets
 ```
 
 - Write the failing test first, watch it fail, then implement. `pnpm verify` must pass before a commit.
-- Every change reaches `main` through a pull request: one branch and one PR per plan task. `main`
-  needs passing CI (TypeScript, contracts, ABI, web build, secret scan) and one approval, and
-  merges are squash only, so the PR title becomes the commit message on `main` and must follow
-  the format below. Nobody approves their own PR.
+- Every change reaches `main` through a pull request: one branch and one PR per plan task. Two
+  rulesets guard `main`. "main: CI and history" requires the five CI checks (TypeScript, contracts,
+  ABI, web build, secret scan) and blocks force pushes and deletion, with no bypass. "main:
+  founder review" requires the founder's approval as code owner; only the founder, as repository
+  admin, can bypass it, so the founder's own PRs merge on green CI alone. Merges are squash only,
+  so the PR title becomes the commit message on `main` and must follow the format below.
 - `pnpm verify` does not run the formatter: run `forge fmt` in `contracts/` before committing
   Solidity. Frozen files are excluded in `foundry.toml`.
 - Commit messages: `<type>: <description>` with type one of feat, fix, refactor, docs, test, chore,
