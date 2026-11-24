@@ -10,4 +10,4 @@
 - [ ] Nothing under `shared/`, `contracts/src/interfaces/`, or the frozen libraries changed, or the founder approved it
 - [ ] No secret, private key, or paid key in a `NEXT_PUBLIC_` variable
 - [ ] UI text is English, sentence case, with no em dash and no emoji
-- [ ] Commit messages follow `<type>: <description>`
+- [ ] The PR title follows `<type>: <description>`: merges are squash only, so the title becomes the commit on `main`
