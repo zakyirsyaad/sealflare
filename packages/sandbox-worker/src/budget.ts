@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export type Budget = { tryTake(calls: number): boolean; used(): number }
+export type Budget = { tryTake(calls: number): boolean; canTake(calls: number): boolean; used(): number }
 const PositiveCount = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 
 /** Process-local call counter. Only a later UTC day can create a new allowance. */
@@ -22,5 +22,6 @@ export function createBudget(options: { dailyCalls: number; now?: () => Date }):
       return true
     },
     used: () => { refresh(); return used },
+    canTake: (calls) => { const count = PositiveCount.parse(calls); refresh(); return count <= limit - used },
   }
 }

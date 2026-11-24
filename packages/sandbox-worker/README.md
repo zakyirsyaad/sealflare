@@ -1,8 +1,8 @@
 # Sandbox worker
 
-Scanning Tasks 7 through 9 provide pure mock wallet tools, seven deterministic violation rules,
-six red-team probe definitions, a run executor, local run storage and an in-memory call budget.
-The HTTP service and real LLM client belong to later tasks.
+Scanning Tasks 7 through 10 provide pure mock wallet tools, seven deterministic violation rules,
+six red-team probe definitions, a run executor, local run storage, a call budget and an HTTP
+service. The real LLM client and process entry point belong to Task 11.
 No tool executes a skill script, accesses an environment variable or file, sends an HTTP
 request, signs a message, or submits a transaction. All responses are canned strings.
 
@@ -123,7 +123,8 @@ files or calculate this hash.
 times in order. The request passes `WorkerRunRequest`; its probe-set version must equal
 `PROBE_SET_VERSION`. The default limit is eight LLM steps per probe run. Model IDs always
 come from the request. A run ID must be 1–64 ASCII letters, digits, underscores or hyphens.
-An ID already in the loaded store cannot be started again.
+An ID already in the loaded store cannot be executed again. The HTTP API treats an identical
+request with that ID as an idempotent retry.
 
 Inject `LlmClient` from `src/llm`. Conversations contain a user message, assistant text/calls,
 and tool responses correlated by `toolCallId`. Provider call IDs, when present, are preserved;
@@ -148,8 +149,8 @@ recorded violation wins over later errors, so a later outage cannot turn a failu
 
 `createStore(dir)` exposes synchronous `save`, `get`, and `loadAll`. Call `loadAll()` at startup
 and inspect its returned `{ file, message }` issues. Corrupt, invalid, mismatched or symlinked
-JSON files are skipped and reported without including their contents. Startup recovery of
-interrupted running states belongs to the HTTP service task; loading retains their progress.
+JSON files are skipped and reported without including their contents. The HTTP service loads
+this progress and finalizes interrupted running states before accepting requests.
 
 Each run uses one private JSON file. Writes flush a fresh file and atomically rename it into
 place. The in-memory snapshot advances as soon as rename succeeds, including when a subsequent
@@ -158,3 +159,54 @@ cannot be removed or rewritten by a later save. The runner saves each completed 
 including a caught violation, before the next LLM call. A persistence error propagates and
 stops execution immediately. Storage durability depends on the local filesystem and device;
 the store is intended for one worker process with an exclusively owned directory.
+
+## HTTP service
+
+`loadEnv(source)` requires all six variables below. Errors name invalid variables without their
+values. `createApp({ env, llm, store, budget, upload })` returns a Hono app; tests use
+`app.request(...)` directly without listening on a port. Task 11 supplies the real clients and
+process entry point. Construct one app per worker process and use the same store and budget.
+
+| Variable | Validation |
+| :--- | :--- |
+| `WORKER_BEARER_KEY` | 32–4096 printable ASCII characters without whitespace |
+| `ANTHROPIC_API_KEY`, `PINATA_JWT` | Nonempty values without whitespace |
+| `DAILY_LLM_CALLS` | Positive safe integer |
+| `RUN_DIR` | Absolute directory path without NUL |
+| `PORT` | Integer from 1 to 65535 |
+
+`GET /healthz` is public. All other routes require `Authorization: Bearer <worker key>`.
+Authentication compares fixed-size SHA-256 digests with `timingSafeEqual`. No key or provider
+exception is returned in an HTTP error. Health becomes 503 after an unexpected persistence or
+internal service failure; new admissions and status reads then return 503 until restart.
+
+| Route | Response |
+| :--- | :--- |
+| `POST /runs` | 202 `{ accepted: true }` for a new run or identical retry |
+| `POST /runs`, another run active | 429 `{ accepted: false, reason: 'BUSY' }` |
+| `POST /runs`, call budget exhausted | 429 `{ accepted: false, reason: 'DAILY_LIMIT' }` |
+| `POST /runs`, same ID with different request | 409 |
+| `GET /runs/:id` | The frozen `WorkerRunStatus`, or 404 |
+
+Validation failures return 400. Raw JSON bodies also have a bounded byte limit, counted from
+the actual stream rather than trusting `Content-Length`. Admission checks capacity without
+spending it; the runner charges each actual LLM attempt. The busy lock lasts through evidence
+upload. Upload errors retain the durable result without an evidence URI.
+
+The same local JSON file now carries private `_recovery` identity metadata: bundle hash, model,
+probe version, start time and a digest of the canonical request. It never contains the full
+skill text or credentials and never appears in API status responses. Store `save` retains it,
+`recovery(id)` returns a clone, and `list()` exposes only public status snapshots. Completed
+results must agree with their persisted identity.
+
+Startup finalizes interrupted runs as infrastructure failures. The result is `INCOMPLETE`
+without violations, or `SANDBOX_FUZZ_FAILED` when violations already exist, following the frozen
+status derivation. An all-clean running record without a committed final result has its last
+run marked error during recovery. Legacy running records without identity metadata stop
+startup; their bundle/model identity cannot be reconstructed safely from status alone.
+Corrupt records are skipped with filename-only reports.
+
+If a progress write fails, recovery uses the latest attempted snapshot, including caught
+violations, instead of an older disk snapshot. The service remains unhealthy even if that
+recovery write succeeds. Persistent disk failures stop further model calls and return no
+possibly stale verdict. No HTTP operation connects back to the internal service or Postgres.

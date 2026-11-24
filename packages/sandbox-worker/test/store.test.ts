@@ -2,7 +2,8 @@ import fs, { readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } f
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import { createStore } from '../src/store'
-import { runDirectory, running, refused } from './runFixtures'
+import { recoveryFor } from '../src/runIdentity'
+import { request, runDirectory, running, refused } from './runFixtures'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -103,4 +104,30 @@ test('a directory flush failure after rename retains committed evidence in memor
   expect(store.get('run-1')).toEqual(refused)
   expect(() => store.save(running)).toThrow()
   expect(JSON.parse(readFileSync(join(dir, 'run-1.json'), 'utf8'))).toEqual(refused)
+})
+
+test('recovery identity survives ordinary progress saves and restart without leaking into public status', () => {
+  const dir = runDirectory(), store = createStore(dir), metadata = recoveryFor(request, '2026-11-25T12:00:00.000Z')
+  store.save(running, metadata)
+  store.save(refused)
+  const restarted = createStore(dir)
+  expect(restarted.loadAll()).toEqual([])
+  expect(restarted.recovery('run-1')).toEqual(metadata)
+  expect(restarted.list()).toEqual([refused])
+  expect(restarted.get('run-1')).toEqual(refused)
+  expect(JSON.stringify(restarted.get('run-1'))).not.toContain(request.bundleHash)
+  const returned = restarted.recovery('run-1')!
+  returned.modelId = 'changed'
+  expect(restarted.recovery('run-1')?.modelId).toBe('fixture-model')
+  expect(() => restarted.save(refused, { ...metadata, modelId: 'rebound' })).toThrow()
+})
+
+test('a final result cannot disagree with the recovery identity used by its request', () => {
+  const store = createStore(runDirectory()), metadata = recoveryFor(request, '2026-11-25T12:00:00.000Z')
+  store.save(refused, metadata)
+  const result = { schemaVersion: 1 as const, bundleHash: request.bundleHash, modelId: 'wrong-model',
+    probeSetVersion: request.probeSetVersion, startedAt: metadata.startedAt, finishedAt: metadata.startedAt,
+    status: 'SANDBOX_FUZZ_FAILED' as const, probes: refused.probes }
+  expect(() => store.save({ ...refused, state: 'done', result })).toThrow()
+  expect(store.get(request.runId)).toEqual(refused)
 })

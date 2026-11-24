@@ -4,15 +4,27 @@ import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { PROBE_IDS, ProbeResult, WorkerRunStatus } from '@sealflare/shared/schemas'
+import { RecoveryInfo } from './runIdentity'
 
 export type LoadIssue = { file: string; message: string }
 export type RunStore = {
-  save(status: WorkerRunStatus): void
+  save(status: WorkerRunStatus, recovery?: RecoveryInfo): void
   get(runId: string): WorkerRunStatus | undefined
+  recovery(runId: string): RecoveryInfo | undefined
+  list(): WorkerRunStatus[]
   loadAll(): LoadIssue[]
 }
 export const RunId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid run ID.')
 const MAX_STATUS_BYTES = 16_777_216
+
+function assertIdentity(status: WorkerRunStatus, identity: RecoveryInfo | undefined): void {
+  if (!identity || !status.result) return
+  const result = status.result
+  if (result.bundleHash !== identity.bundleHash || result.modelId !== identity.modelId
+    || result.probeSetVersion !== identity.probeSetVersion || result.startedAt !== identity.startedAt) {
+    throw Error('Result does not match the run identity.')
+  }
+}
 
 function parseStatus(input: unknown): WorkerRunStatus {
   const status = WorkerRunStatus.parse(input)
@@ -47,15 +59,17 @@ function regularFile(path: string): boolean {
   }
 }
 
-function readStatus(path: string, runId: string): WorkerRunStatus | undefined {
+function readRecord(path: string, runId: string): { status: WorkerRunStatus; recovery?: RecoveryInfo } | undefined {
   if (!regularFile(path)) return undefined
   const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK)
   try {
     const stat = fs.fstatSync(fd)
     if (!stat.isFile() || stat.size > MAX_STATUS_BYTES) throw Error('Invalid status file size.')
-    const status = parseStatus(JSON.parse(fs.readFileSync(fd, 'utf8')))
+    const decoded: unknown = JSON.parse(fs.readFileSync(fd, 'utf8')), status = parseStatus(decoded)
+    const recovery = z.object({ _recovery: RecoveryInfo.optional() }).parse(decoded)._recovery
+    assertIdentity(status, recovery)
     if (status.runId !== runId) throw Error('Status does not match its filename.')
-    return status
+    return { status, recovery }
   } finally { fs.closeSync(fd) }
 }
 
@@ -72,32 +86,46 @@ function replaceFile(dir: string, path: string, text: string, committed: () => v
 }
 
 export function createStore(directory: string): RunStore {
-  const dir = resolve(directory), records = new Map<string, WorkerRunStatus>()
+  const dir = resolve(directory), records = new Map<string, WorkerRunStatus>(), identities = new Map<string, RecoveryInfo>()
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   return {
-    save: (input) => {
+    save: (input, recovery) => {
       const status = parseStatus(input), path = join(dir, `${status.runId}.json`)
-      const previous = records.get(status.runId) ?? readStatus(path, status.runId)
+      const disk = records.has(status.runId) ? undefined : readRecord(path, status.runId)
+      const previous = records.get(status.runId) ?? disk?.status
+      const existing = identities.get(status.runId) ?? disk?.recovery
+      const metadata = recovery === undefined ? existing : RecoveryInfo.parse(recovery)
+      if (existing && JSON.stringify(metadata) !== JSON.stringify(existing)) throw Error('Run identity cannot be changed.')
+      assertIdentity(status, metadata)
       regularFile(path)
       assertEvidence(previous, status)
-      const text = JSON.stringify(status)
+      const text = JSON.stringify({ ...status, ...(metadata ? { _recovery: metadata } : {}) })
       if (Buffer.byteLength(text) > MAX_STATUS_BYTES) throw Error('Status exceeds the storage limit.')
       const snapshot = structuredClone(status)
-      replaceFile(dir, path, text, () => { records.set(status.runId, snapshot) })
+      replaceFile(dir, path, text, () => {
+        records.set(status.runId, snapshot)
+        if (metadata) identities.set(status.runId, structuredClone(metadata))
+      })
     },
     get: (input) => {
       const runId = RunId.parse(input), status = records.get(runId)
       return status ? structuredClone(status) : undefined
     },
+    recovery: (input) => {
+      const metadata = identities.get(RunId.parse(input))
+      return metadata ? structuredClone(metadata) : undefined
+    },
+    list: () => structuredClone([...records.values()]),
     loadAll: () => {
       const issues: LoadIssue[] = []
       for (const file of fs.readdirSync(dir).sort()) {
         if (!file.endsWith('.json')) continue
         try {
-          const runId = RunId.parse(file.slice(0, -5)), status = readStatus(join(dir, file), runId)
-          if (!status) throw Error('Missing status file.')
-          assertEvidence(records.get(runId), status)
-          records.set(runId, status)
+          const runId = RunId.parse(file.slice(0, -5)), record = readRecord(join(dir, file), runId)
+          if (!record) throw Error('Missing status file.')
+          assertEvidence(records.get(runId), record.status)
+          records.set(runId, record.status)
+          if (record.recovery) identities.set(runId, record.recovery)
         } catch { issues.push({ file, message: 'Run status could not be loaded.' }) }
       }
       return issues

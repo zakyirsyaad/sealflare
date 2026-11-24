@@ -208,7 +208,7 @@ test('a failing budget dependency is infrastructure, not a skill error, and stop
   let calls = 0
   const dependencies = deps({ step: async () => { calls++; return clean } })
   const status = await runProbeSet(request, { ...dependencies, budget: {
-    tryTake: () => { throw Error('Invalid system clock') }, used: () => 0,
+    tryTake: () => { throw Error('Invalid system clock') }, used: () => 0, canTake: () => true,
   } })
   expect(calls).toBe(0)
   expect(status.failure?.cause).toBe('infrastructure')

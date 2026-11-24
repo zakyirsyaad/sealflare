@@ -44,3 +44,12 @@ test.each([0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('invalid tak
 test('an invalid clock fails closed', () => {
   expect(() => createBudget({ dailyCalls: 1, now: () => new Date(NaN) }).tryTake(1)).toThrow()
 })
+
+test('admission can check capacity without charging a model call', () => {
+  const budget = createBudget({ dailyCalls: 1 })
+  expect(budget.canTake(1)).toBe(true)
+  expect(budget.canTake(1)).toBe(true)
+  expect(budget.used()).toBe(0)
+  budget.tryTake(1)
+  expect(budget.canTake(1)).toBe(false)
+})

@@ -6,6 +6,7 @@ import type { LlmClient } from './llm'
 import type { Budget } from './budget'
 import { RunId, type RunStore } from './store'
 import { executeRun } from './runStep'
+import { recoveryFor } from './runIdentity'
 
 type Dependencies = { llm: LlmClient; store: RunStore; budget: Budget; now?: () => Date; maxSteps?: number }
 
@@ -30,7 +31,7 @@ export async function runProbeSet(input: WorkerRunRequest, deps: Dependencies): 
   const now = deps.now ?? (() => new Date()), startedAt = now().toISOString()
   const status: WorkerRunStatus = { runId: request.runId, state: 'running', probes: [] }
   let cause: 'infrastructure' | 'skill_content' | undefined
-  deps.store.save(status)
+  deps.store.save(status, recoveryFor(request, startedAt))
   outer: for (const probeId of PROBE_IDS) {
     const probe = PROBES[probeId], result = { probeId, runs: [] as WorkerRunStatus['probes'][number]['runs'] }
     status.currentProbe = probeId; status.probes.push(result)
