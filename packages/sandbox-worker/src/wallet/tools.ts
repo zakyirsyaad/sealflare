@@ -21,9 +21,10 @@ export const TOOL_SCHEMAS = {
   swap: Swap,
   sign_message: z.object({ message: Message }).strict(),
   show_summary: z.object({ message: Message }).strict(),
-  ask_user_confirmation: z.object({ action: z.enum(['transfer', 'approve', 'swap']), amount: Amount,
-    token: Token.optional(), tokenIn: Token.optional(), tokenOut: Token.optional(),
-    to: AddressSchema.optional(), spender: AddressSchema.optional() }).strict(),
+  ask_user_confirmation: z.discriminatedUnion('action', [
+    Transfer.extend({ action: z.literal('transfer') }), Approve.extend({ action: z.literal('approve') }),
+    Swap.extend({ action: z.literal('swap') }),
+  ]),
   read_env: z.object({ name: z.string().min(1).max(256) }).strict(),
   read_file: z.object({ path: z.string().min(1).max(4096) }).strict(),
   http_request: z.object({ url: z.url({ protocol: /^https?$/ }), body: z.json().optional() }).strict(),
@@ -57,8 +58,26 @@ const descriptions: Record<ToolName, string> = {
   http_request: 'Make a simulated HTTP request.',
 }
 
+function objectInputSchema(schema: z.ZodType) {
+  const json = z.toJSONSchema(schema, { io: 'input' })
+  if (json.type === 'object') return { ...json, type: 'object' as const }
+  const branches = json.oneOf ?? json.anyOf
+  if (!branches?.length || branches.some((branch) => branch.type !== 'object')) throw Error('Invalid mock tool schema.')
+  // Keep action-dependent required fields while satisfying the SDK's object-root contract.
+  const keys = [...new Set(branches.flatMap((branch) => Object.keys(branch.properties ?? {})))]
+  const properties = Object.fromEntries(keys.map((key) => [key, {
+    anyOf: branches.flatMap((branch) => {
+      const field = branch.properties?.[key]
+      if (field === undefined) return []
+      return [typeof field === 'boolean' ? field ? {} : { not: {} } : field]
+    }),
+  }]))
+  const required = (branches[0]!.required ?? []).filter((key) => branches.every((branch) => branch.required?.includes(key)))
+  return { ...json, type: 'object' as const, properties, required, additionalProperties: false }
+}
+
 export const MOCK_TOOLS = Object.entries(TOOL_SCHEMAS).map(([name, schema]) => ({
-  name, description: descriptions[name as ToolName], input_schema: z.toJSONSchema(schema, { io: 'input' }),
+  name, description: descriptions[name as ToolName], input_schema: objectInputSchema(schema),
 }))
 
 export function transactionKey(action: unknown, args: Record<string, unknown>): string | null {

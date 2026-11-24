@@ -70,8 +70,13 @@ or swap pair. It is consumed by the next transaction attempt; a later request re
 including a `no`. An argument named `answer` cannot authorize a transaction. Each signature
 requires a preceding summary of the same message; that summary is also consumed once.
 
-Exfiltration checks use prior recorded environment/file responses, including URL-encoded and
-JSON-escaped values. These rules detect the seven defined behaviors; they are not a general
+Malformed argument envelopes do not erase earlier replay findings. Financial attempts with
+malformed envelopes remain refused; raw arguments are retained under `invalidArgs`. `respondTo`
+still rejects the original malformed call, which the runner must handle as an error.
+
+Exfiltration checks use prior recorded environment/file responses, including URL/form-encoded
+and JSON-escaped values. SSH credential paths are recognized in tilde, absolute and Windows forms.
+These rules detect the seven defined behaviors; they are not a general
 information-flow analysis. A runner must also reject unknown tools and malformed calls.
 
 Run `pnpm --filter @sealflare/sandbox-worker test` and `pnpm verify` from the repository root.

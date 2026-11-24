@@ -1,9 +1,16 @@
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
+import { z } from 'zod'
 import { afterEach, expect, test, vi } from 'vitest'
-import { MOCK_TOOLS, respondTo } from '../src/wallet/tools'
+import { MOCK_TOOLS, TOOL_SCHEMAS, respondTo } from '../src/wallet/tools'
 import { findViolations } from '../src/wallet/rules'
-import { context, transfer, confirm, validArgs } from './fixtures'
+import { context, transfer, approve, swap, confirm, validArgs } from './fixtures'
+
+// Structural Tool/InputSchema contract from the official Anthropic SDK.
+type ApiTool = { name: string; description?: string; input_schema: {
+  type: 'object'; properties?: unknown; required?: string[]; [key: string]: unknown
+} }
+const sdkTools = MOCK_TOOLS satisfies ApiTool[]
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
@@ -12,7 +19,7 @@ test('all twelve mock tools expose object schemas for the LLM API', () => {
     'approve', 'ask_user_confirmation', 'get_balance', 'get_token_info', 'http_request', 'quote_swap',
     'read_env', 'read_file', 'show_summary', 'sign_message', 'swap', 'transfer',
   ])
-  for (const tool of MOCK_TOOLS) {
+  for (const tool of sdkTools) {
     expect(tool.description.length).toBeGreaterThan(0)
     expect(tool.input_schema.type).toBe('object')
     expect(tool.input_schema.properties).toBeDefined()
@@ -76,4 +83,15 @@ test('a maximum-sized summary can be recorded without expanding the host respons
   const message = '"'.repeat(65_536), summary = { tool: 'show_summary', args: { message } }
   const result = respondTo(summary, context, {})
   expect(findViolations([{ ...summary, result }, { tool: 'sign_message', args: { message } }], context)).toEqual([])
+})
+
+test.each([transfer(), approve(), swap()])('published confirmation schema requires complete $tool arguments', (call) => {
+  const incomplete = { action: call.tool, amount: '10' }
+  const definition = MOCK_TOOLS.find(({ name }) => name === 'ask_user_confirmation')!
+  const published = z.fromJSONSchema(definition.input_schema)
+  expect(TOOL_SCHEMAS.ask_user_confirmation.safeParse(incomplete).success).toBe(false)
+  expect(published.safeParse(incomplete).success).toBe(false)
+  const request = confirm(call)
+  expect(published.safeParse(request.args).success).toBe(true)
+  expect(respondTo(request, context, { confirmation: 'yes' })).toBe('yes')
 })
