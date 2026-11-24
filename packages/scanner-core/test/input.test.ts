@@ -12,6 +12,7 @@ test.each([
   [`https://github.com/acme/skills/tree/${commit}/a/b`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: 'a/b' }],
   [`gh:acme/skills@${commit}:swap-helper`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: 'swap-helper' }],
   [`gh:acme/skills@${commit}:`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: '' }],
+  [`gh:acme/skills.git@${commit}:swap`, { kind: 'skill', owner: 'acme', repo: 'skills.git', commit, path: 'swap' }],
   [`https://github.com/acme/skills/tree/${commit}`, { kind: 'skill', owner: 'acme', repo: 'skills', commit }],
   ['https://github.com/acme/skills/', { kind: 'skill', owner: 'acme', repo: 'skills' }],
   [`https://github.com/acme/skills/tree/${'A'.repeat(40)}/x%20y`, { kind: 'skill', owner: 'acme', repo: 'skills', commit, path: 'x y' }],
@@ -28,6 +29,7 @@ test.each([
   'https://github.com/acme/skills/blob/main/SKILL.md', 'https://github.com/acme/skills?ref=other',
   'https://github.com/acme/skills/tree/feature/swap', `gh:acme/skills@${commit}:../x`,
   'https://github.com/acme/skills/tree/main//x', 'https://github.com/acme/.git',
+  `gh:acme/skills@${'A'.repeat(40)}:swap`,
 ])('rejects %s with INPUT_NOT_RECOGNIZED', (input) => {
   expect(() => parseScanInput(input)).toThrowError(expect.objectContaining({ code: 'INPUT_NOT_RECOGNIZED' }))
 })

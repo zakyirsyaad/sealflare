@@ -41,6 +41,8 @@ the default branch. Explicit `tree/main` links retain branch `main`, even if the
 another branch. A tree URL with no folder discovers the available skill folders. Use a
 40-character commit to select an exact revision; other named tree references are rejected.
 The report records the actual resolved commit.
+Compact `gh:` references follow the shared `decodeSrc` format exactly: commits use lowercase
+hex, repository names are preserved verbatim, and folder paths have no trailing slash.
 
 `ScanError` from `@sealflare/shared/schemas` exposes `code` and optional `details`. In particular,
 `MULTIPLE_SKILL_FOLDERS` carries `details.folders`, and GitHub rate limits carry
