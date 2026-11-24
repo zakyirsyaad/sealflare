@@ -80,7 +80,8 @@ wallet to wallet. The contract has an owner, an externally owned account at
 registrations. The owner cannot move or burn an Agent ID and cannot pause the contract, but it
 can mint an Agent ID to any address with `adminRegister`. Sealflare counts every Agent ID as one
 person, so whoever holds that key could create as many guardians and jurors as they like. This
-is a trust assumption on SPACE ID that Sealflare cannot remove. At that block, ownership was
+is a trust assumption on SPACE ID that Sealflare cannot remove, and we accept it: Sealflare
+adds no requirement beyond holding an Agent ID. At that block, ownership was
 being handed to a Safe multisig (`0x082b3370974E3DA99c6e3572A7FcBd2222f9a350`, 3 of 6 signers)
 that had not yet accepted it.
 
