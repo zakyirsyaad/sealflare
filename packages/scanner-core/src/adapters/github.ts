@@ -9,7 +9,7 @@ import { ScanError, SkillSource, type RepoFetcher, type RepoRef, type SkillRef }
 import { requestJson, ResponseTooLarge } from './http'
 
 const Name = z.string().regex(/^[A-Za-z0-9_.-]+$/).refine((value) => value !== '.' && value !== '..')
-const Ref = z.object({ owner: Name, repo: Name, commit: SkillSource.shape.commit.optional() })
+const Ref = z.object({ owner: Name, repo: Name, commit: SkillSource.shape.commit.optional(), branch: Name.optional() })
 const Path = SkillSource.shape.path.refine((value) => !value.includes('\0') && value.isWellFormed())
 const Sha = z.string().regex(/^[0-9a-f]{40}$/)
 const Entry = z.object({ path: Path.refine((value) => value !== ''), sha: Sha,
@@ -90,10 +90,11 @@ function createApi(options: Options): Get {
 
 async function treeFor(input: RepoRef, get: Get) {
   const ref = Ref.parse(input), path = `/repos/${ref.owner}/${ref.repo}`
+  if (ref.commit && ref.branch) throw new ScanError('INPUT_NOT_RECOGNIZED', 'Choose a commit or branch, not both.')
   const repo = z.object({ private: z.boolean(), default_branch: z.string().min(1) }).parse(await get(path))
   if (repo.private) throw new ScanError('REPO_NOT_PUBLIC', 'This repository is not public.')
   const commit = z.object({ sha: Sha, commit: z.object({ tree: z.object({ sha: Sha }) }) })
-    .parse(await get(`${path}/commits/${encodeURIComponent(ref.commit ?? repo.default_branch)}`))
+    .parse(await get(`${path}/commits/${encodeURIComponent(ref.commit ?? ref.branch ?? repo.default_branch)}`))
   if (ref.commit && commit.sha !== ref.commit) throw new ScanError('NO_SKILL_FOUND', 'The requested commit could not be resolved.')
   const parsed = Tree.safeParse(await get(`${path}/git/trees/${commit.commit.tree.sha}?recursive=1`))
   if (!parsed.success) throw new ScanError('NO_SKILL_FOUND', 'Invalid repository tree response.')

@@ -85,6 +85,22 @@ test('a pinned commit is never silently changed by GitHub', async () => {
   await expect(createGitHubFetcher({ fetch: fetcher }).fetchBundle(pinned)).rejects.toThrow()
 })
 
+test('an explicit main branch is resolved even when the default branch is dev', async () => {
+  const base = githubFixture()
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => String(url) === 'https://api.github.com/repos/acme/skills'
+    ? new Response(JSON.stringify({ private: false, default_branch: 'dev' })) : base(url, init))
+  const branchRef = { ...ref, branch: 'main' }
+  expect(await createGitHubFetcher({ fetch: fetcher }).listSkillFolders(branchRef)).toEqual({ commit: COMMIT, folders: ['swap'] })
+  expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/commits/main'))).toBe(true)
+  expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/commits/dev'))).toBe(false)
+})
+
+test('selecting both branch and commit is refused before network requests', async () => {
+  const fetcher = vi.fn<typeof fetch>(), branchRef = { ...ref, branch: 'main', commit: COMMIT }
+  await expect(createGitHubFetcher({ fetch: fetcher }).listSkillFolders(branchRef)).rejects.toMatchObject({ code: 'INPUT_NOT_RECOGNIZED' })
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
 test('a downloaded blob whose bytes differ from the tree size is rejected', async () => {
   const base = githubFixture()
   const fetcher: typeof fetch = async (url, init) => String(url).includes('/blobs/')
