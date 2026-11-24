@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isAddress } from 'viem'
 import { AddressSchema, decodeSrc, ScanError, SkillSource } from '@sealflare/shared/schemas'
 
 const Name = z.string().regex(/^[A-Za-z0-9_.-]+$/).refine((value) => value !== '.' && value !== '..')
@@ -14,7 +15,7 @@ function skill(owner: string, repo: string, path?: string, commit?: string, bran
 }
 
 function githubUrl(text: string): ScanInput {
-  const match = /^(?:https:\/\/)?github\.com\/([^?#]+)$/i.exec(text)
+  const match = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^?#]+)(?:[?#].*)?$/i.exec(text)
   if (!match) throw Error('Not a GitHub repository URL.')
   // Decode and validate before any URL normalization could erase traversal segments.
   const parts = decodeURIComponent(match[1]!).replace(/\/$/, '').split('/')
@@ -33,7 +34,14 @@ export function parseScanInput(text: string): ScanInput {
   try {
     const value = z.string().trim().min(1).max(4096).parse(text)
     const address = AddressSchema.safeParse(value)
-    if (address.success) return { kind: 'contract', address: address.data }
+    if (address.success) {
+      // Lower/upper case are unchecksummed; mixed case must satisfy EIP-55.
+      const hex = value.slice(2)
+      if (hex !== hex.toLowerCase() && hex !== hex.toUpperCase() && !isAddress(value, { strict: true })) {
+        throw Error('Invalid address checksum.')
+      }
+      return { kind: 'contract', address: address.data }
+    }
     if (value.startsWith('gh:')) {
       const decoded = decodeSrc(value)
       if (decoded?.kind !== 'skill') throw Error('Invalid compact skill reference.')
