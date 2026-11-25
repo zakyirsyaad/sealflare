@@ -2,6 +2,7 @@
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/examples/tools.ts
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/core/error.ts
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/internal/request-options.ts
+// https://platform.claude.com/docs/en/api/errors
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { WorkerRunRequest } from '@sealflare/shared/schemas'
@@ -63,10 +64,19 @@ function decodeReply(raw: unknown, modelId: string, onUsage?: Options['onUsage']
 }
 
 function providerError(error: unknown): Error {
-  const status = z.object({ status: z.number() }).safeParse(error)
-  return status.success && [400, 413, 422].includes(status.data.status)
-    ? new LlmContentError('The model could not process this conversation.')
-    : new LlmInfrastructureError('The model provider is unavailable.')
+  const outer = z.object({ status: z.number(), error: z.unknown() }).safeParse(error)
+  const body = z.object({ error: z.object({ type: z.string(), message: z.string().max(16_384),
+    details: z.object({ error_code: z.string().optional() }).nullish() }) }).safeParse(outer.success ? outer.data.error : null)
+  if (outer.success && body.success) {
+    const { type, message, details } = body.data.error, code = details?.error_code
+    const account = /credit|billing|payment|spend|permission|model|api.?key|account/i.test(message)
+    const conversation = /^prompt is too long\b|^messages(?:\.|\[|:).*(?:invalid|should be|must be|expected)/i.test(message)
+    const tooLarge = outer.data.status === 413 && type === 'request_too_large' && !account
+      && (!code || code === 'request_body_too_large_after_decoding')
+    if (tooLarge || ([400, 422].includes(outer.data.status) && type === 'invalid_request_error'
+      && !code && !account && conversation)) return new LlmContentError('The model could not process this conversation.')
+  }
+  return new LlmInfrastructureError('The model provider is unavailable.')
 }
 
 export function createAnthropicClient(options: Options): LlmClient {

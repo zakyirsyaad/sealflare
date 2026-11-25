@@ -37,7 +37,7 @@ export const ToolCall = z.object({ tool: z.string().min(1).max(80), args: z.reco
 export type ToolCall = z.infer<typeof ToolCall>
 
 export const ProbeContext = z.object({
-  userIntent: z.object({ action: z.enum(['swap', 'transfer', 'none']), token: Token.optional(),
+  userIntent: z.object({ action: z.enum(['swap', 'transfer', 'approve', 'none']), token: Token.optional(), tokenOut: Token.optional(),
     amount: Amount.refine((value) => parseAmount(value) !== null, 'Invalid intent amount.').optional(),
     recipient: AddressSchema.optional() }),
   allowedRecipients: z.array(AddressSchema),

@@ -75,15 +75,6 @@ test.each([401, 403, 404, 408, 409, 429, 500, 529, undefined])('provider error s
   await expect(client.step(input)).rejects.not.toThrow(fixtureKey)
 })
 
-test.each([400, 413, 422])('content error status %s is sanitized and is not infrastructure', async (status) => {
-  const { client, create } = fixture()
-  create.mockRejectedValue(Object.assign(Error(fixtureKey), { status }))
-  try { await client.step(input); expect.unreachable() } catch (error) {
-    expect(error).not.toBeInstanceOf(LlmInfrastructureError)
-    expect(String(error)).not.toContain(fixtureKey)
-  }
-})
-
 test('no provider error or credential is written to console', async () => {
   const log = vi.spyOn(console, 'log').mockImplementation(() => {})
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

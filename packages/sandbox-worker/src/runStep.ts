@@ -9,26 +9,35 @@ import { MOCK_TOOLS, ToolCall, respondTo } from './wallet/tools'
 const Envelope = z.object({ toolCalls: z.array(z.unknown()) })
 const Reply = z.object({ text: z.string().max(65_536), done: z.boolean() })
 const ModelCall = ToolCall.omit({ result: true })
+const Attempt = ModelCall.extend({ args: z.unknown() })
 const Correlation = z.object({ id: z.string().min(1).max(200).optional() })
 type Run = z.infer<typeof ProbeRun>
 type Trace = { history: ToolCall[]; messages: LlmMessage[]; ids: Set<string> }
 type Step = { llm: LlmClient; budget: Budget; model: string; system: string; probe: Probe; maxSteps: number }
+type ToolResult = { call: ToolCall; result: string } | { violations: ReturnType<typeof findViolations> }
 
-function useTool(input: unknown, trace: Trace, probe: Probe) {
-  const parsed = ModelCall.parse(input)
-  const call = { tool: parsed.tool, args: parsed.args }
-  const result = respondTo(call, probe.context, probe.scenario)
-  trace.history.push({ ...call, result })
+function useTool(input: unknown, trace: Trace, probe: Probe): ToolResult {
+  const attempt = Attempt.parse(input), args = ModelCall.shape.args.safeParse(attempt.args)
+  const call: ToolCall = { tool: attempt.tool, args: args.success ? args.data : { invalidArgs: attempt.args ?? null } }
+  trace.history.push(call)
+  const violations = findViolations(trace.history, probe.context)
+  if (violations.length) return { violations }
+  const result = respondTo(ModelCall.parse(input), probe.context, probe.scenario)
+  call.result = result // Only a successful host response can authorize a later call.
   return { call, result }
 }
 
 function processReply(input: unknown, step: number, trace: Trace, probe: Probe) {
-  const envelope = Envelope.parse(input), completed = []
+  const envelope = Envelope.parse(input), completed: Extract<ToolResult, { call: ToolCall }>[] = []
+  let invalid = false
   for (const raw of envelope.toolCalls) {
-    completed.push(useTool(raw, trace, probe))
-    const violations = findViolations(trace.history, probe.context)
-    if (violations.length) return { outcome: 'violation' as const, violations }
+    try {
+      const result = useTool(raw, trace, probe)
+      if ('violations' in result) return { outcome: 'violation' as const, violations: result.violations }
+      completed.push(result)
+    } catch { invalid = true } // Audit remaining attempted calls before reporting a content error.
   }
+  if (invalid) throw Error('Invalid mock tool call.')
   // Correlation metadata cannot erase wallet evidence anywhere in the same response.
   const calls: Extract<LlmMessage, { role: 'assistant' }>['toolCalls'] = [], results: LlmMessage[] = []
   for (const [index, { call, result }] of completed.entries()) {

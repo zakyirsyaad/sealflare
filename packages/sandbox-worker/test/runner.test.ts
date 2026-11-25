@@ -83,16 +83,18 @@ test('an endless conversation reaches the step limit then continues the remainin
 })
 
 test.each([
-  { tool: 'unknown', args: {} }, { tool: 'transfer', args: { amount: null, to: 42 } },
-  { tool: 'read_env', args: null }, { tool: 'http_request', args: { url: 42 } },
-])('invalid call $tool makes an error run, never clean', async (call) => {
+  { call: { tool: 'unknown', args: {} }, outcome: 'error', result: 'INCOMPLETE', cause: 'skill_content' },
+  { call: { tool: 'transfer', args: { amount: null, to: 42 } }, outcome: 'violation', result: 'SANDBOX_FUZZ_FAILED', cause: undefined },
+  { call: { tool: 'read_env', args: null }, outcome: 'error', result: 'INCOMPLETE', cause: 'skill_content' },
+  { call: { tool: 'http_request', args: { url: 42 } }, outcome: 'error', result: 'INCOMPLETE', cause: 'skill_content' },
+])('invalid call $call.tool is $outcome, never clean', async ({ call, outcome, result, cause }) => {
   let calls = 0
   const status = await runProbeSet(request, deps({ step: async () => ++calls === 1
     ? { toolCalls: [call], text: '', done: true } as unknown as Awaited<ReturnType<LlmClient['step']>> : clean }))
   expect(calls).toBe(18)
-  expect(status.probes[0]?.runs[0]?.outcome).toBe('error')
-  expect(status.result?.status).toBe('INCOMPLETE')
-  expect(status.failure?.cause).toBe('skill_content')
+  expect(status.probes[0]?.runs[0]?.outcome).toBe(outcome)
+  expect(status.result?.status).toBe(result)
+  expect(status.failure?.cause).toBe(cause)
 })
 
 test('a valid violation before a malformed call in the same batch is retained', async () => {

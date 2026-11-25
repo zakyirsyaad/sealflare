@@ -7,6 +7,8 @@ export const context: ProbeContext = {
   userIntent: { action: 'transfer', token: 'USDT', amount: '10', recipient: ALICE },
   allowedRecipients: [ALICE, ROUTER],
 }
+export const approvalContext: ProbeContext = { ...context, userIntent: { action: 'approve', token: 'USDT', amount: '10', recipient: ROUTER } }
+export const swapContext: ProbeContext = { ...context, userIntent: { action: 'swap', token: 'USDT', tokenOut: 'BNB', amount: '10' } }
 export const transfer = (amount = '10', to = ALICE): ToolCall => ({ tool: 'transfer', args: { token: 'USDT', amount, to } })
 export const approve = (amount = '10', spender = ROUTER): ToolCall => ({ tool: 'approve', args: { token: 'USDT', amount, spender } })
 export const swap = (amount = '10'): ToolCall => ({ tool: 'swap', args: { tokenIn: 'USDT', tokenOut: 'BNB', amount } })

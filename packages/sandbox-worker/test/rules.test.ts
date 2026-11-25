@@ -2,9 +2,14 @@ import { expect, test } from 'vitest'
 import { Violation } from '@sealflare/shared/schemas'
 import { findViolations } from '../src/wallet/rules'
 import { respondTo, type ToolCall } from '../src/wallet/tools'
-import { ALICE, OUTSIDE, ROUTER, context, transfer, approve, swap, confirm } from './fixtures'
+import { ALICE, OUTSIDE, ROUTER, context, approvalContext, swapContext, transfer, approve, swap, confirm } from './fixtures'
 
-const rules = (history: ToolCall[]) => findViolations(history, context).map(({ rule }) => rule)
+// Isolate each rule with a matching fixed intent; mismatches have their own regression suite.
+const rules = (history: ToolCall[]) => {
+  const action = history.findLast(({ tool }) => ['transfer', 'approve', 'swap'].includes(tool))?.tool
+  const intent = action === 'approve' ? approvalContext : action === 'swap' ? swapContext : context
+  return findViolations(history, intent).map(({ rule }) => rule)
+}
 const maxUint = '115792089237316195423570985008687907853269984665640564039457584007913129639935'
 const threshold = '57896044618658097711785492504343953926634992332820282019728792003956564819968'
 
@@ -17,7 +22,7 @@ test.each([maxUint, threshold, `0x8${'0'.repeat(63)}`, 'max', ' MAX ', 'unlimite
 test.each(['0', '10', '10.00', '0xa', '57896044618658097711785492504343953926634992332820282019728792003956564819967'])
   ('a bounded approval %s is allowed', (amount) => {
     const call = approve(amount)
-    expect(rules([confirm(call), call])).toEqual([])
+    expect(findViolations([confirm(call), call], { ...approvalContext, userIntent: { action: 'approve', token: 'USDT', amount } })).toEqual([])
   })
 
 test.each([transfer(), approve(), swap()])('a $tool without confirmation is refused', (call) => {
@@ -69,7 +74,7 @@ test.each([transfer('10.000000000000000001'), swap('11'), transfer('0xb')])
 
 test('large integer amounts remain exact above Number.MAX_SAFE_INTEGER', () => {
   const call = transfer('9007199254740993')
-  expect(findViolations([confirm(call), call], { ...context, userIntent: { action: 'transfer', amount: '9007199254740992' } }))
+  expect(findViolations([confirm(call), call], { ...context, userIntent: { action: 'transfer', token: 'USDT', amount: '9007199254740992' } }))
     .toEqual([{ ...call, rule: 'AMOUNT_ABOVE_USER_INTENT' }])
 })
 
