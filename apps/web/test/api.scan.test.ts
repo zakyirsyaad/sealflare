@@ -1,18 +1,26 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, test, vi } from 'vitest'
+import { getAddress } from 'viem'
 import { ScanReport } from '@sealflare/shared/schemas'
 
 const scanContract = vi.fn()
 const scanSkill = vi.fn()
+const environment = vi.hoisted(() => ({ failure: null as Error | null }))
 vi.mock('../server/scanner', () => ({
-  getScanEnvironment: () => ({
+  getScanEnvironment: () => {
+    if (environment.failure) throw environment.failure
+    return environmentOf()
+  },
+}))
+function environmentOf() {
+  return {
     scanner: { scanContract, scanSkill },
     rpc: {},
     explorer: {},
     repo: {},
     now: () => new Date('2026-11-25T03:00:00.000Z'),
-  }),
-}))
+  }
+}
 
 const { POST: postContract } = await import('../app/api/scan/contract/route')
 const { POST: postSkill } = await import('../app/api/scan/skill/route')
@@ -99,6 +107,53 @@ describe('the scan API', () => {
       expect.objectContaining({ owner: 'owner', repo: 'repo', path: 'skills/alpha' }),
       expect.anything(),
     )
+  })
+
+  test('a skill link pinned to a commit reaches the scanner with that commit', async () => {
+    scanSkill.mockResolvedValue({ ...REPORT, targetType: 'AI_SKILL_BUNDLE' })
+    const sha = 'a'.repeat(40)
+    await postSkill(request({ url: `https://github.com/owner/repo/tree/${sha}`, path: 'skills/alpha' }))
+    expect(scanSkill).toHaveBeenLastCalledWith(
+      expect.objectContaining({ owner: 'owner', repo: 'repo', commit: sha, path: 'skills/alpha' }),
+      expect.anything(),
+    )
+    await postSkill(request({ url: 'https://github.com/owner/repo/tree/main' }))
+    expect(scanSkill).toHaveBeenLastCalledWith(expect.objectContaining({ branch: 'main' }), expect.anything())
+  })
+
+  test.each([
+    ['contract', () => postContract(request({ address: ADDRESS }))],
+    ['skill', () => postSkill(request({ url: 'https://github.com/owner/repo' }))],
+  ])('a scan environment that cannot be built is an INTERNAL envelope on the %s route, never a verdict', async (_name, call) => {
+    environment.failure = new Error('Invalid environment variables: SCANNER')
+    try {
+      const response = await call()
+      expect(response.status).toBe(500)
+      const body = await response.json()
+      expect(body).toEqual({ success: false, error: { code: 'INTERNAL', message: 'The scan could not be completed.' } })
+      expect(JSON.stringify(body)).not.toContain('SCANNER')
+    } finally {
+      environment.failure = null
+    }
+  })
+
+  test('a mixed-case address with a bad checksum is refused, as the Scan screen refuses it', async () => {
+    scanContract.mockClear()
+    const good = getAddress(ADDRESS)
+    const flipped = good.replace(/[a-f]/i, letter => (letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase()))
+    const bad = flipped
+    expect(bad).not.toBe(good)
+    const response = await postContract(request({ address: bad }))
+    expect(response.status).toBe(400)
+    expect((await response.json()).error.code).toBe('INPUT_NOT_RECOGNIZED')
+    expect(scanContract).not.toHaveBeenCalled()
+  })
+
+  test('an address with a valid checksum, all lowercase or all uppercase is scanned', async () => {
+    scanContract.mockResolvedValue(REPORT)
+    for (const address of [getAddress(ADDRESS), ADDRESS, `0x${ADDRESS.slice(2).toUpperCase()}`]) {
+      expect((await postContract(request({ address }))).status).toBe(200)
+    }
   })
 
   test('a contract address sent to the skill endpoint is refused', async () => {

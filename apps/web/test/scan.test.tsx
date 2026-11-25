@@ -3,7 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { ScanPanel } from '../components/target/ScanPanel'
 import { copy } from '../lib/copy'
+import { readFileSync } from 'node:fs'
 import { CONTRACT_CHECK_IDS } from '@sealflare/shared/schemas'
+import { CONSTANTS } from '@sealflare/shared/rules'
+import { ApiError } from '../lib/api/client'
+import { ScanError } from '../components/target/ScanError'
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
@@ -178,5 +182,107 @@ describe('the scan screen', () => {
     await user.keyboard(ADDRESS)
     await user.keyboard('{Enter}')
     await waitFor(() => expect(fetch).toHaveBeenCalled())
+  })
+
+  test.each([
+    ['a commit-pinned link', `https://github.com/owner/repo/tree/${'b'.repeat(40)}/skills/alpha`, `https://github.com/owner/repo/tree/${'b'.repeat(40)}`, 'skills/alpha'],
+    ['an explicit main link', 'https://github.com/owner/repo/tree/main/skills/alpha', 'https://github.com/owner/repo/tree/main', 'skills/alpha'],
+    ['a compact gh: reference', `gh:owner/repo@${'c'.repeat(40)}:skills/alpha`, `https://github.com/owner/repo/tree/${'c'.repeat(40)}`, 'skills/alpha'],
+  ])('%s keeps its commit or branch on the way to the server', async (_name, typed, url, path) => {
+    const fetch = fetchMock(() => ({ success: true, data: { ...REPORT, targetType: 'AI_SKILL_BUNDLE' } }))
+    vi.stubGlobal('fetch', fetch)
+    render(<ScanPanel />)
+    const user = await type(typed)
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    const body = JSON.parse(String((fetch.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.url).toBe(url)
+    expect(body.path).toBe(path)
+  })
+
+  test('choosing a folder keeps the pinned commit of the link that listed the folders', async () => {
+    const sha = 'd'.repeat(40)
+    const fetch = fetchMock(() => {
+      const last = JSON.parse(String((fetch.mock.calls.at(-1)?.[1] as RequestInit | undefined)?.body ?? '{}'))
+      return last.path === undefined
+        ? { success: false, error: { code: 'MULTIPLE_SKILL_FOLDERS', message: 'Choose.', details: { folders: ['skills/alpha'] } } }
+        : { success: true, data: REPORT }
+    })
+    vi.stubGlobal('fetch', fetch)
+    render(<ScanPanel />)
+    const user = await type(`https://github.com/owner/repo/tree/${sha}`)
+    await user.keyboard('{Enter}')
+    await user.click(await screen.findByRole('button', { name: 'skills/alpha' }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    const second = JSON.parse(String((fetch.mock.calls[1] as [string, RequestInit])[1].body))
+    expect(second).toEqual({ url: `https://github.com/owner/repo/tree/${sha}`, path: 'skills/alpha' })
+  })
+
+  test('a timer tick is never drawn in the positive colour, because it is not a result', () => {
+    const css = readFileSync(`${process.cwd()}/app/globals.css`, 'utf8')
+    const rule = css.split('\n').find(line => line.includes("data-status='passed'") && line.includes('--positive')) ?? ''
+    expect(rule).not.toContain("data-status='done'")
+    expect(css).toMatch(/data-status='done'\][^{]*\{[^}]*--muted-foreground/)
+  })
+})
+
+describe('the scan error', () => {
+  const rate = (details?: unknown) => new ApiError('RATE_LIMITED', 'Too many scans.', details)
+
+  test.each([
+    [30, 'Too many scans from your network. Try again in 1 minute.'],
+    [60, 'Too many scans from your network. Try again in 1 minute.'],
+    [61, 'Too many scans from your network. Try again in 2 minutes.'],
+    [180, 'Too many scans from your network. Try again in 3 minutes.'],
+  ])('a wait of %i seconds reads "%s"', (seconds, sentence) => {
+    render(<ScanError error={rate({ retryAfterSeconds: seconds })} />)
+    expect(screen.getByText(sentence)).toBeInTheDocument()
+  })
+
+  test.each([[undefined], [{}], [{ retryAfterSeconds: 'soon' }], [{ retryAfterSeconds: 0 }], [{ retryAfterSeconds: -5 }]])(
+    'with no usable wait from the server (%j) no number is invented', details => {
+      render(<ScanError error={rate(details)} />)
+      expect(screen.getByText('Too many scans from your network. Try again in a few minutes.')).toBeInTheDocument()
+    })
+
+  test('a skill that is too large states the limit from the shared constants', () => {
+    render(<ScanError error={new ApiError('BUNDLE_TOO_LARGE', 'x')} />)
+    expect(screen.getByText('This skill is too large to scan.')).toBeInTheDocument()
+    const mib = CONSTANTS.MAX_BUNDLE_BYTES / 1_048_576
+    expect(screen.getByText(`The limit is ${mib} MiB and ${CONSTANTS.MAX_BUNDLE_FILES} files.`)).toBeInTheDocument()
+  })
+
+  test.each([
+    ['NO_SKILL_FOUND', 'Paste the link to the folder that holds SKILL.md.'],
+    ['INPUT_NOT_RECOGNIZED', 'Try 0x… for a contract, or https://github.com/owner/repo for a skill.'],
+    ['NO_CODE_AT_ADDRESS', 'Check the address and the network it is deployed on.'],
+    ['REPO_NOT_PUBLIC', 'Paste the link to a public repository.'],
+  ])('%s says what to do next', (code, hint) => {
+    render(<ScanError error={new ApiError(code, 'x')} />)
+    expect(screen.getByText(hint)).toBeInTheDocument()
+  })
+
+  test('an unreachable chain offers a retry that runs the same scan again', async () => {
+    const onRetry = vi.fn()
+    render(<ScanError error={new ApiError('RPC_UNAVAILABLE', 'x')} onRetry={onRetry} />)
+    await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  test('only an unreachable chain gets a retry button', () => {
+    render(<ScanError error={new ApiError('NO_SKILL_FOUND', 'x')} onRetry={() => {}} />)
+    expect(screen.queryByRole('button', { name: copy.common.retry })).toBeNull()
+  })
+
+  test('the screen retries the same input after RPC_UNAVAILABLE', async () => {
+    let calls = 0
+    const fetch = fetchMock(() => (++calls === 1 ? { success: false, error: { code: 'RPC_UNAVAILABLE', message: 'x' } } : { success: true, data: REPORT }))
+    vi.stubGlobal('fetch', fetch)
+    render(<ScanPanel />)
+    const user = await type(ADDRESS)
+    await user.keyboard('{Enter}')
+    await user.click(await screen.findByRole('button', { name: copy.common.retry }))
+    await waitFor(() => expect(push).toHaveBeenCalled())
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 })

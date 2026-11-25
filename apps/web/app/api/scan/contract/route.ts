@@ -1,3 +1,4 @@
+import { parseScanInput } from '@sealflare/scanner-core'
 import { ScanContractRequest, ScanError } from '@sealflare/shared/schemas'
 import { fail, ok } from '../../../../server/respond'
 import { getScanEnvironment } from '../../../../server/scanner'
@@ -19,9 +20,13 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
   const parsed = ScanContractRequest.safeParse(body)
   if (!parsed.success) return fail('BAD_REQUEST', 'The request is not a valid contract scan.', 400)
-  const { scanner, rpc, explorer } = getScanEnvironment()
   try {
-    const report = await scanner.scanContract(parsed.data.address, { rpc, explorer })
+    // AddressSchema lowercases, which erases the EIP-55 checksum. Parse the text as sent, with the
+    // same parser as the Scan screen, so a mistyped mixed-case address is refused on both paths.
+    const reference = parseScanInput((body as { address: string }).address)
+    if (reference.kind !== 'contract') return fail('INPUT_NOT_RECOGNIZED', 'That is not a contract address.', 400)
+    const { scanner, rpc, explorer } = getScanEnvironment()
+    const report = await scanner.scanContract(reference.address, { rpc, explorer })
     // The target page shows the findings of this scan, so the report is kept for a short while.
     putScan(report)
     return ok(report)

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { WagmiProvider, createConfig, http } from 'wagmi'
@@ -84,4 +84,13 @@ test('tabbing out of the menu closes it', async () => {
   await userEvent.tab()
   await userEvent.tab()
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+})
+
+test('a menu item can be clicked when the browser reports no focus target, as Safari does', async () => {
+  setup()
+  await userEvent.click(await connect())
+  fireEvent.focusOut(screen.getByRole('menuitem', { name: 'Disconnect' }), { relatedTarget: null })
+  expect(screen.getByRole('menu')).toBeVisible()
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Disconnect' }))
+  await screen.findByRole('button', { name: 'Connect wallet' })
 })
