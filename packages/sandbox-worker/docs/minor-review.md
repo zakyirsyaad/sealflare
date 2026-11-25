@@ -47,9 +47,10 @@ GitHub Actions updater:
     prefix: chore
 ```
 
-The lane owner authorized proposing this repository-config change on 25 November 2026. Founder
-sign-off remains pending on [PR #20](https://github.com/zakyirsyaad/sealflare/pull/20); this document
-does not record that sign-off before the founder approves or merges it. The updater scans this
+The lane owner authorized proposing this repository-config change on 25 November 2026. The
+founder [approved the configuration on PR #29](https://github.com/zakyirsyaad/sealflare/pull/29#issuecomment-7171183750)
+on 26 November 2026, specifically as it stood at `3a72b6e`. The approved file is unchanged;
+this file-level sign-off does not grant approval to the whole PR. The updater scans this
 package's Dockerfile and proposes Node 24 digest/minor updates with a `chore` commit prefix while
 ignoring Node major-version jumps. Scheduled checks take effect after the configuration reaches
 the default branch; each proposed update still needs the repository's CI and review checks.
@@ -62,7 +63,8 @@ The admission check guarantees the 18-step minimum, so a multi-step probe may st
 daily limit partway through. No daily budget reservation or cross-process lock is implied.
 
 Legacy records missing recovery identity keep their original bytes and any violation evidence.
-They make `/healthz` return 503 while unrelated IDs remain admissible. Operators can archive them
+They are counted as `blockedLegacyRuns` on HTTP 200 health while unrelated IDs remain admissible.
+Actual persistence faults still make health 503. Operators can archive legacy records
 after inspection; the worker cannot safely invent their bundle/model identity. Storage fault
 status reads show only previously committed snapshots and do not turn unfinished work into a
 final clean result. Lane 3 treats BUSY for a conflicting/legacy ID, unhealthy worker, or expired

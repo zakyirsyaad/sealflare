@@ -1,8 +1,9 @@
 # Founder review follow-up, round two
 
 This follow-up covers every founder comment added to open Scanning PRs on 25 November 2026.
-Frozen shared schemas remain unchanged. The Docker configuration change remains subject to
-founder approval before merge.
+Frozen shared schemas remain unchanged. The founder has
+[approved the Docker configuration file](https://github.com/zakyirsyaad/sealflare/pull/29#issuecomment-7171183750)
+as it stood at `3a72b6e`; that file is unchanged. Approval of the whole PR remains separate.
 
 | # | Original PR | Resolution |
 | :--- | :--- | :--- |
@@ -19,7 +20,7 @@ founder approval before merge.
 | 11 | #19 | Normalize scientific, whitespace, caret and Solidity max spellings for unlimited evidence. |
 | 12 | #19 | Reject short environment/file scenario canaries before any paid model request. |
 | 13 | #19 | Report legacy-blocked recovery as an aggregate count on 200 health; reserve 503 for persistence faults that prevent admissions. |
-| 14 | #20 | Record lane-owner authorization separately from pending founder sign-off on repository config. |
+| 14 | #20 | Record lane-owner authorization and the founder's explicit file-level sign-off separately from approval of the whole PR. |
 | 15 | #20 | Ignore Node semver-major Docker updates while retaining digest and compatible updates. |
 
 Behavior changes have regression tests that were observed failing before implementation. With
