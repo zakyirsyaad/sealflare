@@ -81,11 +81,11 @@ test.each([[56, 'Switch to BNB Smart Chain'], [97, 'Switch to BNB Smart Chain te
     expect(wagmi.switchChain).toHaveBeenCalledWith({ chainId: id })
   })
 
-test('connecting starts on the expected chain, also on testnet', async () => {
+test('connecting never asks the wallet to switch chains, because a refused switch would look like a refused connection', async () => {
   chain.id = 97
   render(<ConnectPrompt onClose={() => {}} />)
   await userEvent.click(screen.getByRole('button', { name: /WalletConnect/ }))
-  expect(wagmi.connect.mock.calls[0]![0]).toMatchObject({ chainId: 97 })
+  expect(wagmi.connect.mock.calls[0]![0]).not.toHaveProperty('chainId')
 })
 
 test('a failed switch says so instead of only re-enabling the button', () => {
@@ -105,7 +105,7 @@ test('ConnectPrompt lists the connectors and connects the chosen one', async () 
   render(<ConnectPrompt onClose={onClose} />)
   expect(screen.getByRole('button', { name: /Browser wallet/ })).toBeVisible()
   await userEvent.click(screen.getByRole('button', { name: /WalletConnect/ }))
-  expect(wagmi.connect).toHaveBeenCalledWith({ connector: wagmi.connectors[1], chainId: 56 }, expect.objectContaining({ onSuccess: expect.any(Function) }))
+  expect(wagmi.connect).toHaveBeenCalledWith({ connector: wagmi.connectors[1] }, expect.objectContaining({ onSuccess: expect.any(Function) }))
   wagmi.connect.mock.calls[0]![1].onSuccess()
   expect(onClose).toHaveBeenCalled()
 })
@@ -198,6 +198,16 @@ test('Escape closes the menu and returns focus to the button', async () => {
   fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Publish' }), { key: 'Escape' })
   expect(screen.queryByRole('menu')).toBeNull()
   expect(trigger).toHaveFocus()
+})
+
+test('a change between the checking states does not close the menu the visitor opened', async () => {
+  state.value = { kind: 'checking', address: me, isLoading: false, recheck: () => {} }
+  const { rerender } = render(<WalletButton />)
+  await userEvent.click(screen.getByRole('button', { name: /0x7099…79C8/ }))
+  expect(screen.getByRole('menu')).toBeVisible()
+  state.value = { kind: 'holder', address: me, attestationsLeft: 3, isLoading: false, recheck: () => {} }
+  rerender(<WalletButton />)
+  expect(screen.getByRole('menu')).toBeVisible()
 })
 
 test('a menu left open while the network changed does not reopen when the user returns to the right chain', async () => {

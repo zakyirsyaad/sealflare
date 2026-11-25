@@ -126,13 +126,18 @@ describe('the scan API', () => {
     ['skill', () => postSkill(request({ url: 'https://github.com/owner/repo' }))],
   ])('a scan environment that cannot be built is an INTERNAL envelope on the %s route, never a verdict', async (_name, call) => {
     environment.failure = new Error('Invalid environment variables: SCANNER')
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       const response = await call()
       expect(response.status).toBe(500)
       const body = await response.json()
       expect(body).toEqual({ success: false, error: { code: 'INTERNAL', message: 'The scan could not be completed.' } })
       expect(JSON.stringify(body)).not.toContain('SCANNER')
+      // The cause is logged on the server, so a deployment without SCANNER leaves a trace.
+      expect(logged).toHaveBeenCalled()
+      expect(String(logged.mock.calls[0]?.[1])).toContain('SCANNER')
     } finally {
+      logged.mockRestore()
       environment.failure = null
     }
   })

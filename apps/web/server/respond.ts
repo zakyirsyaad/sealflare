@@ -11,3 +11,14 @@ export function fail(code: string, message: string, status: number, details?: un
     { status },
   )
 }
+
+/**
+ * An unexpected failure is logged on the server before the envelope goes out. Without the log a
+ * misconfigured deployment, such as one without the scanner variable, answers every scan with the
+ * same envelope and leaves no trace of the cause. Only the message is logged: it names the missing
+ * variables, never their values.
+ */
+export function failUnexpected(message: string, error: unknown): Response {
+  console.error('The request could not be completed.', error instanceof Error ? error.message : error)
+  return fail('INTERNAL', message, 500)
+}
