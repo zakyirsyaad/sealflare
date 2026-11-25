@@ -35,8 +35,27 @@ line. Generate one with `openssl rand -base64 48`.
 | `POST /nonce/release` | Gives a reservation back, so a request that failed can be signed again. |
 | `PUT /scans/:targetId` | Stores the last scan of a target. |
 | `GET /scans/:targetId` | Returns the last scan of a target, or 404 `RESULT_NOT_CACHED`. |
+| `GET /targets` | The list of targets, newest vote first. `page`, `limit`, `type` and `address` narrow it. |
+| `GET /targets/tier-candidates` | The targets that still need their tier, at most 500 of them. |
+| `GET /targets/:targetId` | One target with its signal, its scan and its sandbox result. |
+| `GET /targets/:targetId/attestations` | The votes of a target, in the order the contract numbered them. |
 
 Every answer has the same shape: `{ success: true, data }` or `{ success: false, error }`.
+
+The answers that come from indexed data carry `meta.finalizedBlock`, the last final block the
+indexer has read, and a list carries `meta.page` as well. The tier of a target is not one of
+them: the tier is read from `Core.tierOf` and never computed from the indexed rows, so the
+internal answers carry `tier: null` and the public API fills it.
+
+The signal of a target is split in the two rows the interface shows: the new Agent ID holders,
+who vote with weight 1, and the experienced Guardians, who vote with weight 2 or more. Every
+group shows the votes per verdict, the total weight and the flags that were reported. The
+signal is never one number.
+
+The candidate list reads the candidates and the cursor in one snapshot, so the answer cannot
+show a target that is not there any more while it names the block it was read at. It holds at
+most 500 candidates. More than that is 503 `INTERNAL`, and the caller has to narrow the
+filters.
 
 The rate window is at most one hour. The caller hashes the address of the caller with a daily
 salt, and the key is exactly 64 hex characters (one SHA-256 or keccak output). An address is 40

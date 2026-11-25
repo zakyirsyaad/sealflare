@@ -4,6 +4,7 @@ import type { Db } from './db'
 import { nonceRoutes } from './routes/nonce'
 import { rateRoutes } from './routes/rate'
 import { scanRoutes } from './routes/scans'
+import { targetRoutes } from './routes/targets'
 import { fail } from './respond'
 
 export interface AppDeps {
@@ -43,6 +44,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route('/rate', rateRoutes({ sql: deps.sql, now }))
   app.route('/nonce', nonceRoutes({ sql: deps.sql, now }))
   app.route('/scans', scanRoutes({ sql: deps.sql }))
+  app.route('/targets', targetRoutes({ sql: deps.sql }))
 
   app.notFound((c) => c.json(fail('BAD_REQUEST', 'There is no such route.'), 404))
   app.onError((error, c) => {
