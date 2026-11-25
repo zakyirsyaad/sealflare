@@ -166,11 +166,82 @@ export async function depositBond(options: { from?: number; targetId?: Hex }) {
   return publicClient().waitForTransactionReceipt({ hash })
 }
 
+/** Binds a third-party sponsor to a target, which the stub reports with a PublisherBound event. */
+export async function sponsor(options: { from?: number; targetId: Hex }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().core,
+    abi: coreAbi,
+    functionName: 'sponsor',
+    args: [options.targetId],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** Flags a target for delegatecall, which the stub reports with a DelegatecallFlagged event. */
+export async function probeBytecode(options: { from?: number; target: Address }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().core,
+    abi: coreAbi,
+    functionName: 'probeBytecode',
+    args: [options.target],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** Opens a dispute on a target, which the stub reports with a DisputeMarked event. */
+export async function markDisputed(options: { from?: number; targetId: Hex; challengeId: bigint }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().core,
+    abi: coreAbi,
+    functionName: 'markDisputed',
+    args: [options.targetId, options.challengeId],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** Closes the dispute with a verdict, which the stub reports with a VerdictApplied event. */
+export async function applyVerdict(options: {
+  from?: number
+  targetId: Hex
+  challengeId: bigint
+  outcome: 0 | 1 | 2 | 3 | 4
+  flags?: number
+}) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().core,
+    abi: coreAbi,
+    functionName: 'applyVerdict',
+    args: [options.targetId, options.challengeId, options.outcome, options.flags ?? 0],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** Settles the attestations of a target, which the stub reports with AttestationSettled events. */
+export async function settle(options: { from?: number; targetId: Hex; start?: number; count?: number }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().core,
+    abi: coreAbi,
+    functionName: 'settle',
+    args: [options.targetId, options.start ?? 0, options.count ?? 10],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
 /** Mines empty blocks, so the chain grows without any event in it. */
 export async function mine(count: number): Promise<void> {
   for (let index = 0; index < count; index++) {
     await rpc.request({ method: 'evm_mine', params: [] })
   }
+}
+
+/** The number of the block the chain is at. */
+export async function currentBlock(): Promise<number> {
+  return Number(await publicClient().getBlockNumber())
 }
 
 /** The in-memory Postgres the tests read and write. */

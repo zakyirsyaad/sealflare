@@ -113,18 +113,23 @@ test('target counters equal the sum of their attestation rows', async () => {
 
 test('ScoreChanged rows add up to the guardian score Core reports', async () => {
   const { db, close } = await createTestDb()
-  const guardian = account(0).address
-  await adjustScore({ from: 0, guardian, targetId: `0x${'0'.repeat(64)}`, delta: 12 })
+  // A guardian of its own, so the score of the chain that the other tests share cannot land here.
+  const guardian = account(2).address
+  const targetId = `0x${'0'.repeat(64)}` as const
+  await adjustScore({ from: 0, guardian, targetId, delta: 12 })
 
   await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
 
-  const rows = await db.query<{ delta: number }>('SELECT delta FROM score_changes')
+  const rows = await db.query<{ delta: number }>('SELECT delta FROM score_changes WHERE guardian = $1', [
+    guardian.toLowerCase(),
+  ])
   const sum = rows.reduce((total, row) => total + row.delta, 0)
   const guardianRow = await db.query<{ score: number }>('SELECT score FROM guardians WHERE address = $1', [
     guardian.toLowerCase(),
   ])
+  const onChain = await coreContract().read.getGuardian([guardian])
   expect(sum).toBe(12)
-  expect(guardianRow[0]?.score).toBe(sum)
+  expect(guardianRow[0]?.score).toBe(onChain.score)
   await close()
 })
 

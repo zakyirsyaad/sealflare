@@ -23,10 +23,22 @@ the RPC node serves another chain than `CHAIN_ID`.
 The first read of a new database starts at `START_BLOCK` and not at block 0. A cursor, once it
 exists, always wins over `START_BLOCK`.
 
+`START_BLOCK` has to be at or before the block of the first Core event. A start block that is too
+late leaves out the rows of the earlier events, and an event that names a target or a guardian the
+database has never heard of stops the indexer with a message that says so. It stops instead of
+writing the event, because a write that changes no row would leave a target looking unflagged and
+unconfirmed. Set `START_BLOCK` to the block Core was deployed in.
+
 Strings that come from calldata are cleaned before they are stored. Any Agent ID holder writes the
 `evidenceURI` of an attestation and the contract does not check it, and Postgres refuses U+0000 in
 text and in jsonb. Each U+0000 becomes U+FFFD, so one odd `attest` cannot stop the indexer for good.
 The raw log keeps the cleaned string too.
+
+### One Core per database
+
+The `events` table is keyed by `(tx_hash, log_index)`, which is what makes a re-read range write
+nothing twice. Two Core contracts in one database would put the same key on two different logs, so
+a database holds one Core.
 
 ### The RPC endpoint must be one consistent node
 

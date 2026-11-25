@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type { Address, PublicClient } from 'viem'
 import type { Db } from '@sealflare/internal/db'
-import { addresses, attest, chainClient, createTestDb, depositBond, mine, targetAddress } from './helpers'
+import { addresses, attest, chainClient, createTestDb, currentBlock, depositBond, mine, targetAddress } from './helpers'
 import { assertChainId, ChainMismatchError } from '../src/chain'
 import { indexOnce } from '../src/loop'
 
@@ -85,22 +85,22 @@ test('the cursor stores the block hash, and a hash mismatch at the cursor stops 
 
 test('the first read starts at the start block when there is no cursor', async () => {
   const { db, close } = await createTestDb()
-  const early = await attest({ from: 0, contract: targetAddress(0x41) })
-  const late = await attest({ from: 1, contract: targetAddress(0x42) })
-  expect(late.blockNumber).toBeGreaterThan(early.blockNumber)
+  await attest({ from: 0, contract: targetAddress(0x41) })
+  // A block with no event in it, after everything that came before.
+  await mine(1)
+  const startBlock = BigInt(await currentBlock())
 
   const result = await indexOnce({
     client: chainClient(),
     sql: db,
     addresses: { core: core() },
-    startBlock: late.blockNumber,
+    startBlock,
   })
 
-  expect(result.from).toBe(late.blockNumber)
-  const targets = await db.query<{ src: string }>('SELECT src FROM targets WHERE src = ANY($1)', [
-    [targetAddress(0x41), targetAddress(0x42)],
-  ])
-  expect(targets.map((row) => row.src)).toEqual([targetAddress(0x42)])
+  expect(result.from).toBe(startBlock)
+  // The vote of the block before the start block is not read.
+  expect(result.events).toBe(0)
+  expect(await db.query('SELECT * FROM attestations')).toHaveLength(0)
   await close()
 })
 

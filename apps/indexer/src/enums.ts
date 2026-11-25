@@ -6,7 +6,8 @@ import { TARGET_TYPES, VERDICTS } from '@sealflare/shared/rules'
  *
  * The target type and the verdict come from the shared rules, which carry the same order. The
  * publisher role and the challenge outcome have no shared list yet; their strings are the ones
- * the frozen read model accepts, and a test checks that they still match.
+ * the frozen read model accepts. `test/enums.test.ts` reads the frozen contract and checks that
+ * every list here is still the order the contract uses.
  */
 export const TARGET_TYPE_NAMES = TARGET_TYPES
 export const VERDICT_NAMES = VERDICTS

@@ -1,10 +1,7 @@
 import { z } from 'zod'
 import { AddressSchema } from '@sealflare/shared/schemas'
 
-/**
- * The indexer needs the chain and the database. It holds no key that can move money and it
- * never signs anything.
- */
+/** The chain id of the local Anvil chain, where the start block is always the first one. */
 const LOCAL_CHAIN_ID = 31337
 
 /** A block number: digits only, so `-1`, `1.5`, `0x10` and an empty value are all refused. */
@@ -13,6 +10,10 @@ const BlockNumber = z
   .regex(/^\d+$/, 'must be a block number written in digits')
   .transform((value) => BigInt(value))
 
+/**
+ * The indexer needs the chain and the database. It holds no key that can move money and it
+ * never signs anything.
+ */
 export const IndexerEnv = z
   .object({
     DATABASE_URL: z.string().min(1, 'the Postgres connection string is required'),
