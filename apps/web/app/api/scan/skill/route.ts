@@ -28,8 +28,8 @@ export async function POST(request: Request) {
   }
   if (reference.kind !== 'skill') return fail('INPUT_NOT_RECOGNIZED', 'That is not a repository link.', 400)
   const path = parsed.data.path ?? reference.path
-  const { scanner, repo } = getScanEnvironment()
   try {
+    const { scanner, repo } = getScanEnvironment()
     const report = await scanner.scanSkill(
       {
         owner: reference.owner,

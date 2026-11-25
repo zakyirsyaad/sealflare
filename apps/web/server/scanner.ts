@@ -3,7 +3,7 @@ import { createScanner } from '@sealflare/scanner-core'
 import { createExplorerAdapter, createGitHubFetcher, createRpcAdapter } from '@sealflare/scanner-core/adapters'
 import { targetIdOfContract } from '@sealflare/shared/rules'
 import { ScanReport, type ExplorerAdapter, type RepoFetcher, type RpcAdapter, type ScannerCore } from '@sealflare/shared/schemas'
-import { parseServerEnv } from '../lib/env.schema'
+import { parseScannerMode, parseServerEnv } from '../lib/env.schema'
 import contractClean from '@sealflare/shared/fixtures/scans/contract-clean.json'
 import skillClean from '@sealflare/shared/fixtures/scans/skill-clean.json'
 
@@ -62,11 +62,13 @@ let cached: ScanEnvironment | null = null
 
 /**
  * The only place that reads SCANNER. Everything else takes the scanner and its dependencies.
+ * A missing or invalid SCANNER throws, so a misconfigured deployment gives no verdict instead of
+ * silently serving the SAFE mock.
  */
 export function getScanEnvironment(): ScanEnvironment {
   if (cached) return cached
   const now = () => new Date()
-  const environment = process.env.SCANNER === 'real' ? realEnvironment(now) : mockEnvironment(now)
+  const environment = parseScannerMode({ SCANNER: process.env.SCANNER }) === 'real' ? realEnvironment(now) : mockEnvironment(now)
   cached = environment
   return environment
 }

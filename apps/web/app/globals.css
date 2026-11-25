@@ -215,7 +215,8 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-check:last-child { border-bottom: 0; }
 .sf-check__mark { width: 14px; color: var(--muted-foreground); font-family: var(--font-mono); }
 .sf-check__id { color: var(--muted-foreground); font-size: 12px; }
-.sf-check[data-status='done'] .sf-check__mark, .sf-check[data-status='passed'] .sf-check__mark { color: var(--positive); }
+.sf-check[data-status='done'] .sf-check__mark { color: var(--muted-foreground); }
+.sf-check[data-status='passed'] .sf-check__mark { color: var(--positive); }
 .sf-check[data-status='running'] .sf-check__mark { color: var(--foreground); }
 .sf-check[data-status='flagged'] .sf-check__mark { color: var(--warning); }
 .sf-check[data-status='failed'] .sf-check__mark { color: var(--destructive); }

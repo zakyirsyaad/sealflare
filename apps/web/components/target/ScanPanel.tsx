@@ -20,8 +20,10 @@ function checksOf(input: ScanInput): readonly string[] {
   return input.kind === 'contract' ? CONTRACT_CHECK_IDS : SKILL_CHECK_IDS
 }
 
+// The commit (or the main branch) travels in the link, so the server scans the version that was pinned.
 function skillUrl(input: Extract<ScanInput, { kind: 'skill' }>): string {
-  return `https://github.com/${input.owner}/${input.repo}`
+  const revision = input.commit ?? input.branch
+  return `https://github.com/${input.owner}/${input.repo}${revision === undefined ? '' : `/tree/${revision}`}`
 }
 
 function toApiError(error: unknown): ApiError {
@@ -96,6 +98,7 @@ export function ScanPanel({ initialQuery = '' }: ScanPanelProps) {
       {state.kind === 'failed' && (
         <ScanError
           error={state.error}
+          onRetry={state.input ? () => void run(state.input!) : undefined}
           onChooseFolder={folder => {
             const input = state.input
             if (!input || input.kind !== 'skill') return

@@ -123,6 +123,13 @@ export const copy = {
     "noSkill": "No skill was found in this repository.",
     "tooLarge": "This skill is too large to scan.",
     "rateLimit": "Too many scans from your network. Try again in {minutes} minutes.",
+    "rateLimitOne": "Too many scans from your network. Try again in 1 minute.",
+    "rateLimitUnknown": "Too many scans from your network. Try again in a few minutes.",
+    "tooLargeLimit": "The limit is {size} MiB and {files} files.",
+    "hintInput": "Try 0x… for a contract, or https://github.com/owner/repo for a skill.",
+    "hintNoContract": "Check the address and the network it is deployed on.",
+    "hintPrivateRepo": "Paste the link to a public repository.",
+    "hintNoSkill": "Paste the link to the folder that holds SKILL.md.",
     "rpcUnavailable": "BNB Chain could not be reached. No verdict was produced.",
     "expired": "This result is no longer cached.",
     "again": "Scan again"
