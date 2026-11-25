@@ -176,8 +176,8 @@ importers:
   apps/internal:
     dependencies:
       '@hono/node-server':
-        specifier: ^1.14.0
-        version: 1.19.19(hono@4.13.21)
+        specifier: ^2.1.6
+        version: 2.1.11(hono@4.13.21)
       '@sealflare/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -587,11 +587,11 @@ packages:
       '@noble/hashes':
         optional: true
 
-  '@hono/node-server@1.19.19':
-    resolution: {integrity: sha512-Fy9R7PACOzHU9LDpfnuzVyuVYevKQRcEG2mZhmfc+DRdmayEd3RVfa2XOt2IgGcPNgA77Yk63KBszepcMFK5Ng==}
-    engines: {node: '>=18.14.1'}
+  '@hono/node-server@2.1.11':
+    resolution: {integrity: sha512-KzKz9vl4vvr1vgLHamj+g5uonbrj5NwAdO3yzOS6cd2HjALVeOgTgeZOyAzNxejbkfOOPIcvuf/Tg8l1pEFLog==}
+    engines: {node: '>=20'}
     peerDependencies:
-      hono: ^4
+      hono: ^4 || ^5.0.0-0
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -1971,7 +1971,7 @@ snapshots:
     optionalDependencies:
       '@noble/hashes': 1.8.0
 
-  '@hono/node-server@1.19.19(hono@4.13.21)':
+  '@hono/node-server@2.1.11(hono@4.13.21)':
     dependencies:
       hono: 4.13.21
 
