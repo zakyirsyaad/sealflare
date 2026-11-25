@@ -14,7 +14,7 @@ export function publicClient(rpc: string, chainId: number): PublicClient {
   return createPublicClient({ chain: chainOf(chainId), transport: http(rpc) }) as PublicClient
 }
 
-/** The guard reads the registry through the client. */
-export function guardFor(client: PublicClient, core: Address, vault?: Address): Guard {
-  return createGuard({ client, core, ...(vault ? { vault } : {}) })
+/** The guard reads the registry through the client. Every answer comes from the Core contract. */
+export function guardFor(client: PublicClient, core: Address): Guard {
+  return createGuard({ client, core })
 }

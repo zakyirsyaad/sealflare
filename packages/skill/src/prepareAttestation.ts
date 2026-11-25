@@ -1,7 +1,8 @@
-import type { Address, Hex } from 'viem'
+import { stringToHex, type Address, type Hex } from 'viem'
 import type { SignalSummary } from '@sealflare/guard'
-import { FLAGS, flagNames, isValidFlags, type FlagName, type TrustTier, type Verdict } from '@sealflare/shared/rules'
-import { bullet, field, groupLine, join, section } from './output'
+import { CONSTANTS, FLAGS, flagNames, isValidFlags, type FlagName, type TrustTier, type Verdict } from '@sealflare/shared/rules'
+import { parseShortProof } from '@sealflare/shared/schemas'
+import { bullet, escapeText, field, groupLine, join, section } from './output'
 
 export type AttestationTarget = {
   type: 'SMART_CONTRACT' | 'AI_SKILL_BUNDLE'
@@ -20,12 +21,15 @@ export type AttestationInput = {
   target: AttestationTarget
   verdict: Verdict
   flags: number
+  /** One line per item, in the form `FLAG @ location: excerpt`. It may be empty. */
   shortProof: string
   evidenceHash: Hex
   evidenceURI: string
   /** What the registry says today. It is missing when the registry could not be read. */
   summary?: AttestationSummary
 }
+
+export type ShortProof = { lines: string[]; bytes: Hex }
 
 /** The flags of an attestation, by name and as the bit mask the contract takes. */
 export function flagLine(flags: number): string {
@@ -39,6 +43,26 @@ export function maskOfFlags(names: readonly FlagName[]): number {
 }
 
 /**
+ * The short proof as the bytes `attest()` takes.
+ *
+ * Every line has to be `FLAG @ location: excerpt` with a known flag, and the whole proof may not
+ * pass the limit of the contract, which counts bytes of UTF-8. A proof that is too long would
+ * revert with `ShortProofTooLong`, and free text would be recorded on the chain for good.
+ */
+export function validateShortProof(text: string): ShortProof {
+  const lines = text.split('\n').filter(line => line.length > 0)
+  if (parseShortProof(lines.join('\n')).length !== lines.length) {
+    throw new Error('The short proof must have one line per flag in the form FLAG @ location: excerpt, with a known flag name.')
+  }
+  const proof = lines.join('\n')
+  const size = new TextEncoder().encode(proof).length
+  if (size > CONSTANTS.SHORT_PROOF_MAX_BYTES) {
+    throw new Error(`The short proof is ${size} bytes. The limit is ${CONSTANTS.SHORT_PROOF_MAX_BYTES} bytes.`)
+  }
+  return { lines, bytes: proof.length === 0 ? '0x' : stringToHex(proof) }
+}
+
+/**
  * The parameters of an attestation and a summary of what the registry says today.
  *
  * The script stops here. It never signs and never sends anything: the wallet of the Guardian does
@@ -48,16 +72,18 @@ export function prepareAttestationReport(input: AttestationInput): string {
   if (!isValidFlags(input.target.type, input.verdict, input.flags)) {
     throw new Error(`The flags ${input.flags} do not fit the verdict ${input.verdict} of a ${input.target.type}.`)
   }
+  const proof = validateShortProof(input.shortProof)
   const lines = [
-    `Sealflare attestation for ${input.target.label}`,
+    `Sealflare attestation for ${escapeText(input.target.label)}`,
     field('Target type', input.target.type),
     field('Target', input.target.target),
     field('Target id', input.target.targetId),
     field('Verdict', input.verdict),
     field('Flags', flagLine(input.flags)),
     field('Evidence hash', input.evidenceHash),
-    field('Short proof', input.shortProof.length > 0 ? input.shortProof : 'none'),
-    field('Evidence URI', input.evidenceURI.length > 0 ? input.evidenceURI : 'none'),
+    proof.lines.length > 0 ? section('Short proof text', proof.lines.map(bullet)) : 'Short proof text: ""',
+    field('Short proof bytes', proof.bytes),
+    field('Evidence URI', input.evidenceURI.length > 0 ? input.evidenceURI : '""'),
   ]
   const summary: string[] = []
   if (input.summary) {

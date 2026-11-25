@@ -166,7 +166,8 @@ describe('prepare-attestation', () => {
     expect(output).toContain('Target type: SMART_CONTRACT')
     expect(output).toContain('Verdict: CAUTION')
     expect(output).toContain('Flags: HIDDEN_MINT (0x00000002)')
-    expect(output).toContain('Short proof: HIDDEN_MINT @ mint: owner can mint')
+    expect(output).toContain('- HIDDEN_MINT @ mint: owner can mint')
+    expect(output).toContain('Short proof bytes: 0x')
     expect(output).toContain('Nothing was signed and nothing was sent.')
   })
 
@@ -203,7 +204,8 @@ describe('the scripts', () => {
     const names = new Set<string>()
     for (const match of joined.matchAll(/process\.env\.([A-Z_]+)/g)) names.add(match[1] ?? '')
 
-    expect([...names]).toEqual(['RPC_URL'])
+    // INIT_CWD is not a secret: pnpm sets it to the folder the command was typed in.
+    expect([...names].sort()).toEqual(['INIT_CWD', 'RPC_URL'])
   })
 
   test('a bad argument prints the usage and exits with a non zero code', async () => {
