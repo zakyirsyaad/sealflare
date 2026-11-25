@@ -1,6 +1,6 @@
 import { parseScanInput } from '@sealflare/scanner-core'
 import { ScanContractRequest, ScanError } from '@sealflare/shared/schemas'
-import { fail, ok } from '../../../../server/respond'
+import { fail, failUnexpected, ok } from '../../../../server/respond'
 import { getScanEnvironment } from '../../../../server/scanner'
 
 const STATUS: Record<string, number> = {
@@ -29,6 +29,6 @@ export async function POST(request: Request) {
     return ok(report)
   } catch (error) {
     if (error instanceof ScanError) return fail(error.code, error.message, STATUS[error.code] ?? 400, error.details)
-    return fail('INTERNAL', 'The scan could not be completed.', 500)
+    return failUnexpected('The scan could not be completed.', error)
   }
 }
