@@ -29,10 +29,14 @@ default such as the mainnet.
 
 ### The folder of a bundle
 
-`scan-skill` reads every file of the folder, `node_modules` and `dist` included, the way the
-registry reads a bundle from GitHub. Only `.git` is left out, because a git tree can never hold
-one. `publisher.sig` is read and then left out of the hash by the shared rules. A folder with more
-than 200 files, or more than 2 MiB, fails instead of being cut short.
+`scan-skill` hashes the bundle the way the registry hashes the tree of a repository. Inside a git
+work tree the bundle is the files that git tracks, so a folder with `node_modules` installed or a
+local build holds the same bundle as the repository does. The files that are not tracked are read
+and scanned as well, so a finding in a file that is not committed is never hidden, but those files
+never change the hash or the target id. Outside git every file of the folder is part of the bundle.
+Only `.git` is left out, because a git tree can never hold one. `publisher.sig` is read and then
+left out of the hash by the shared rules, and it does not count towards the limit either. A bundle
+with more than 200 files, or more than 2 MiB, fails instead of being cut short.
 
 pnpm runs a script inside the folder of this package, so a relative path would land there. The
 scripts resolve `<folder>`, `--skill` and `--evidence-file` against `INIT_CWD`, the folder you typed
@@ -50,7 +54,9 @@ only from the user.
 ### The short proof
 
 `--proof` takes one line per flag in the form `FLAG @ location: excerpt`, at most 512 bytes of
-UTF-8 in all. Anything else is refused, because the contract stores the bytes for good and rejects
+UTF-8 in all. The flag of a line has to be one of the flags of the attestation, so a proof never
+claims something the attestation does not say. A SAFE verdict carries no flags, so it never has a
+proof. Anything else is refused, because the contract stores the bytes for good and rejects
 a proof that is too long. The command prints the text and the bytes that `attest()` takes, and an
 empty proof is `0x`, an empty evidence URI is `""`.
 

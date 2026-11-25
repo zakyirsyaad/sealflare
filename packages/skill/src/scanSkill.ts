@@ -2,7 +2,7 @@ import { createScanner } from '@sealflare/scanner-core'
 import type { Guard } from '@sealflare/guard'
 import { bundleIdentity, type BundleEntry } from '@sealflare/shared/rules'
 import type { RepoFetcher } from '@sealflare/shared/schemas'
-import { readFolder } from './bundle'
+import { readBundle } from './bundle'
 import { bullet, escapeText, field, join, section, targetLink } from './output'
 
 /** The commit of a local folder is not a commit, but the report needs the shape of one. */
@@ -26,17 +26,24 @@ function findingLine(finding: { title: string; location: string; excerpt: string
  *
  * The bundle is never executed. Its files are only read as text, and every text of the bundle that
  * is printed passes through `escapeText`, so a bundle cannot write to the terminal.
+ *
+ * The hash covers the files of the bundle only: the tracked files of a git work tree, or every file
+ * of a folder outside git. The files that are not in the bundle are scanned as well, so a finding in
+ * a file that is not committed is never hidden, but those files never change the hash or the id.
  */
 export async function scanSkillReport(input: { folder: string; guard: Guard }): Promise<string> {
-  const entries = await readFolder(input.folder)
-  const identity = bundleIdentity(entries)
+  const bundle = await readBundle(input.folder)
+  const entries = [...bundle.hashed, ...bundle.extra]
+  const identity = bundleIdentity(bundle.hashed)
   const report = await createScanner().scanSkill({ owner: 'local', repo: 'local' }, { repo: localRepo(entries) })
-  const verdict = await input.guard.checkSkill(entries)
+  const verdict = await input.guard.checkSkill(bundle.hashed)
   const lines = [
     `Sealflare check for the skill bundle in ${escapeText(input.folder)}`,
     field('Canonical bundle hash', identity.canonicalBundleHash),
     field('Target id', identity.targetId),
-    field('Files', String(entries.length)),
+    field('Files in the bundle', String(bundle.hashed.length)),
+    field('Files outside the bundle', String(bundle.extra.length + bundle.unread)),
+    ...(bundle.unread > 0 ? [field('Files outside the bundle that were read', String(bundle.extra.length))] : []),
     field('Tier', verdict.tier),
     field('Safe', verdict.safe ? 'yes' : 'no'),
     field('Verified publisher', verdict.publisher ?? 'none'),

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,14 +7,14 @@ import type { Hex } from 'viem'
 import { bundleIdentity, CONSTANTS, targetIdOfContract } from '@sealflare/shared/rules'
 import { decodeSrc } from '@sealflare/shared/schemas'
 import { parseArgs } from '../src/args'
-import { readFolder } from '../src/bundle'
+import { readBundle } from '../src/bundle'
 import { runPrepareAttestation, runScanContract, runScanSkill } from '../src/cli'
 import { escapeText } from '../src/output'
 import { prepareAttestationReport } from '../src/prepareAttestation'
 import { scanSkillReport } from '../src/scanSkill'
 import {
   BIDI_OVERRIDE, CORE, ESC, LINE_SEPARATOR, NEL, PIPE_TO_SHELL, TARGET, ZERO_HASH,
-  fakeGuard, hasControl, packageDir, skillIn, temp,
+  fakeGuard, gitSkillIn, hasControl, packageDir, skillIn, temp,
 } from './support'
 
 describe('the bundle is read the way the registry reads it', () => {
@@ -25,14 +26,14 @@ describe('the bundle is read the way the registry reads it', () => {
       'test-results/log.txt': 'a log\n',
     })
 
-    const entries = await readFolder(folder)
+    const entries = (await readBundle(folder)).hashed
     const paths = entries.map(entry => entry.path)
 
     for (const path of ['dist/postinstall.sh', 'node_modules/dep/index.js', '.next/build.js', 'test-results/log.txt']) {
       expect(paths).toContain(path)
     }
     const clean = await skillIn(await temp())
-    expect(bundleIdentity(entries).canonicalBundleHash).not.toBe(bundleIdentity(await readFolder(clean)).canonicalBundleHash)
+    expect(bundleIdentity(entries).canonicalBundleHash).not.toBe(bundleIdentity((await readBundle(clean)).hashed).canonicalBundleHash)
   })
 
   test('a skill with a hidden dist script is not suggested as safe', async () => {
@@ -47,7 +48,7 @@ describe('the bundle is read the way the registry reads it', () => {
   test('only the git metadata folder is left out, because a git tree can never hold one', async () => {
     const folder = await skillIn(await temp(), { '.git/config': '[core]\n' })
 
-    const paths = (await readFolder(folder)).map(entry => entry.path)
+    const paths = ((await readBundle(folder)).hashed).map(entry => entry.path)
 
     expect(paths).toEqual(['SKILL.md'])
   })
@@ -55,17 +56,17 @@ describe('the bundle is read the way the registry reads it', () => {
   test('publisher.sig is read, so the hash can leave it out the way the registry does', async () => {
     const folder = await skillIn(await temp(), { 'publisher.sig': '0xabc\n' })
 
-    const entries = await readFolder(folder)
+    const entries = (await readBundle(folder)).hashed
 
     expect(entries.map(entry => entry.path)).toContain('publisher.sig')
-    expect(bundleIdentity(entries).canonicalBundleHash).toBe(bundleIdentity(await readFolder(await skillIn(await temp()))).canonicalBundleHash)
+    expect(bundleIdentity(entries).canonicalBundleHash).toBe(bundleIdentity((await readBundle(await skillIn(await temp()))).hashed).canonicalBundleHash)
   })
 
   test('a link is read as the text of its target and never followed', async () => {
     const folder = await skillIn(await temp())
     await symlink('/etc/hosts', join(folder, 'hosts'))
 
-    const entry = (await readFolder(folder)).find(item => item.path === 'hosts')
+    const entry = ((await readBundle(folder)).hashed).find(item => item.path === 'hosts')
 
     expect(entry?.kind).toBe('symlink')
     expect(new TextDecoder().decode(entry?.bytes)).toBe('/etc/hosts')
@@ -75,7 +76,55 @@ describe('the bundle is read the way the registry reads it', () => {
     const folder = await skillIn(await temp())
     for (let index = 0; index <= CONSTANTS.MAX_BUNDLE_FILES; index += 1) await writeFile(join(folder, `f${index}.txt`), 'x')
 
-    await expect(readFolder(folder)).rejects.toThrow(/more than 200 files/)
+    await expect(readBundle(folder)).rejects.toThrow(/more than 200 files/)
+  })
+
+  test('the signature does not count towards the limit, because the registry leaves it out too', async () => {
+    const folder = await skillIn(await temp(), { 'publisher.sig': '0xabc\n' })
+    for (let index = 0; index < CONSTANTS.MAX_BUNDLE_FILES - 2; index += 1) await writeFile(join(folder, `f${index}.txt`), 'x')
+    await writeFile(join(folder, 'zz.txt'), 'x')
+
+    const bundle = await readBundle(folder)
+
+    expect(bundle.hashed.length).toBe(CONSTANTS.MAX_BUNDLE_FILES + 1)
+  })
+})
+
+describe('a git work tree is hashed the way the registry hashes the tree of a repository', () => {
+  test('only the tracked files are part of the bundle', async () => {
+    const folder = await gitSkillIn(await temp(), { 'dist/postinstall.sh': `${PIPE_TO_SHELL}\n` })
+
+    const bundle = await readBundle(folder)
+
+    expect(bundle.hashed.map(entry => entry.path)).toEqual(['SKILL.md'])
+    expect(bundle.extra.map(entry => entry.path)).toEqual(['dist/postinstall.sh'])
+  })
+
+  test('a file that is not committed never changes the hash or the target id', async () => {
+    const folder = await gitSkillIn(await temp(), { 'local.txt': 'not committed\n' })
+    const clean = await gitSkillIn(await temp())
+
+    const bundle = await readBundle(folder)
+
+    expect(bundleIdentity(bundle.hashed).canonicalBundleHash).toBe(
+      bundleIdentity((await readBundle(clean)).hashed).canonicalBundleHash,
+    )
+  })
+
+  test('a file that is not committed is still scanned, so its finding is shown', async () => {
+    const folder = await gitSkillIn(await temp(), { 'dist/postinstall.sh': `${PIPE_TO_SHELL}\n` })
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain('dist/postinstall.sh')
+    expect(output).not.toContain('Suggested verdict: SAFE')
+  })
+
+  test('a folder inside a git repository with no tracked file has no bundle to hash', async () => {
+    const folder = await skillIn(await temp(), { 'a.txt': 'x\n' })
+    execFileSync('git', ['init', '-q'], { cwd: folder })
+
+    await expect(readBundle(folder)).rejects.toThrow(/no tracked file/)
   })
 })
 
@@ -177,6 +226,21 @@ describe('the short proof is checked and printed as the bytes attest() takes', (
 
   test('one bad line among good ones refuses the whole proof', () => {
     expect(() => prepareAttestationReport({ ...base, shortProof: 'HIDDEN_MINT @ mint: ok\nnonsense' })).toThrow()
+  })
+
+  test('a proof that names a flag the attestation does not carry is refused', () => {
+    expect(() => prepareAttestationReport({ ...base, shortProof: 'PAUSE_OR_FREEZE_FUNDS @ lock: x' })).toThrow(/do not carry/)
+  })
+
+  test('a SAFE attestation never carries a proof', () => {
+    expect(() => prepareAttestationReport({ ...base, verdict: 'SAFE', flags: 0, shortProof: 'HIDDEN_MINT @ mint: x' })).toThrow(/SAFE/)
+  })
+
+  test('through the command, a proof on a SAFE verdict exits non zero', async () => {
+    const result = await runPrepareAttestation([TARGET, '--verdict', 'SAFE', '--proof', 'HIDDEN_MINT @ mint: x', '--core', CORE], { guard: fakeGuard() })
+
+    expect(result.code).toBe(1)
+    expect(result.output).not.toContain('Nothing was signed')
   })
 
   test('through the command, a long proof exits non zero and names the limit', async () => {

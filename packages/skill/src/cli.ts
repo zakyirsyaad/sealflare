@@ -13,7 +13,7 @@ import {
   type Verdict,
 } from '@sealflare/shared/rules'
 import { parseArgs, usage, type Arguments, type CommandSpec } from './args'
-import { readFolder } from './bundle'
+import { readBundle } from './bundle'
 import { guardFor, publicClient } from './client'
 import { rpcUrl } from './env'
 import { escapeText, neutralize } from './output'
@@ -56,7 +56,7 @@ export const PREPARE_ATTESTATION_USAGE = usage([
   'prepare-attestation --skill <folder> --verdict <SAFE|CAUTION|DANGER> --core <core address> ...',
   '',
   'Prints the parameters of attest() and a summary. It signs nothing and sends nothing.',
-  'The proof has one line per flag, at most 512 bytes in all.',
+  'The proof has one line per flag of the attestation, at most 512 bytes in all.',
 ])
 
 function message(error: unknown): string {
@@ -219,10 +219,12 @@ export async function runPrepareAttestation(argv: readonly string[], deps: RunDe
   try {
     const { flags, names } = flagsOf(args)
     const shortProof = args.values.proof ?? ''
-    validateShortProof(shortProof)
+    validateShortProof(shortProof, flags, verdict.data as Verdict)
     const evidence = await evidenceOf(args)
     const folder = args.values.skill
-    const entries = folder === undefined ? undefined : await readFolder(resolveInputPath(folder))
+    // The bundle of a folder is the tracked files of a git work tree, so the target id is the one
+    // the registry knows.
+    const entries = folder === undefined ? undefined : (await readBundle(resolveInputPath(folder))).hashed
     const target = attestationTarget(args, entries)
     if (!isValidFlags(target.type, verdict.data, flags)) {
       throw new Error(`The flags ${names.join(', ') || 'none'} do not fit the verdict ${verdict.data}.`)

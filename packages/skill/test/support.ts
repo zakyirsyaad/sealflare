@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -57,6 +58,18 @@ export async function skillIn(folder: string, files: Record<string, string> = {}
     await writeFile(join(folder, path), text)
   }
   return folder
+}
+
+/**
+ * A skill folder inside a git work tree, with the given files tracked by git.
+ *
+ * The files that are not tracked stay in the folder, the way an uncommitted or an ignored file does.
+ */
+export async function gitSkillIn(folder: string, files: Record<string, string> = {}, tracked: readonly string[] = ['SKILL.md']): Promise<string> {
+  const skill = await skillIn(folder, files)
+  execFileSync('git', ['init', '-q'], { cwd: skill })
+  execFileSync('git', ['add', '--', ...tracked], { cwd: skill })
+  return skill
 }
 
 export const emptyGroup = { votes: { safe: 0, caution: 0, danger: 0 }, weight: { safe: 0, caution: 0, danger: 0 }, flags: 0 }

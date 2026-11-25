@@ -17,7 +17,7 @@ describe('relative paths resolve where the user typed the command', () => {
 
     expect(result.code).toBe(0)
     expect(result.output).toContain(`in ${folder}`)
-    expect(result.output).toContain('Files: 2')
+    expect(result.output).toContain('Files in the bundle: 2')
   })
 
   test('a dot scans the folder where the command was typed, not this package', async () => {
@@ -28,7 +28,7 @@ describe('relative paths resolve where the user typed the command', () => {
 
     expect(result.output).toContain(`in ${base}`)
     expect(result.output).not.toContain(packageDir)
-    expect(result.output).toContain('Files: 2')
+    expect(result.output).toContain('Files in the bundle: 2')
   })
 
   test('a folder that does not exist names the absolute path in the failure', async () => {

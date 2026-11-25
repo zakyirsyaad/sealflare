@@ -45,14 +45,27 @@ export function maskOfFlags(names: readonly FlagName[]): number {
 /**
  * The short proof as the bytes `attest()` takes.
  *
- * Every line has to be `FLAG @ location: excerpt` with a known flag, and the whole proof may not
- * pass the limit of the contract, which counts bytes of UTF-8. A proof that is too long would
- * revert with `ShortProofTooLong`, and free text would be recorded on the chain for good.
+ * Every line has to be `FLAG @ location: excerpt` with a known flag, and the flag of a line has to
+ * be one of the flags of the attestation. The whole proof may not pass the limit of the contract,
+ * which counts bytes of UTF-8. A proof that is too long would revert with `ShortProofTooLong`, and
+ * free text would be recorded on the chain for good.
+ *
+ * A SAFE verdict carries no flags, so a SAFE attestation never has a proof. A proof that names a
+ * flag the attestation does not carry would claim on chain that the bundle holds something the
+ * attestation does not say.
  */
-export function validateShortProof(text: string): ShortProof {
+export function validateShortProof(text: string, flags: number, verdict: Verdict): ShortProof {
   const lines = text.split('\n').filter(line => line.length > 0)
-  if (parseShortProof(lines.join('\n')).length !== lines.length) {
+  const items = parseShortProof(lines.join('\n'))
+  if (items.length !== lines.length) {
     throw new Error('The short proof must have one line per flag in the form FLAG @ location: excerpt, with a known flag name.')
+  }
+  if (verdict === 'SAFE' && lines.length > 0) {
+    throw new Error('A SAFE attestation has no flags, so it has no short proof.')
+  }
+  const outside = items.filter(item => (flags & FLAGS[item.flag]) === 0)
+  if (outside.length > 0) {
+    throw new Error(`The short proof names ${outside.map(item => item.flag).join(', ')}, which the flags of the attestation do not carry.`)
   }
   const proof = lines.join('\n')
   const size = new TextEncoder().encode(proof).length
@@ -72,7 +85,7 @@ export function prepareAttestationReport(input: AttestationInput): string {
   if (!isValidFlags(input.target.type, input.verdict, input.flags)) {
     throw new Error(`The flags ${input.flags} do not fit the verdict ${input.verdict} of a ${input.target.type}.`)
   }
-  const proof = validateShortProof(input.shortProof)
+  const proof = validateShortProof(input.shortProof, input.flags, input.verdict)
   const lines = [
     `Sealflare attestation for ${escapeText(input.target.label)}`,
     field('Target type', input.target.type),
