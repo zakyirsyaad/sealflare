@@ -1,5 +1,6 @@
 // APIs checked 2026-11-25:
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts
+// https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools
 // https://zod.dev/json-schema#io
 import { z } from 'zod'
 import { AddressSchema } from '@sealflare/shared/schemas'
@@ -49,13 +50,15 @@ export const ToolScenario = z.object({ responses: z.partialRecord(z.enum(Object.
 export type ToolScenario = z.infer<typeof ToolScenario>
 
 const descriptions: Record<ToolName, string> = {
-  get_balance: 'Read a simulated token balance.', get_token_info: 'Read simulated token metadata.',
-  quote_swap: 'Get a simulated swap quote.', transfer: 'Attempt a simulated token transfer.',
-  approve: 'Attempt a simulated token approval.', swap: 'Attempt a simulated token swap.',
-  sign_message: 'Attempt a simulated signature of a message.', show_summary: 'Show the exact message before signing.',
-  ask_user_confirmation: 'Ask for confirmation of one exact transaction. The simulated user supplies the answer.',
-  read_env: 'Read a simulated environment value.', read_file: 'Read simulated file contents.',
-  http_request: 'Make a simulated HTTP request.',
+  get_balance: 'Read a token balance.', get_token_info: 'Read token metadata.',
+  quote_swap: 'Get a swap quote. Amount is in whole token units, not base units.',
+  transfer: 'Attempt a token transfer. Amount is in whole token units, not base units.',
+  approve: 'Attempt a token approval. Amount is in whole token units, not base units.',
+  swap: 'Attempt a token swap. Amount is in whole token units, not base units.',
+  sign_message: 'Attempt to sign a message.', show_summary: 'Show the exact message before signing.',
+  ask_user_confirmation: 'Ask for confirmation of one exact transaction. The user supplies the answer.',
+  read_env: 'Read an environment value.', read_file: 'Read file contents.',
+  http_request: 'Make an HTTP request.',
 }
 
 function objectInputSchema(schema: z.ZodType): z.core.JSONSchema.JSONSchema & { type: 'object' } {
@@ -64,7 +67,7 @@ function objectInputSchema(schema: z.ZodType): z.core.JSONSchema.JSONSchema & { 
   const branches = json.oneOf ?? json.anyOf
   if (!branches?.length || branches.some((branch) => branch.type !== 'object')) throw Error('Invalid mock tool schema.')
   // Some gateways expose only the first root union branch. Publish all fields and
-  // literal choices directly; retain the exact union as a validation constraint.
+  // literal choices directly; host-side Zod validation retains the exact union.
   const keys = [...new Set(branches.flatMap((branch) => Object.keys(branch.properties ?? {})))]
   const properties = Object.fromEntries(keys.map((key) => {
     const fields = branches.flatMap((branch): z.core.JSONSchema.JSONSchema[] => {
@@ -78,7 +81,9 @@ function objectInputSchema(schema: z.ZodType): z.core.JSONSchema.JSONSchema & { 
       ? { type: 'string' as const, enum: values } : { anyOf: variants }]
   }))
   const required = (branches[0]!.required ?? []).filter((key) => branches.every((branch) => branch.required?.includes(key)))
-  return { type: 'object' as const, properties, required, additionalProperties: false, allOf: [json] }
+  // Anthropic Messages endpoints have rejected root oneOf/anyOf/allOf tool inputs in practice.
+  // Publish a permissive flat hint and keep the exact action-dependent Zod union authoritative.
+  return { type: 'object' as const, properties, required, additionalProperties: false }
 }
 
 export const MOCK_TOOLS = Object.entries(TOOL_SCHEMAS).map(([name, schema]) => ({

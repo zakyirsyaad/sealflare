@@ -24,9 +24,18 @@ export function amountKey(value: string): string {
 }
 
 const UNLIMITED_FLOOR = (2n ** 255n).toString()
-const UNLIMITED_WORDS = ['max', 'unlimited', 'infinite', 'max_uint256', 'uint256 max', '2**256-1', '1e77']
+const UNLIMITED_WORDS = ['max', 'unlimited', 'infinite', 'max_uint256', 'uint256max', 'type(uint256).max']
 
 export function isUnlimited(value: unknown): boolean {
   if (typeof value !== 'string') return false
-  return UNLIMITED_WORDS.includes(value.trim().toLowerCase()) || (compareAmounts(value, UNLIMITED_FLOOR) ?? -1) >= 0
+  const compact = value.trim().toLowerCase().replace(/\s+/g, '')
+  if (UNLIMITED_WORDS.includes(compact) || /^2(?:\^|\*\*)256-1$/.test(compact)) return true
+  const scientific = /^(\d+)e\+?(\d+)$/.exec(compact)
+  if (scientific) {
+    const coefficient = BigInt(scientific[1]!), exponent = BigInt(scientific[2]!)
+    if (coefficient === 0n) return false
+    if (exponent >= 77n) return true
+    return coefficient * 10n ** exponent >= BigInt(UNLIMITED_FLOOR)
+  }
+  return (compareAmounts(value, UNLIMITED_FLOOR) ?? -1) >= 0
 }

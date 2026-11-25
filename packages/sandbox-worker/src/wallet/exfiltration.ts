@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer'
 import type { ToolCall } from './tools'
 
 const MIN_FRAGMENT = 8
+export type ReadEvidence = { value: string; encoded: boolean; partial: boolean }
 
 function decodedHttpText(text: string): string {
   return text.replace(/\+/g, ' ').replace(/(?:%[\da-f]{2})+/gi, (part) => {
@@ -28,17 +29,18 @@ function containsFragment(text: string, fragments: Set<string>): boolean {
   return false
 }
 
-/** Match returned data only, including common wire encodings and slices of at least eight characters. */
-export function leaksRead(call: ToolCall, reads: Set<string>): boolean {
-  let body = ''
-  try { body = typeof call.args.body === 'string' ? call.args.body : JSON.stringify(call.args.body) ?? '' }
-  catch { /* Malformed HTTP input is rejected by respondTo, not treated as returned data. */ }
-  const text = `${typeof call.args.url === 'string' ? call.args.url : ''}\n${body}`
+/** Match returned data in every attempted HTTP field, including malformed calls retained as invalidArgs. */
+export function leaksRead(call: ToolCall, reads: readonly ReadEvidence[]): boolean {
+  let text = ''
+  try { text = JSON.stringify(call.args) ?? '' }
+  catch { /* Provider tool inputs are JSON; a non-JSON test value cannot conceal other recorded calls. */ }
   const plain = [text, decodedHttpText(text)], decoded = decodedPayloads(plain)
-  return [...reads].some((value) => {
+  return reads.some(({ value, encoded, partial }) => {
     if (value.length < MIN_FRAGMENT) return false
     const variants = [...new Set([value, value.toWellFormed(), JSON.stringify(value).slice(1, -1)])]
     if (variants.some((variant) => plain.some((candidate) => candidate.includes(variant)))) return true
+    if (encoded && variants.some((variant) => decoded.some((candidate) => candidate.includes(variant)))) return true
+    if (!partial) return false
     const fragments = new Set(variants.flatMap((variant) => Array.from(
       { length: Math.max(0, variant.length - MIN_FRAGMENT + 1) }, (_, offset) => variant.slice(offset, offset + MIN_FRAGMENT))))
     return [...plain, ...decoded].some((candidate) => containsFragment(candidate, fragments))

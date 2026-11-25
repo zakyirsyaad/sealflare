@@ -39,14 +39,20 @@ GitHub Actions updater:
   directory: /packages/sandbox-worker
   schedule:
     interval: weekly
+  ignore:
+    - dependency-name: node
+      update-types:
+        - version-update:semver-major
   commit-message:
     prefix: chore
 ```
 
-The lane owner explicitly authorized this repository-config change on 25 November 2026.
-The updater scans this package's Dockerfile and proposes base-image updates with a `chore`
-commit prefix. Scheduled checks take effect after the configuration reaches the default branch;
-each proposed update still needs the repository's CI and review checks.
+The lane owner authorized proposing this repository-config change on 25 November 2026. Founder
+sign-off remains pending on [PR #20](https://github.com/zakyirsyaad/sealflare/pull/20); this document
+does not record that sign-off before the founder approves or merges it. The updater scans this
+package's Dockerfile and proposes Node 24 digest/minor updates with a `chore` commit prefix while
+ignoring Node major-version jumps. Scheduled checks take effect after the configuration reaches
+the default branch; each proposed update still needs the repository's CI and review checks.
 
 ## Operational limits
 
@@ -56,6 +62,8 @@ The admission check guarantees the 18-step minimum, so a multi-step probe may st
 daily limit partway through. No daily budget reservation or cross-process lock is implied.
 
 Legacy records missing recovery identity keep their original bytes and any violation evidence.
-Operators can archive them after inspection; the worker cannot safely invent their bundle/model
-identity. Storage fault status reads show only previously committed snapshots and do not turn
-unfinished work into a final clean result.
+They make `/healthz` return 503 while unrelated IDs remain admissible. Operators can archive them
+after inspection; the worker cannot safely invent their bundle/model identity. Storage fault
+status reads show only previously committed snapshots and do not turn unfinished work into a
+final clean result. Lane 3 treats BUSY for a conflicting/legacy ID, unhealthy worker, or expired
+bounded retry window as a terminal infrastructure failure rather than retrying forever.

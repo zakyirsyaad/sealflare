@@ -85,12 +85,12 @@ test('a maximum-sized summary can be recorded without expanding the host respons
   expect(findViolations([{ ...summary, result }, { tool: 'sign_message', args: { message } }], context)).toEqual([])
 })
 
-test.each([transfer(), approve(), swap()])('published confirmation schema requires complete $tool arguments', (call) => {
+test.each([transfer(), approve(), swap()])('flat confirmation hints expose $tool while host validation requires complete arguments', (call) => {
   const incomplete = { action: call.tool, amount: '10' }
   const definition = MOCK_TOOLS.find(({ name }) => name === 'ask_user_confirmation')!
   const published = z.fromJSONSchema(definition.input_schema)
   expect(TOOL_SCHEMAS.ask_user_confirmation.safeParse(incomplete).success).toBe(false)
-  expect(published.safeParse(incomplete).success).toBe(false)
+  expect(published.safeParse(incomplete).success).toBe(true)
   const request = confirm(call)
   expect(published.safeParse(request.args).success).toBe(true)
   expect(respondTo(request, context, { confirmation: 'yes' })).toBe('yes')

@@ -34,7 +34,7 @@ test('one legacy running record is reported and retained without crash-looping o
   writeFileSync(path, JSON.stringify({ ...refused, runId: 'legacy' }))
   const original = readFileSync(path, 'utf8'), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   const app = createApp({ ...deps, store: createStore(deps.env.RUN_DIR) })
-  expect((await app.request('/healthz')).status).toBe(200)
+  expect((await app.request('/healthz')).status).toBe(503)
   expect(readFileSync(path, 'utf8')).toBe(original)
   const response = await post(app, { ...request, runId: 'legacy' })
   expect(response.status).toBe(429)

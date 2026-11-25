@@ -72,10 +72,12 @@ function providerError(error: unknown): Error {
     const { type, message, details } = body.data.error, code = details?.error_code
     const account = /credit|billing|payment|spend|permission|model|api.?key|account/i.test(message)
     const conversation = /^prompt is too long\b|^messages(?:\.|\[|:).*(?:invalid|should be|must be|expected)/i.test(message)
+    const policyBlock = /(?:output|response|request|content).*(?:block|filter|policy|safety)|(?:block|filter|policy|safety).*(?:output|response|request|content)/i
+      .test(`${message} ${code ?? ''}`)
     const tooLarge = outer.data.status === 413 && type === 'request_too_large' && !account
       && (!code || code === 'request_body_too_large_after_decoding')
     if (tooLarge || ([400, 422].includes(outer.data.status) && type === 'invalid_request_error'
-      && !code && !account && conversation)) return new LlmContentError('The model could not process this conversation.')
+      && !account && ((!code && conversation) || policyBlock))) return new LlmContentError('The model could not process this conversation.')
   }
   return new LlmInfrastructureError('The model provider is unavailable.')
 }

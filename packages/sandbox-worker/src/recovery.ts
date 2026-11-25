@@ -17,12 +17,18 @@ export function interrupted(status: WorkerRunStatus, identity: RecoveryInfo): Wo
     failure: { cause: 'infrastructure', message } })
 }
 
-export function recoverStore(store: RunStore): void {
+export function recoverStore(store: RunStore): { blockedLegacyRuns: number } {
+  let blockedLegacyRuns = 0
   for (const issue of store.loadAll()) console.warn('Skipped invalid run status file:', issue.file)
   for (const status of store.list()) {
     if (status.state !== 'running') continue
     const identity = store.recovery(status.runId)
-    if (!identity) { console.warn('Skipped interrupted run without recovery metadata:', status.runId); continue }
+    if (!identity) {
+      blockedLegacyRuns++
+      console.warn('Skipped interrupted run without recovery metadata:', status.runId)
+      continue
+    }
     store.save(interrupted(status, identity))
   }
+  return { blockedLegacyRuns }
 }
