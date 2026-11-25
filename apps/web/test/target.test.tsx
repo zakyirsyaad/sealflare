@@ -358,9 +358,9 @@ test('a failed load says the on-chain data is safe and offers a retry', () => {
   expect(screen.getByRole('button', { name: copy.common.retry })).toBeInTheDocument()
 })
 
-test('the attest button is closed with a reason when there is no wallet', () => {
+test('the attest button opens without a wallet and says that a wallet is needed', () => {
   render(<TargetScreen {...props()} />)
-  expect(screen.getByRole('button', { name: copy.attest.action })).toBeDisabled()
+  expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
   expect(screen.getByText(copy.target.attestHint)).toBeInTheDocument()
 })
 

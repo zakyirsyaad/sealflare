@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useConnect, useConnectors, useDisconnect } from 'wagmi'
-import type { AttestationRow, ScanReport } from '@sealflare/shared/schemas'
+import type { ScanReport } from '@sealflare/shared/schemas'
 import type { FlagName, TrustTier, Verdict } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { Panel } from '../ui/Panel'
@@ -13,7 +13,7 @@ import { CONSTANTS } from '@sealflare/shared/rules'
 import { copy } from '../../lib/copy'
 import { ReviewStep } from './ReviewStep'
 import { VerdictStep } from './VerdictStep'
-import { addFlag, canReview, chooseVerdict, emptyChoice, removeFlag, setQuote, shortProofOf, type Choice } from './choice'
+import { addFlag, canReview, chooseVerdict, emptyChoice, removeFlag, setQuote, type Choice } from './choice'
 import { useAttest } from './useAttest'
 
 export type AttestPanelProps = {
@@ -23,8 +23,6 @@ export type AttestPanelProps = {
   label: string
   tier: TrustTier
   scan: ScanReport | null
-  /** The votes on this target, to find the one of this user. */
-  attestations: AttestationRow[]
   /** A challenge is open on this target. */
   underDispute: boolean
   onClose: () => void
@@ -79,7 +77,7 @@ export function AttestPanel(props: AttestPanelProps) {
     void attest.submit({
       verdict: choice.verdict,
       flags: choice.flags,
-      shortProof: shortProofOf(choice, props.scan),
+      quotes: choice.quotes,
     })
   }
 
@@ -121,7 +119,6 @@ export function AttestPanel(props: AttestPanelProps) {
         state={attest.state}
         error={attest.error}
         txHash={attest.txHash}
-        voted={attest.verdict}
         underDispute={props.underDispute}
         onSubmit={submit}
         onBack={() => setStep('verdict')}
@@ -131,8 +128,11 @@ export function AttestPanel(props: AttestPanelProps) {
   }
 
   return (
-    <Panel title={step === 'verdict' ? copy.attest.action : copy.attest.review} onClose={props.onClose}>
-      <p className="sf-mono">{copy.attest.step[step === 'verdict' ? 0 : 1]}</p>
+    <Panel
+      title={step === 'verdict' ? copy.attest.action : copy.attest.review}
+      marker={copy.attest.step[step === 'verdict' ? 0 : 1]}
+      onClose={props.onClose}
+    >
       {body()}
     </Panel>
   )

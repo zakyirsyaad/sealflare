@@ -36,7 +36,10 @@ vi.mock('../lib/chain/config', () => ({
 }))
 
 const uploadEvidence = vi.hoisted(() => vi.fn())
-vi.mock('../lib/api/client', () => ({ api: { uploadEvidence } }))
+vi.mock('../lib/api/client', async () => {
+  const actual = await vi.importActual<typeof import('../lib/api/client')>('../lib/api/client')
+  return { ...actual, api: { uploadEvidence } }
+})
 
 import { AttestPanel } from '../components/attest/AttestPanel'
 import { copy } from '../lib/copy'
@@ -109,7 +112,6 @@ function panel(overrides: Partial<Parameters<typeof AttestPanel>[0]> = {}) {
       label={address}
       tier="CAUTION_FLAGGED"
       scan={scan()}
-      attestations={[]}
       underDispute={false}
       onClose={() => {}}
       {...overrides}
@@ -139,7 +141,10 @@ beforeEach(() => {
   wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
   wagmi.signTypedDataAsync.mockResolvedValue(`0x${'11'.repeat(65)}`)
   wagmi.writeContractAsync.mockResolvedValue(txHash)
-  uploadEvidence.mockResolvedValue({ evidenceURI: 'ipfs://bafycid', evidenceHash: `0x${'00'.repeat(32)}` })
+  uploadEvidence.mockImplementation(async (body: { reportJson: string }) => ({
+    evidenceURI: 'ipfs://bafycid',
+    evidenceHash: evidenceHashOf(new TextEncoder().encode(body.reportJson)),
+  }))
 })
 
 test('the scanner suggestion is shown but no verdict is preselected', () => {
@@ -220,12 +225,37 @@ test('the bytes signed, uploaded and hashed are the same reportJson', async () =
   expect(written.args[4]).toBe(evidenceHashOf(bytes))
 })
 
+test('two attempts never use the same nonce and never live longer than ten minutes', async () => {
+  panel()
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  const first = uploadEvidence.mock.calls[0]?.[0] as { nonce: string; expiry: string }
+  expect(first.expiry).toBeDefined()
+  panel()
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  const second = uploadEvidence.mock.calls[1]?.[0] as { nonce: string; expiry: string }
+  expect(second.nonce).not.toBe(first.nonce)
+  const now = Math.floor(Date.now() / 1000)
+  expect(Number(first.expiry) - now).toBeLessThanOrEqual(600)
+  expect(Number(first.expiry) - now).toBeGreaterThan(0)
+})
+
+test('an evidence answer with another hash stops before the transaction', async () => {
+  uploadEvidence.mockResolvedValue({ evidenceURI: 'ipfs://bafycid', evidenceHash: `0x${'00'.repeat(32)}` })
+  panel()
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByText(copy.attest.uploadFailed)).toBeInTheDocument()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
 test('a failed upload shows the message and no transaction is requested', async () => {
   uploadEvidence.mockRejectedValue(new Error('the storage is down'))
   panel()
   await toReview('Safe')
   await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
-  expect(screen.getByText(copy.attest.uploadFailed)).toBeInTheDocument()
+  expect(await screen.findByText(copy.attest.uploadFailed)).toBeInTheDocument()
   expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
 })
 
@@ -300,7 +330,6 @@ test('no wallet: the panel asks to connect and then continues at step one', asyn
       label={address}
       tier="CAUTION_FLAGGED"
       scan={scan()}
-      attestations={[]}
       underDispute={false}
       onClose={() => {}}
     />,
@@ -321,7 +350,6 @@ test('wrong network: the panel offers one switch button and then continues', asy
       label={address}
       tier="CAUTION_FLAGGED"
       scan={scan()}
-      attestations={[]}
       underDispute={false}
       onClose={() => {}}
     />,

@@ -67,12 +67,18 @@ export function canReview(choice: Choice, scanFlags: number): boolean {
  * The evidence summary written on-chain.
  *
  * A flag the scanner found keeps the place and the line the scanner read. A flag the Guardian
- * added carries the quote the Guardian wrote.
+ * added carries the quote the Guardian wrote. Only the scan that is attached to the report may
+ * be quoted, so every line on-chain comes from the document that was uploaded.
  */
-export function shortProofOf(choice: Choice, scan: ScanReport | null): string {
-  const items: ShortProofItem[] = flagsOf(choice).map(name => {
+export function shortProofOf(
+  flags: number,
+  quotes: Record<string, string>,
+  scan: ScanReport | null,
+): string {
+  const names = (Object.keys(FLAGS) as FlagName[]).filter(name => (flags & FLAGS[name]) !== 0)
+  const items: ShortProofItem[] = names.map(name => {
     const finding = scan?.findings.find(item => item.flag === name)
-    const excerpt = finding?.excerpt ?? (choice.quotes[name] ?? '').trim()
+    const excerpt = finding?.excerpt ?? (quotes[name] ?? '').trim()
     return { flag: name, location: finding?.location ?? 'user report', excerpt }
   })
   return items.length === 0 ? '' : buildShortProof(items)

@@ -5,7 +5,7 @@ import type { AttestationRow, ScanReport } from '@sealflare/shared/schemas'
 import { useUserState } from '../../lib/chain/userState'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { verdictLabel } from '../../lib/format'
+import { formatUtc, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
 import { attestAvailability } from '../attest/availability'
 
@@ -21,6 +21,13 @@ export type ActionColumnProps = {
   attestations: AttestationRow[]
   /** A challenge is open on this target. */
   underDispute: boolean
+}
+
+/** The moment the daily quota returns. The contract counts the days from the unix epoch, so it is the next UTC midnight. */
+function nextQuotaReset(): string {
+  const day = 86400
+  const now = Math.floor(Date.now() / 1000)
+  return formatUtc(Math.floor(now / day) * day + day)
 }
 
 /** The vote of this user on this target, when there is one. */
@@ -58,11 +65,11 @@ export function ActionColumn(props: ActionColumnProps) {
   const reason =
     availability.kind === 'code-changed'
       ? copy.errors.CodeChangedSincePin
-      : availability.kind === 'no-wallet'
-        ? copy.target.attestHint
-        : availability.kind === 'quota-exhausted'
-          ? copy.wallet.quotaExhausted
-          : null
+      : availability.kind === 'quota-exhausted'
+        ? `${copy.wallet.quotaExhausted.replace('{limit}', String(CONSTANTS.DAILY_ATTEST_LIMIT))} ${copy.wallet.quotaReturns.replace('{time}', nextQuotaReset())}`
+        : null
+  // Without a wallet the panel itself asks for one, so the button stays open.
+  const hint = availability.kind === 'no-wallet' ? copy.target.attestHint : null
   const attestButton = () => {
     if (availability.kind === 'skill-changed') {
       return props.currentVersionHref === null ? (
@@ -101,6 +108,7 @@ export function ActionColumn(props: ActionColumnProps) {
       <div className="sf-actions__meta">
         <p className="sf-mono sf-actions__quota">{quota}</p>
         {reason !== null && <p className="sf-actions__reason">{reason}</p>}
+        {hint !== null && <p className="sf-actions__note">{hint}</p>}
         {user.kind === 'holder' && reason === null && <p className="sf-actions__note">{copy.attest.claimable}</p>}
         {props.tier === 'UNRATED' && (
           <div className="sf-actions__invite">
@@ -117,7 +125,6 @@ export function ActionColumn(props: ActionColumnProps) {
           label={props.label}
           tier={props.tier}
           scan={props.scan}
-          attestations={props.attestations}
           underDispute={props.underDispute}
           onClose={() => setOpen(false)}
         />

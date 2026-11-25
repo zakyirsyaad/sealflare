@@ -2,7 +2,7 @@
 import type { Verdict } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { flagLabel, shortAddress } from '../../lib/format'
+import { flagLabel } from '../../lib/format'
 import { AttestButton } from './AttestButton'
 import { flagsOf, type Choice } from './choice'
 import type { AttestState } from './useAttest'
@@ -18,7 +18,6 @@ export type ReviewStepProps = {
   state: AttestState
   error: string | null
   txHash: string | null
-  voted: Verdict | null
   /** A challenge is open on this target, so the vote earns no XP. */
   underDispute: boolean
   onSubmit: () => void
@@ -73,7 +72,7 @@ export function ReviewStep(props: ReviewStepProps) {
       <section className="sf-stack">
         <span className="sf-mono">{copy.attest.onChain}</span>
         <div className="sf-rows">
-          <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{shortAddress(props.label)}</span>} />
+          <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{props.label}</span>} />
           <Row name={copy.attest.rowVerdict} value={verdictName[verdict]} />
           <Row
             name={copy.attest.rowFlag}

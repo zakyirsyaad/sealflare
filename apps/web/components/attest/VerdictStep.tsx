@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { FLAGS, FLAG_NAMES, type FlagName, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
@@ -55,6 +55,18 @@ export function VerdictStep(props: VerdictStepProps) {
   const waiting = missingQuotes(choice, props.scanFlags)
   const options: Verdict[] = ['SAFE', 'CAUTION', 'DANGER']
   const available = flagsOfType(props.targetType).filter(name => !chosen.includes(name))
+  const buttons = useRef<Record<string, HTMLButtonElement | null>>({})
+  const pickableOptions = options.filter(verdict => pickable[verdict])
+
+  /** The arrow keys move the choice, as a radio group does. */
+  const move = (from: Verdict, step: number) => {
+    const index = pickableOptions.indexOf(from)
+    if (index < 0) return
+    const next = pickableOptions[(index + step + pickableOptions.length) % pickableOptions.length]
+    if (next === undefined) return
+    props.onChoose(next)
+    buttons.current[next]?.focus()
+  }
 
   return (
     <>
@@ -73,7 +85,15 @@ export function VerdictStep(props: VerdictStepProps) {
             aria-checked={choice.verdict === verdict}
             className="sf-opt"
             disabled={!pickable[verdict]}
+            tabIndex={choice.verdict === verdict || (choice.verdict === null && verdict === options[0]) ? 0 : -1}
+            ref={element => {
+              buttons.current[verdict] = element
+            }}
             onClick={() => props.onChoose(verdict)}
+            onKeyDown={event => {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowRight') move(verdict, 1)
+              if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') move(verdict, -1)
+            }}
           >
             <span className="sf-opt__title">{label[verdict]}</span>
             <span className="sf-opt__help">{help[verdict]}</span>
@@ -87,7 +107,12 @@ export function VerdictStep(props: VerdictStepProps) {
           {chosen.map(name => (
             <span key={name} className="sf-chip sf-chip--flag">
               {flagLabel(name)}
-              <button type="button" className="sf-chip__remove" onClick={() => props.onRemoveFlag(name)}>
+              <button
+                type="button"
+                className="sf-chip__remove"
+                aria-label={`${copy.attest.removeFlag} ${flagLabel(name)}`}
+                onClick={() => props.onRemoveFlag(name)}
+              >
                 {copy.attest.removeFlag}
               </button>
             </span>
