@@ -1,5 +1,6 @@
 import type { Hex, PublicClient } from 'viem'
 import type { Db } from '@sealflare/internal/db'
+import { ChainMismatchError } from './chain'
 
 export interface Cursor {
   id: string
@@ -32,11 +33,12 @@ export async function writeCursor(tx: Db, id: string, lastBlock: bigint, lastBlo
  *
  * The indexer only reads final blocks, so the chain should not change under it. If it does, the
  * indexer stops with a clear message rather than writing events that belong to another chain.
+ * The error is a `ChainMismatchError`, which the process does not retry.
  */
 export async function assertCursorStillOnChain(client: PublicClient, cursor: Cursor): Promise<void> {
   const block = await client.getBlock({ blockNumber: cursor.lastBlock })
   if (block.hash !== cursor.lastBlockHash) {
-    throw new Error(
+    throw new ChainMismatchError(
       `The chain no longer has the block ${cursor.lastBlock} the indexer read. ` +
         `The indexer expected ${cursor.lastBlockHash} and found ${block.hash ?? 'no hash'}. ` +
         `The indexer stops here so it does not write events from another chain.`,

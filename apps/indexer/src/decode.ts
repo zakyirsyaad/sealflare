@@ -101,7 +101,7 @@ export function decodeCoreLogs(logs: readonly Log[]): CoreEvent[] {
     if (!name) throw new Error(`The Core contract emitted an event the indexer does not know: ${entry.eventName}`)
     return {
       name,
-      args: entry.args,
+      args: withoutNul(entry.args),
       txHash: entry.transactionHash,
       logIndex: entry.logIndex,
       blockNumber: entry.blockNumber,
@@ -109,6 +109,22 @@ export function decodeCoreLogs(logs: readonly Log[]): CoreEvent[] {
       contract: entry.address,
     } as CoreEvent
   })
+}
+
+/**
+ * Replaces every U+0000 in the strings of an event with U+FFFD.
+ *
+ * `evidenceURI` is calldata that any Agent ID holder writes, and the contract does not check it.
+ * Postgres refuses U+0000 in a text column and in jsonb, so a single `attest` with one in it
+ * would roll back the range for good and the indexer would read the same range forever.
+ */
+export function withoutNul<T>(value: T): T {
+  if (typeof value === 'string') return value.replaceAll('\u0000', '\uFFFD') as T
+  if (Array.isArray(value)) return value.map(withoutNul) as T
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withoutNul(item)])) as T
+  }
+  return value
 }
 
 /**

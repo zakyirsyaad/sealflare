@@ -12,6 +12,11 @@ export interface IndexOnceDeps {
   sql: Db
   addresses: { core: Address }
   batch?: number
+  /**
+   * The block Core was deployed in. The first read starts here when there is no cursor yet, so a
+   * new database does not walk the chain from block 0. A cursor always wins over it.
+   */
+  startBlock?: bigint
 }
 
 export interface IndexOnceResult {
@@ -39,7 +44,7 @@ export async function indexOnce(deps: IndexOnceDeps): Promise<IndexOnceResult> {
   const cursor = await readCursor(deps.sql, cursorId)
   if (cursor) await assertCursorStillOnChain(deps.client, cursor)
 
-  const from = cursor ? cursor.lastBlock + 1n : 0n
+  const from = cursor ? cursor.lastBlock + 1n : (deps.startBlock ?? 0n)
   if (from > finalized) return { from: finalized + 1n, to: finalized, events: 0 }
   const to = from + batch - 1n < finalized ? from + batch - 1n : finalized
 

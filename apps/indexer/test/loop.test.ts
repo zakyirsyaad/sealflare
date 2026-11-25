@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import type { Address, PublicClient } from 'viem'
 import type { Db } from '@sealflare/internal/db'
 import { addresses, attest, chainClient, createTestDb, depositBond, mine, targetAddress } from './helpers'
+import { assertChainId, ChainMismatchError } from '../src/chain'
 import { indexOnce } from '../src/loop'
 
 const core = () => addresses().core
@@ -75,7 +76,56 @@ test('the cursor stores the block hash, and a hash mismatch at the cursor stops 
   await expect(indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })).rejects.toThrow(
     /no longer has the block/,
   )
+  // The error has a class of its own, so the process can tell it apart from a passing RPC error.
+  await expect(indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })).rejects.toBeInstanceOf(
+    ChainMismatchError,
+  )
   await close()
+})
+
+test('the first read starts at the start block when there is no cursor', async () => {
+  const { db, close } = await createTestDb()
+  const early = await attest({ from: 0, contract: targetAddress(0x41) })
+  const late = await attest({ from: 1, contract: targetAddress(0x42) })
+  expect(late.blockNumber).toBeGreaterThan(early.blockNumber)
+
+  const result = await indexOnce({
+    client: chainClient(),
+    sql: db,
+    addresses: { core: core() },
+    startBlock: late.blockNumber,
+  })
+
+  expect(result.from).toBe(late.blockNumber)
+  const targets = await db.query<{ src: string }>('SELECT src FROM targets WHERE src = ANY($1)', [
+    [targetAddress(0x41), targetAddress(0x42)],
+  ])
+  expect(targets.map((row) => row.src)).toEqual([targetAddress(0x42)])
+  await close()
+})
+
+test('a cursor wins over the start block', async () => {
+  const { db, close } = await createTestDb()
+  await attest({ from: 0, contract: targetAddress(0x43) })
+  await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
+  const cursor = await db.query<{ last_block: string }>('SELECT last_block FROM cursor')
+  await mine(1)
+
+  const next = await indexOnce({
+    client: chainClient(),
+    sql: db,
+    addresses: { core: core() },
+    startBlock: 1n,
+  })
+
+  expect(next.from).toBe(BigInt(cursor[0]?.last_block ?? '0') + 1n)
+  await close()
+})
+
+test('the indexer refuses an RPC whose chain id is not the configured one', async () => {
+  await expect(assertChainId(chainClient(), 56)).rejects.toBeInstanceOf(ChainMismatchError)
+  await expect(assertChainId(chainClient(), 56)).rejects.toThrow(/CHAIN_ID is 56.*31337/)
+  await expect(assertChainId(chainClient(), 31337)).resolves.toBeUndefined()
 })
 
 test('an event from an unknown address is ignored', async () => {

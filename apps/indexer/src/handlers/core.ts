@@ -99,6 +99,10 @@ async function applyAttested(tx: Db, event: TimedEvent & { name: 'Attested' }): 
       event.at.toISOString(),
     ],
   )
+  // The contract counts the vote on the Guardian too, so the Guardians list and profile can show it.
+  await tx.query('UPDATE guardians SET attestations = attestations + 1 WHERE address = $1', [
+    lower(event.args.guardian),
+  ])
   await tx.query(
     `UPDATE targets SET
        safe_count = safe_count + $2,

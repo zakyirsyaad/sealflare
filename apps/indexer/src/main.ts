@@ -1,5 +1,6 @@
 import { createPublicClient, defineChain, http } from 'viem'
 import { createPostgresDb, migrate } from '@sealflare/internal/db'
+import { assertChainId, ChainMismatchError } from './chain'
 import { parseEnv } from './env'
 import { indexOnce } from './loop'
 
@@ -26,11 +27,31 @@ const stop = async (): Promise<void> => {
 process.on('SIGTERM', () => void stop())
 process.on('SIGINT', () => void stop())
 
+let chainChecked = false
+
 for (;;) {
   try {
-    const result = await indexOnce({ client, sql: db, addresses, batch: env.BATCH_SIZE })
+    // Checked once, inside the loop, so an RPC node that is down at boot is retried like any other.
+    if (!chainChecked) {
+      await assertChainId(client, env.CHAIN_ID)
+      chainChecked = true
+    }
+    const result = await indexOnce({
+      client,
+      sql: db,
+      addresses,
+      batch: env.BATCH_SIZE,
+      startBlock: env.START_BLOCK,
+    })
     if (result.from > result.to) await sleep(env.POLL_INTERVAL_MS)
   } catch (error) {
+    // The wrong chain is not a passing problem: reading again fails the same way. Stop with a
+    // non-zero exit so the restart policy or the alert of whoever runs the indexer fires.
+    if (error instanceof ChainMismatchError) {
+      console.error(`the indexer stops: ${error.message}`)
+      await close()
+      process.exit(1)
+    }
     // A chain that is briefly unreachable, or a range that failed to write, must not stop the
     // indexer. It reads the same range again.
     console.error('the indexer could not read a range', error)

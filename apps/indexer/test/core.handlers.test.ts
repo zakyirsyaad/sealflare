@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import type { Address } from 'viem'
-import { account, addresses, adjustScore, attest, chainClient, createTestDb, targetAddress } from './helpers'
+import { account, addresses, adjustScore, attest, chainClient, coreContract, createTestDb, targetAddress } from './helpers'
 import { indexOnce } from '../src/loop'
 
 const core = () => addresses().core
@@ -125,5 +125,41 @@ test('ScoreChanged rows add up to the guardian score Core reports', async () => 
   ])
   expect(sum).toBe(12)
   expect(guardianRow[0]?.score).toBe(sum)
+  await close()
+})
+
+test('guardians.attestations counts every vote and equals what Core reports', async () => {
+  const { db, close } = await createTestDb()
+  const voter = account(2)
+  await attest({ from: 2, contract: targetAddress(0x51) })
+  await attest({ from: 2, contract: targetAddress(0x52) })
+
+  await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
+
+  const onChain = await coreContract().read.getGuardian([voter.address])
+  const rows = await db.query<{ attestations: number }>('SELECT attestations FROM guardians WHERE address = $1', [
+    voter.address.toLowerCase(),
+  ])
+  expect(rows[0]?.attestations).toBeGreaterThanOrEqual(2)
+  expect(rows[0]?.attestations).toBe(onChain.attestationCount)
+  await close()
+})
+
+test('a NUL character in the evidence URI does not stop the indexer and is stored as a replacement', async () => {
+  const { db, close } = await createTestDb()
+  await attest({ from: 0, contract: targetAddress(0x53), evidenceURI: 'ipfs://before\u0000after' })
+  await attest({ from: 1, contract: targetAddress(0x54), evidenceURI: 'ipfs://later' })
+
+  // One Agent ID holder can put a NUL in the calldata. The range must still be written.
+  const result = await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
+  expect(result.events).toBeGreaterThan(0)
+
+  const rows = await db.query<{ src: string; evidence_uri: string }>(
+    `SELECT t.src, a.evidence_uri FROM attestations a JOIN targets t USING (target_id)
+     WHERE t.src IN ($1, $2) ORDER BY t.src`,
+    [targetAddress(0x53), targetAddress(0x54)],
+  )
+  expect(rows.map((row) => row.evidence_uri)).toEqual(['ipfs://before\uFFFDafter', 'ipfs://later'])
+  expect(await db.query('SELECT * FROM cursor')).toHaveLength(1)
   await close()
 })
