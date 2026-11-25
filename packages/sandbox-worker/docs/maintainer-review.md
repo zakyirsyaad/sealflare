@@ -11,6 +11,7 @@ PR. Earlier PRs remain open until the founder merges this PR and closes them as 
 | Minor: legacy records permanently fault health | Legacy IDs remain blocked; a usable worker returns 200 with an aggregate `blockedLegacyRuns` count. Persistence faults still return 503 and refuse new work. Tests cover one/multiple blocked records and a coexisting storage fault. |
 | Minor: routing/organization policies become skill errors | Content classification requires the recognized `content_filter_blocked` code or anchored explicit content-filter wording without an unknown code. Conversation validation is limited to known numeric length or typed-message formats, so path-prefixed operator errors cannot bypass it. Fourteen negative regressions complement the existing content-block/validation positives. |
 | Partial: secret canary shares the sandbox hostname prefix | The real secret probe and default read responses now use opaque canaries. The actual probe accepts an unrelated `sandbox-api` hostname, while raw/Base64/hex eight-character canary fragments remain detectable. |
+| Re-review: public fixed canaries identify the sandbox | Read tools now generate 32 cryptographically random bytes as hex per call. The real secret probe has no fixed read override, so it uses the same fresh generator. Ten uniqueness/run-isolation cases were observed RED before implementation; two positive exfiltration cases verify that rules use the actual returned value. All six production scenarios are covered. Explicit fixed overrides remain available only for controlled test scenarios; no production definition uses them. |
 | Partial: tool results disclose the simulation | Default read, HTTP, signature and transaction replies omit simulation markers. No tool gains network, filesystem, environment access or actual signing; the existing no-I/O tests remain authoritative. |
 | Official endpoint check | One direct request with all 12 production tool definitions and the maintainer-provided gateway credential returned 401 `authentication_error`. README records the model, timestamp, request ID and schema digest. The credential was not accepted by the official endpoint, so successful official schema validation remains pending a working official credential. This does not establish a gateway failure. |
 | Consolidated landing and repository configuration | The PR title/body cover Tasks 7–11 and all follow-ups. The Docker Dependabot change remains subject to founder approval on PR #29. No PR is merged or closed by this follow-up. |
@@ -32,10 +33,14 @@ message path, and an own JSON `__proto__` extra stripped by record parsing. Six 
 three handler/replay/provider-storage cases were observed RED before their fixes. One additional
 RED regression ensures other argument fields stay visible when that raw payload is retained. The latter
 initially returned `NO_VIOLATION_OBSERVED`; it now records `SANDBOX_FUZZ_FAILED` through restart.
+A subsequent maintainer re-review found that public fixed read canaries still identified the
+sandbox. Ten cases reproduced this across different targets, repeated calls, independent runs
+and the real probe scenarios before switching to fresh CSPRNG canaries. The rule replay remains
+deterministic over the recorded responses; no environment, file or network access was added.
 Existing tests that asserted the old health/prefix behavior were updated, and the probe source
 fingerprint was refreshed so cached clean results cannot cross this behavior change.
 
-Final local `pnpm verify` passed: 1,449 TypeScript tests (480 worker, 331 scanner, 284 shared,
+Final local `pnpm verify` passed: 1,461 TypeScript tests (492 worker, 331 scanner, 284 shared,
 202 web, 66 internal, 50 SDK, 36 indexer), all typechecks, 302 Foundry tests and ABI sync.
 Four paid live checks are opt-in and skipped in the ordinary suite. Secret scanning passed.
 CI results are recorded on the PR after publication. API authentication failure is not counted

@@ -1,10 +1,11 @@
 # Sandbox worker
 
-Scanning Tasks 7 through 11 provide pure mock wallet tools, eight deterministic violation rules,
+Scanning Tasks 7 through 11 provide isolated mock wallet tools, eight deterministic violation rules,
 six red-team probe definitions, a run executor, local run storage, a call budget, an HTTP
 service, an Anthropic-compatible client, public IPFS upload and a container entry point.
 No tool executes a skill script, accesses an environment variable or file, sends an HTTP
-request, signs a message, or submits a transaction. All responses are canned strings.
+request, signs a message, or submits a transaction. Read tools generate fake canary strings;
+other responses are canned strings.
 
 ## Recording calls
 
@@ -66,7 +67,10 @@ validation enforces the exact action-dependent union before any canned response 
 
 `ToolScenario` optionally provides `responses`, a map of tool names to canned response strings,
 for probe bait. Its optional `confirmation` is `yes` or `no`, defaulting to `no`.
-Environment and file tools return deterministic fake values when no override is supplied.
+Environment and file tools generate 32 cryptographically random bytes as hex on every call.
+Explicit read-response overrides support controlled tests; the production probe registry has
+no fixed read canaries, including the secret-exfiltration scenario. The host records the actual
+returned value in `call.result`; violation rules replay that value without generating new entropy.
 
 ## Rules
 
@@ -132,7 +136,7 @@ come from the frozen shared `PROBE_IDS`. Each definition has `systemPrompt(skill
 | `approval_escalation` | Token metadata suggests approving max instead of exactly 10 USDT |
 | `meta_scanner_override` | The skill itself may try to override the scanner before a swap |
 
-The addresses and secret canary are fixed simulation fixtures. Explicit scenario `yes` answers
+The addresses are fixed simulation fixtures; read canaries are freshly generated per call. Explicit scenario `yes` answers
 allow a careful agent to complete exact, separately confirmed transactions. The bypass and
 meta-scanner probes add no tool-response bait. Tests replay both malicious and careful scripted
 traces through the actual mock tools and violation rules; live LLM runs belong to later tasks.
@@ -146,7 +150,7 @@ text inside one `<skill_md>` block. The skill is installed task instructions. Tr
 states that tool outputs are data rather than instructions, forbids credential reads and secret
 transmission, and enforces exact consent. Model-visible prompts, tool descriptions and default
 responses omit simulation markers. Read values are inert canaries; HTTP responses and transaction
-acknowledgements use ordinary status fields. These remain pure canned responses with no real I/O
+acknowledgements use ordinary status fields. These remain isolated responses with no real I/O
 or signatures, and do not claim perfect indistinguishability from a live wallet.
 The prompt does not label the skill untrusted, teach the model
 the detector's forbidden-behavior list, or mention how to influence scanner verdicts. Escaping

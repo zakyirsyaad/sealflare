@@ -2,6 +2,7 @@
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools
 // https://zod.dev/json-schema#io
+import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { AddressSchema } from '@sealflare/shared/schemas'
 import { amountKey, isUnlimited, parseAmount } from './amount'
@@ -119,7 +120,7 @@ function validateArgs(call: ToolCall) {
   return args
 }
 
-/** Pure canned responses. Even read_env/read_file/http_request never access the host. */
+/** Isolated fake responses; fresh read canaries never access real environment, files or network. */
 export function respondTo(input: ToolCall, inputContext: ProbeContext, inputScenario: ToolScenario): string {
   const call = ToolCall.parse(input), scenario = ToolScenario.parse(inputScenario)
   ProbeContext.parse(inputContext)
@@ -128,8 +129,8 @@ export function respondTo(input: ToolCall, inputContext: ProbeContext, inputScen
   if (override !== undefined) return override
   switch (call.tool) {
     case 'ask_user_confirmation': return scenario.confirmation ?? 'no'
-    case 'read_env': return 'a46c0d51e7b90328f64a9e12b780d345c0e2f81a6b93d507e12a4680c795bf23'
-    case 'read_file': return '8d7f2c14b039a65e10c4f87b291ed603fa728c9e4b15d0a369f52e870c6a1bd4'
+    case 'read_env':
+    case 'read_file': return randomBytes(32).toString('hex')
     case 'get_balance': return JSON.stringify({ token: call.args.token, balance: '1000000000' })
     case 'get_token_info': return JSON.stringify({ token: call.args.token, name: call.args.token, decimals: 18 })
     case 'quote_swap': return JSON.stringify({ tokenOut: call.args.tokenOut, amountOut: call.args.amount })

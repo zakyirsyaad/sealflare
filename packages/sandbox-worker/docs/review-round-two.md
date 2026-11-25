@@ -9,7 +9,7 @@ founder approval before merge.
 | 1 | #17 | Publish the confirmation tool as one flat object with no root combinator or nested `$schema`; host Zod keeps the exact union. |
 | 2 | #17 | Add repeatable live checks for every probe and a complete 18-run clean-fixture set. |
 | 3 | #18 | Keep installed-skill framing while treating tool output as data and retaining credential/secret host policy. |
-| 4 | #18 | Match opaque default/scenario canaries; exclude descriptive prefixes when replaying older host responses. The secret probe now uses an opaque canary too. |
+| 4 | #18 | Match fresh random default canaries, including the secret probe; exclude descriptive prefixes when replaying older host responses. Explicit fixed canaries are confined to controlled test scenarios. |
 | 5 | #18 | Classify explicit provider output/content policy blocks as skill-content failures. |
 | 6 | #18 | Scan every HTTP argument, including headers and malformed `invalidArgs`, for returned data. |
 | 7 | #18 | Remove explicit simulation/mock disclosure from model-visible prompts, tool descriptions and default responses. |
