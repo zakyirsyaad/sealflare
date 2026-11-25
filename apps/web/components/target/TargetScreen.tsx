@@ -81,7 +81,16 @@ export function TargetScreen(props: TargetScreenProps) {
       <StaleNotice blocksBehind={props.blocksBehind} />
       <div className="sf-target__body">
         <StatusCard detail={detail} />
-        <ActionColumn tier={detail.tier} targetType={detail.targetType} currentVersionHref={scanCurrentVersionHref(detail.src)} />
+        <ActionColumn
+          tier={detail.tier}
+          targetType={detail.targetType}
+          currentVersionHref={scanCurrentVersionHref(detail.src)}
+          targetId={detail.targetId}
+          label={detail.label}
+          scan={props.scan}
+          attestations={props.attestations}
+          underDispute={detail.activeChallengeId !== null}
+        />
       </div>
       <section className="sf-frame sf-target__tabs">
         <TargetTabs detail={detail} rows={props.attestations} scan={props.scan} evidenceFailed={props.evidenceFailed} />
