@@ -4,6 +4,8 @@ import {
   SandboxResult,
   TargetDetail,
   TargetSummary,
+  decodeSrc,
+  encodeSrc,
 } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
 import { signalOfTallies, type SignalTally } from './signal'
@@ -138,6 +140,47 @@ export function jsonColumn(value: unknown): unknown {
   }
 }
 
+/**
+ * The source of a target.
+ *
+ * A contract's source is its address, and the indexer stored it. A skill's source is the pinned
+ * GitHub reference of its cached scan, because the contract only knows the bundle hash. The
+ * column of a skill is only used when it holds a reference that decodes, so a row that was
+ * written with something else in it is answered with no source instead of breaking the list.
+ */
+export function sourceOf(
+  targetType: string,
+  columnSrc: string | null,
+  scannedSrc: string | undefined,
+): string | null {
+  if (targetType !== 'AI_SKILL_BUNDLE') return columnSrc
+  if (columnSrc && decodeSrc(columnSrc)?.kind === 'skill') return columnSrc
+  return scannedSrc ?? null
+}
+
+/**
+ * The pinned reference of every skill of a page, read from the cached scans in one query.
+ *
+ * The target ids are bound one by one, so a page cannot carry a statement of its own.
+ */
+async function scannedSourcesOf(sql: Db, targetIds: readonly string[]): Promise<Map<string, string>> {
+  const sources = new Map<string, string>()
+  if (targetIds.length === 0) return sources
+  const placeholders = targetIds.map((_, index) => `$${index + 1}`).join(', ')
+  const rows = await sql.query<{ target_id: string; report: unknown }>(
+    `SELECT target_id, report FROM scan_cache WHERE target_id IN (${placeholders})`,
+    targetIds,
+  )
+  for (const row of rows) {
+    const report = ScanReport.safeParse(jsonColumn(row.report))
+    if (!report.success) throw new Error('the stored scan report cannot be read')
+    if (report.data.source.kind === 'skill') {
+      sources.set(row.target_id, encodeSrc(report.data.source))
+    }
+  }
+  return sources
+}
+
 /** The summary of one target row, before the tier is filled. */
 export interface Summary {
   targetId: string
@@ -210,7 +253,12 @@ export async function listTargets(
      LIMIT $3 OFFSET $4`,
     [filters.type ?? null, filters.address ?? null, limit, (page - 1) * limit],
   )
-  return { items: rows.map(summaryOf), total }
+  const sources = await scannedSourcesOf(sql, rows.map((row) => row.target_id))
+  const items = rows.map((row) => ({
+    ...summaryOf(row),
+    src: sourceOf(row.target_type, row.src, sources.get(row.target_id)),
+  }))
+  return { items, total }
 }
 
 /**
@@ -258,9 +306,11 @@ export async function targetDetail(sql: Db, targetId: string): Promise<unknown |
   )
   const scan = await readScan(sql, targetId)
   const sandbox = await readSandbox(sql, row.bundle_hash)
+  const scannedSrc = scan && scan.source.kind === 'skill' ? encodeSrc(scan.source) : undefined
 
   return {
     ...summaryOf(row),
+    src: sourceOf(row.target_type, row.src, scannedSrc),
     publisher: row.publisher,
     // A skill has no codehash, and the read model asks for one. The zero hash is the empty one.
     pinnedCodehash: row.codehash ?? `0x${'0'.repeat(64)}`,
@@ -332,7 +382,7 @@ async function signalOfTarget(sql: Db, targetId: string): Promise<unknown> {
 }
 
 /** The last scan of a target, when there is one. */
-async function readScan(sql: Db, targetId: string): Promise<unknown | null> {
+async function readScan(sql: Db, targetId: string): Promise<ScanReport | null> {
   const rows = await sql.query<{ report: unknown }>('SELECT report FROM scan_cache WHERE target_id = $1', [
     targetId,
   ])
