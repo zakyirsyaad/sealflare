@@ -18,7 +18,9 @@ That stop is a `ChainMismatchError`, and the process exits with code 1 on it. Ev
 such as an RPC node that is briefly unreachable, is logged and the same range is read again after
 `POLL_INTERVAL_MS`. A fatal mismatch therefore shows up in the restart policy or the alert of
 whoever runs the indexer, and does not look like an RPC blip. The same stop happens at start-up if
-the RPC node serves another chain than `CHAIN_ID`.
+the RPC node serves another chain than `CHAIN_ID`. An event that names a row the database does not
+have is a `FatalIndexError` and stops the indexer the same way, because reading that range again
+would fail the same way.
 
 The first read of a new database starts at `START_BLOCK` and not at block 0. A cursor, once it
 exists, always wins over `START_BLOCK`.
@@ -27,7 +29,9 @@ exists, always wins over `START_BLOCK`.
 late leaves out the rows of the earlier events, and an event that names a target or a guardian the
 database has never heard of stops the indexer with a message that says so. It stops instead of
 writing the event, because a write that changes no row would leave a target looking unflagged and
-unconfirmed. Set `START_BLOCK` to the block Core was deployed in.
+unconfirmed. Set `START_BLOCK` to the block Core was deployed in. A cursor that already exists wins
+over `START_BLOCK`, so a database that has read a range keeps the cursor of that range: clear the
+cursor to read the range again with another start block.
 
 Strings that come from calldata are cleaned before they are stored. Any Agent ID holder writes the
 `evidenceURI` of an attestation and the contract does not check it, and Postgres refuses U+0000 in

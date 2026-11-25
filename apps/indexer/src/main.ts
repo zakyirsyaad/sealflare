@@ -2,6 +2,7 @@ import { createPublicClient, defineChain, http } from 'viem'
 import { createPostgresDb, migrate } from '@sealflare/internal/db'
 import { assertChainId, ChainMismatchError } from './chain'
 import { parseEnv } from './env'
+import { FatalIndexError } from './fatal'
 import { indexOnce } from './loop'
 
 const env = parseEnv(process.env)
@@ -46,8 +47,10 @@ for (;;) {
     if (result.from > result.to) await sleep(env.POLL_INTERVAL_MS)
   } catch (error) {
     // The wrong chain is not a passing problem: reading again fails the same way. Stop with a
-    // non-zero exit so the restart policy or the alert of whoever runs the indexer fires.
-    if (error instanceof ChainMismatchError) {
+    // non-zero exit so the restart policy or the alert of whoever runs the indexer fires. The same
+    // holds for an event that names a row the database does not have: that range would be read
+    // again and again and would never be written.
+    if (error instanceof ChainMismatchError || error instanceof FatalIndexError) {
       console.error(`the indexer stops: ${error.message}`)
       await close()
       process.exit(1)

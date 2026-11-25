@@ -3,6 +3,7 @@ import { weightOf } from '@sealflare/shared/rules'
 import type { Db } from '@sealflare/internal/db'
 import type { TimedEvent } from '../decode'
 import { CHALLENGE_OUTCOMES, PUBLISHER_ROLES, SCORE_REASONS, TARGET_TYPE_NAMES, VERDICT_NAMES, nameOf } from '../enums'
+import { FatalIndexError } from '../fatal'
 
 /** The address the contract stores as a bytes32. */
 function addressOf(target: Hex): Address {
@@ -165,10 +166,18 @@ async function requireAttestation(tx: Db, targetId: Hex, index: number): Promise
   if (!rows[0]?.found) throw missingRow('attestation', `${targetId} index ${index}`)
 }
 
-function missingRow(what: string, key: string): Error {
-  return new Error(
+/**
+ * The event names a row the database does not have.
+ *
+ * Reading the same range again will not fix it, so the indexer stops with this error instead of
+ * looping over the range. The message names the start block, and it says that a cursor wins over
+ * it, because a database that has already read a range keeps the cursor of that range.
+ */
+function missingRow(what: string, key: string): FatalIndexError {
+  return new FatalIndexError(
     `The Core event names the ${what} ${key}, which the database does not have. ` +
-      `START_BLOCK must be at or before the block of the first Core event.`,
+      `START_BLOCK must be at or before the block of the first Core event. ` +
+      `A cursor that already exists wins over START_BLOCK, so clear the cursor to read the range again.`,
   )
 }
 

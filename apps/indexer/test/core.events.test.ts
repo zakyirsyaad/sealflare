@@ -14,6 +14,7 @@ import {
   sponsor,
   targetAddress,
 } from './helpers'
+import { FatalIndexError } from '../src/fatal'
 import { indexOnce } from '../src/loop'
 
 const core = () => addresses().core
@@ -146,6 +147,14 @@ test('an event that names a target the database does not have stops the indexer'
   // The block that created the target is left out, so the database never learns about it.
   const sponsored = await sponsor({ from: 0, targetId })
 
+  await expect(
+    indexOnce({
+      client: chainClient(),
+      sql: db,
+      addresses: { core: core() },
+      startBlock: sponsored.blockNumber,
+    }),
+  ).rejects.toThrow(FatalIndexError)
   await expect(
     indexOnce({
       client: chainClient(),
