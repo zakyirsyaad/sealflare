@@ -30,6 +30,8 @@ export type FakeState = {
   code?: Hex
   /** The node answers that the account has no code, the way viem does for an empty account. */
   noCode?: boolean
+  /** The node answers nothing for a storage read, which is not an empty slot. */
+  noStorage?: boolean
   codeByAddress?: Record<string, Hex>
   storage?: Record<string, Hex>
   /** The votes of the target, in the order the registry keeps them. */
@@ -100,9 +102,10 @@ export function fakeChain(state: FakeState = {}): FakeChain {
       if (state.noCode) return undefined
       return state.codeByAddress?.[address] ?? state.code ?? '0x'
     },
-    async getStorageAt({ address, slot }: { address: Address; slot: Hex }): Promise<Hex> {
+    async getStorageAt({ address, slot }: { address: Address; slot: Hex }): Promise<Hex | undefined> {
       calls.push(`getStorageAt@${address}`)
       if (state.fail === 'getStorageAt') return refuse('getStorageAt')
+      if (state.noStorage) return undefined
       return state.storage?.[slot] ?? ZERO_WORD
     },
     async call({ to }: { to: Address; data: Hex }): Promise<{ data: Hex | undefined }> {

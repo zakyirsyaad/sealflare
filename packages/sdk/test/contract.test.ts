@@ -6,7 +6,7 @@ import { describe, expect, test } from 'vitest'
 import { keccak256, type Address } from 'viem'
 import { targetIdOfContract, TRUST_TIERS } from '@sealflare/shared/rules'
 import { createGuard } from '../src/index'
-import { CORE, fakeChain, IMPLEMENTATION, IMPLEMENTATION_SLOT, TARGET, wordOf } from './support'
+import { CORE, fakeChain, IMPLEMENTATION, IMPLEMENTATION_SLOT, TARGET, wordOf, ZERO_WORD } from './support'
 
 const packageDir = dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 const safeTiers = ['COMMUNITY_SAFE', 'WARRANTY_BACKED_SAFE']
@@ -100,6 +100,21 @@ describe('checkContract', () => {
     const verdict = await guard.checkContract(TARGET, baseline)
 
     expect(verdict.implementationChanged).toBe(true)
+  })
+
+  test('a node that answers nothing for a storage slot is not read as an empty slot', async () => {
+    const chain = fakeChain({ tier: TRUST_TIERS.indexOf('COMMUNITY_SAFE'), noStorage: true })
+    const guard = createGuard({ client: chain.client, core: CORE })
+
+    await expect(guard.checkContract(TARGET)).rejects.toThrow(/no storage/i)
+  })
+
+  test('a malformed baseline is refused even when the target is not a proxy', async () => {
+    const chain = fakeChain({ tier: TRUST_TIERS.indexOf('COMMUNITY_SAFE') })
+    const guard = createGuard({ client: chain.client, core: CORE })
+    const baseline = { address: 'not an address' as Address, codehash: ZERO_WORD }
+
+    await expect(guard.checkContract(TARGET, baseline)).rejects.toThrow()
   })
 
   test('a target the registry marks as a proxy is not safe', async () => {

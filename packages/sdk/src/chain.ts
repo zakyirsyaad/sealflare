@@ -174,14 +174,19 @@ export async function readSkillBundle(
   }
 }
 
-/** A storage slot that holds nothing reads as zero, the way the EVM reads it. */
-const EMPTY_SLOT: Hex = `0x${'0'.repeat(64)}`
-
 /** The scanner reads over RPC. This is the same seam, filled from the injected client. */
 export function toRpcAdapter(client: GuardClient): RpcAdapter {
   return {
+    // Only the code and the call of an address without code answer empty. A storage slot that
+    // answers nothing is a node that did not answer the question, and that is not an empty slot.
     getCode: async (address) => (await client.getCode({ address })) ?? '0x',
-    getStorageAt: async (address, slot) => (await client.getStorageAt({ address, slot })) ?? EMPTY_SLOT,
+    getStorageAt: async (address, slot) => {
+      const value = await client.getStorageAt({ address, slot })
+      if (value === undefined || value === null) {
+        throw new Error(`The node returned no storage for ${address} at ${slot}.`)
+      }
+      return value
+    },
     call: async (tx) => (await client.call({ to: tx.to, data: tx.data })).data ?? '0x',
     getBlockNumber: () => client.getBlockNumber(),
   }

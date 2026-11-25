@@ -40,6 +40,9 @@ export async function checkContract(
   baseline?: ImplementationBaseline,
 ): Promise<ContractVerdict> {
   const target = AddressSchema.parse(address)
+  // The baseline is checked at the boundary, before any read, so a malformed one is never silently
+  // ignored by an early return.
+  const known = baseline === undefined ? undefined : parseBaseline(baseline)
   const targetId = targetIdOfContract(target)
   const tier = await readTier(deps.client, deps.core, targetId)
   const view = await readTarget(deps.client, deps.core, targetId)
@@ -50,7 +53,7 @@ export async function checkContract(
   // The registry marker only lights up when someone probed the bytecode, and the standard proxy
   // slots only cover the standard proxies. The bytecode itself is the objective marker.
   const isUpgradeableProxy = proxy !== null || firewall.isUpgradeableProxy || hasDelegatecall(code)
-  const implementationChanged = changedImplementation(proxy, baseline)
+  const implementationChanged = changedImplementation(proxy, known)
   const warrantyBond = firewall.warrantyBond
   const safe = isSafeTier(tier) && !isUpgradeableProxy && implementationChanged !== true
   const reasons = contractReasons({ tier, flags, isUpgradeableProxy, implementationChanged, warrantyBond, safe })
@@ -66,7 +69,11 @@ export async function checkContract(
 function changedImplementation(proxy: ProxyInfo, baseline?: ImplementationBaseline): boolean | null {
   if (proxy === null) return null
   if (baseline === undefined) return null
-  const known = { address: AddressSchema.parse(baseline.address), codehash: Bytes32Schema.parse(baseline.codehash) }
-  if (known.address !== proxy.implementation.toLowerCase()) return true
-  return proxy.implementationCodehash.toLowerCase() !== known.codehash.toLowerCase()
+  if (baseline.address.toLowerCase() !== proxy.implementation.toLowerCase()) return true
+  return proxy.implementationCodehash.toLowerCase() !== baseline.codehash.toLowerCase()
+}
+
+/** The baseline is validated with the shared schemas, at the boundary of the call. */
+function parseBaseline(baseline: ImplementationBaseline): ImplementationBaseline {
+  return { address: AddressSchema.parse(baseline.address), codehash: Bytes32Schema.parse(baseline.codehash) }
 }
