@@ -9,8 +9,16 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 const env = parseEnv(process.env)
 const { db, close } = createPostgresDb(env.DATABASE_URL)
 
-const applied = await migrate(db)
-if (applied.length > 0) console.log(`applied migrations: ${applied.join(', ')}`)
+try {
+  const applied = await migrate(db)
+  if (applied.length > 0) console.log(`applied migrations: ${applied.join(', ')}`)
+} catch (error) {
+  // A database that cannot be migrated is not served, because the service would read a schema
+  // it does not know.
+  console.error('the internal service cannot start', error)
+  await close()
+  process.exit(1)
+}
 
 const app = createApp({
   sql: db,

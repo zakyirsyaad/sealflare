@@ -7,9 +7,12 @@ import { readJson } from './json'
 /**
  * The caller hashes the address of the caller with a daily salt, so no raw address ever
  * reaches this table and the key changes every day.
+ *
+ * The hash is one sha256 or keccak output, so the key is exactly 64 hex characters. An address
+ * is 40 hex characters, with or without the `0x`, and is therefore never a valid key.
  */
 const RateTakeRequest = z.object({
-  key: z.string().regex(/^[0-9a-fA-F]{32,128}$/, 'the key must be a hex hash of 32 to 128 characters'),
+  key: z.string().regex(/^[0-9a-fA-F]{64}$/, 'the key must be a 64 character hex hash'),
   limit: z.number().int().min(1).max(10_000),
   windowSeconds: z.number().int().min(1).max(RATE_MAX_WINDOW_SECONDS),
 })
@@ -37,11 +40,14 @@ export function rateRoutes(deps: RateRouteDeps): Hono {
     const { key, limit, windowSeconds } = parsed.data
     const nowSeconds = Math.floor(deps.now().getTime() / 1000)
     const windowStart = Math.floor(nowSeconds / windowSeconds) * windowSeconds
+    // The window length is part of the key, so two limits on the same key with a different
+    // window length do not share a count and one of them cannot refuse the requests of the
+    // other.
     const rows = await deps.sql.query<{ count: number }>(
-      `INSERT INTO rate (key, window_start, count) VALUES ($1, $2, 1)
-       ON CONFLICT (key, window_start) DO UPDATE SET count = rate.count + 1
+      `INSERT INTO rate (key, window_start, window_seconds, count) VALUES ($1, $2, $3, 1)
+       ON CONFLICT (key, window_start, window_seconds) DO UPDATE SET count = rate.count + 1
        RETURNING count`,
-      [key.toLowerCase(), windowStart],
+      [key.toLowerCase(), windowStart, windowSeconds],
     )
     const count = rows[0]?.count ?? 1
     const allowed = count <= limit

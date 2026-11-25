@@ -162,3 +162,19 @@ test('cleanup keeps a nonce that has not expired and a rate row in its window', 
   expect(rate).toHaveLength(1)
   await close()
 })
+
+test('a body that is not JSON is 400 and reserves nothing', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db, { now: () => NOW })
+
+  const response = await app.request('/nonce/use', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${'test-'.repeat(6)}` },
+    body: 'not json',
+  })
+
+  expect(response.status).toBe(400)
+  const rows = await db.query('SELECT * FROM nonces')
+  expect(rows).toHaveLength(0)
+  await close()
+})

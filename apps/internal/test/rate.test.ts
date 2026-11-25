@@ -116,3 +116,51 @@ test('of many requests at once, exactly one passes the limit', async () => {
   expect(rows[0]?.count).toBe(1)
   await close()
 })
+
+test('the key must be a 64 character hash, so a raw address never reaches the table', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db, { now: () => NOW })
+
+  const response = await post(app, '/rate/take', {
+    key: ADDRESS.slice(2),
+    limit: 1,
+    windowSeconds: 60,
+  })
+
+  expect(response.status).toBe(400)
+  const rows = await db.query('SELECT * FROM rate')
+  expect(rows).toHaveLength(0)
+  await close()
+})
+
+test('a key that is not 64 hex characters is refused', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db, { now: () => NOW })
+
+  const response = await post(app, '/rate/take', { key: 'b'.repeat(32), limit: 1, windowSeconds: 60 })
+
+  expect(response.status).toBe(400)
+  const rows = await db.query('SELECT * FROM rate')
+  expect(rows).toHaveLength(0)
+  await close()
+})
+
+test('two limits on the same key with a different window have their own count', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db, { now: () => NOW })
+
+  // Both windows start at the same second, so the two rows would share a counter without the
+  // window length in the key.
+  const short = await post(app, '/rate/take', { key: KEY, limit: 1, windowSeconds: 600 })
+  expect((await body<RateAnswer>(short)).data.allowed).toBe(true)
+
+  const blocked = await post(app, '/rate/take', { key: KEY, limit: 1, windowSeconds: 600 })
+  expect((await body<RateAnswer>(blocked)).data.allowed).toBe(false)
+
+  const other = await post(app, '/rate/take', { key: KEY, limit: 1, windowSeconds: 3600 })
+  expect((await body<RateAnswer>(other)).data.allowed).toBe(true)
+
+  const rows = await db.query<{ window_seconds: number }>('SELECT window_seconds FROM rate ORDER BY window_seconds')
+  expect(rows.map((row) => row.window_seconds)).toEqual([600, 3600])
+  await close()
+})

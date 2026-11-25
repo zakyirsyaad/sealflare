@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import postgres from 'postgres'
 
@@ -19,12 +20,17 @@ const MIGRATIONS_DIR = new URL('../migrations/', import.meta.url)
 interface MigrationFile {
   name: string
   sql: string
+  /** The hash of the file, so a file that changed after it ran is caught. */
+  sha256: string
 }
 
 async function readMigrationFiles(): Promise<MigrationFile[]> {
   const names = (await readdir(MIGRATIONS_DIR)).filter((name) => name.endsWith('.sql')).sort()
   return Promise.all(
-    names.map(async (name) => ({ name, sql: await readFile(new URL(name, MIGRATIONS_DIR), 'utf8') })),
+    names.map(async (name) => {
+      const sql = await readFile(new URL(name, MIGRATIONS_DIR), 'utf8')
+      return { name, sql, sha256: createHash('sha256').update(sql).digest('hex') }
+    }),
   )
 }
 
@@ -34,9 +40,21 @@ async function readMigrationFiles(): Promise<MigrationFile[]> {
  */
 const MIGRATION_LOCK = [1296387401, 1094861636] as const
 
-/** The table that records which migrations have run. It is created under the lock. */
-const CREATE_MIGRATION_TABLE =
-  'CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
+/**
+ * The table that records which migrations have run. It is created under the lock.
+ *
+ * The hash of the file is kept next to the name, so a file that is edited after it ran is caught
+ * instead of being skipped. A database from an older build has no hash yet, so the column is
+ * added when it is missing.
+ */
+const CREATE_MIGRATION_TABLE = `
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    name text PRIMARY KEY,
+    sha256 text,
+    applied_at timestamptz NOT NULL DEFAULT now()
+  );
+  ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS sha256 text;
+`
 
 /**
  * Runs every migration that has not run yet and returns their names. Running it again does
@@ -58,15 +76,34 @@ export async function migrate(db: Db): Promise<string[]> {
  * the same time. The bookkeeping table is created inside the lock as well: `CREATE TABLE IF NOT
  * EXISTS` is not safe against another process creating the same table at the same moment, and
  * the first start of a new database is exactly that moment.
+ *
+ * A migration that ran before is not run again, but its file is compared with the hash that was
+ * recorded. A file that changed after it ran means two builds disagree about the schema, so the
+ * service refuses to start instead of drifting.
  */
 async function migrateOne(db: Db, file: MigrationFile): Promise<boolean> {
   return db.transaction(async (tx) => {
     await tx.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [...MIGRATION_LOCK])
     await tx.exec(CREATE_MIGRATION_TABLE)
-    const applied = await tx.query<{ name: string }>('SELECT name FROM schema_migrations WHERE name = $1', [file.name])
-    if (applied.length > 0) return false
+    const applied = await tx.query<{ name: string; sha256: string | null }>(
+      'SELECT name, sha256 FROM schema_migrations WHERE name = $1',
+      [file.name],
+    )
+    const record = applied[0]
+    if (record) {
+      if (record.sha256 === null) {
+        // A database from a build that did not keep hashes. The hash is filled in, because the
+        // old content cannot be recovered, and the check starts with the next run.
+        await tx.query('UPDATE schema_migrations SET sha256 = $1 WHERE name = $2', [file.sha256, file.name])
+      } else if (record.sha256 !== file.sha256) {
+        throw new Error(
+          `the migration ${file.name} changed after it ran; the database was built from another version of it`,
+        )
+      }
+      return false
+    }
     await tx.exec(file.sql)
-    await tx.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file.name])
+    await tx.query('INSERT INTO schema_migrations (name, sha256) VALUES ($1, $2)', [file.name, file.sha256])
     return true
   })
 }

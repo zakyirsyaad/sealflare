@@ -39,10 +39,13 @@ export function scanRoutes(deps: ScanRouteDeps): Hono {
       return c.json(fail('BAD_REQUEST', 'The scan report belongs to another target.'), 400)
     }
 
+    // A scan that started earlier can arrive later than a newer one, so the row is only
+    // replaced by a report that is at least as new as the one that is stored.
     await deps.sql.query(
       `INSERT INTO scan_cache (target_id, src, report, scanned_at) VALUES ($1, $2, $3, $4)
        ON CONFLICT (target_id) DO UPDATE
-         SET src = EXCLUDED.src, report = EXCLUDED.report, scanned_at = EXCLUDED.scanned_at`,
+         SET src = EXCLUDED.src, report = EXCLUDED.report, scanned_at = EXCLUDED.scanned_at
+       WHERE scan_cache.scanned_at <= EXCLUDED.scanned_at`,
       [params.data.targetId, encodeSrc(report.data.source), JSON.stringify(report.data), report.data.scannedAt],
     )
     return c.json(ok(report.data))

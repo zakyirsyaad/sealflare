@@ -114,3 +114,17 @@ test('a target id that is not 32 bytes is 400', async () => {
   expect(response.status).toBe(400)
   await close()
 })
+
+test('an older scan does not replace a newer one', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+
+  await put(app, `/scans/${TARGET_ID}`, { ...REPORT, scannedAt: '2026-11-25T12:00:00.000Z' })
+  await put(app, `/scans/${TARGET_ID}`, { ...REPORT, scannedAt: '2026-11-25T10:00:00.000Z' })
+
+  const response = await get(app, `/scans/${TARGET_ID}`)
+  expect((await body<ScanAnswer>(response)).data.scannedAt).toBe('2026-11-25T12:00:00.000Z')
+  const rows = await db.query<{ count: number }>('SELECT count(*)::int AS count FROM scan_cache')
+  expect(rows[0]?.count).toBe(1)
+  await close()
+})

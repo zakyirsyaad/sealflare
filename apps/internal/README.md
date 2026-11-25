@@ -38,8 +38,11 @@ line. Generate one with `openssl rand -base64 48`.
 
 Every answer has the same shape: `{ success: true, data }` or `{ success: false, error }`.
 
-The rate window is at most one hour, and the caller hashes the address of the caller with a
-daily salt, so no raw address reaches the `rate` table.
+The rate window is at most one hour. The caller hashes the address of the caller with a daily
+salt, and the key is exactly 64 hex characters (one SHA-256 or keccak output). An address is 40
+hex characters, so a raw address is refused and never reaches the `rate` table. The length of
+the window is part of the row key, so two limits on the same key with a different window do
+not share a count.
 
 ## How a signed request uses a nonce
 
@@ -66,7 +69,14 @@ direction: a request happens at most once, not at least once.
 ## Migrations
 
 `migrations/` holds numbered SQL files. The service runs them on start and records them in
-`schema_migrations`, so running it again does nothing. The indexer calls the same runner.
+`schema_migrations` together with the SHA-256 of each file, so running it again does nothing.
+The indexer calls the same runner.
+
+A file that was edited after it ran is not skipped: the runner compares the file with the
+recorded hash and refuses to start on a mismatch, because the database was built from another
+version of it. Never edit a migration that has run. Add a new numbered file instead, as
+`003_guards.sql` does. A database from a build that kept no hashes gets them filled in on its
+next start.
 
 A migration and its record go into one transaction, so a migration that fails leaves the
 database exactly as it was and runs again on the next start. The service and the indexer both
@@ -78,8 +88,8 @@ the same table at the same moment.
 ## Housekeeping
 
 Every five minutes the service removes the expired nonces and the rate rows whose window has
-passed. A rate row carries no window length of its own, because the caller decides it, so a row
-is kept for the longest window the service allows.
+passed. A row is kept for the longest window the service allows, which is safe for every
+window length the caller can choose.
 
 ## Tests
 
