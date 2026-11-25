@@ -91,12 +91,21 @@ describe('the scan API', () => {
 
   test('an unexpected throw is INTERNAL with no stack trace or secret in the body', async () => {
     scanContract.mockRejectedValue(new Error('RPC_URLS=https://secret.example/key'))
-    const response = await postContract(request({ address: ADDRESS }))
-    expect(response.status).toBe(500)
-    const text = JSON.stringify(await response.json())
-    expect(text).not.toContain('secret.example')
-    expect(text).not.toContain('stack')
-    expect(JSON.parse(text).error.code).toBe('INTERNAL')
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const response = await postContract(request({ address: ADDRESS }))
+      expect(response.status).toBe(500)
+      const text = JSON.stringify(await response.json())
+      expect(text).not.toContain('secret.example')
+      expect(text).not.toContain('stack')
+      expect(JSON.parse(text).error.code).toBe('INTERNAL')
+      // The log names the kind of the failure and not its message, because the message of an error
+      // from elsewhere may name an endpoint or a key.
+      expect(String(logged.mock.calls[0]?.[1])).toBe('Error')
+      expect(String(logged.mock.calls[0]?.[1])).not.toContain('secret.example')
+    } finally {
+      logged.mockRestore()
+    }
   })
 
   test('a skill scan asks the scanner for the repository the link names', async () => {

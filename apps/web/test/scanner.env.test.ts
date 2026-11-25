@@ -45,17 +45,17 @@ describe('choosing the scanner', () => {
   })
 
   test('SCANNER=real needs the full server environment and builds the real adapters from it', async () => {
-    process.env.SCANNER = 'mock'
-    const mockEnvironment = (await load())()
-    process.env.SCANNER = 'real'
-    const realEnvironment = (await load())()
-    // The real adapters are not the mock ones: a regression that built the mock under SCANNER=real
-    // would answer from the fixtures and pass every other assertion in this file.
-    expect(realEnvironment.scanner).not.toBe(mockEnvironment.scanner)
-    expect(realEnvironment.rpc.getCode).not.toBe(mockEnvironment.rpc.getCode)
+    // The mock does not read the server environment, so the same environment builds under the
+    // mock and refuses to build under the real scanner. A regression that built the mock under
+    // SCANNER=real would answer from the fixtures and pass every other assertion in this file.
     delete process.env.GITHUB_TOKEN
-    const again = await load()
-    expect(() => again()).toThrow('GITHUB_TOKEN')
+    process.env.SCANNER = 'mock'
+    const mockEnvironment = await load()
+    expect(() => mockEnvironment()).not.toThrow()
+
+    process.env.SCANNER = 'real'
+    const realEnvironment = await load()
+    expect(() => realEnvironment()).toThrow('GITHUB_TOKEN')
   })
 
   test('a failed attempt is not cached: fixing the variable fixes the next call', async () => {
