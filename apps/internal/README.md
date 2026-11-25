@@ -47,15 +47,17 @@ indexer has read, and a list carries `meta.page` as well. The tier of a target i
 them: the tier is read from `Core.tierOf` and never computed from the indexed rows, so the
 internal answers carry `tier: null` and the public API fills it.
 
+Every answer is read in one snapshot, so the rows and the block they were read at cannot come
+from two different moments. The number of rows a list holds is counted on its own, so a page
+past the end of the list still names the real total.
+
 The signal of a target is split in the two rows the interface shows: the new Agent ID holders,
 who vote with weight 1, and the experienced Guardians, who vote with weight 2 or more. Every
 group shows the votes per verdict, the total weight and the flags that were reported. The
 signal is never one number.
 
-The candidate list reads the candidates and the cursor in one snapshot, so the answer cannot
-show a target that is not there any more while it names the block it was read at. It holds at
-most 500 candidates. More than that is 503 `INTERNAL`, and the caller has to narrow the
-filters.
+The candidate list holds at most 500 candidates. More than that is 503 `INTERNAL`, and the
+caller has to narrow the filters.
 
 The rate window is at most one hour. The caller hashes the address of the caller with a daily
 salt, and the key is exactly 64 hex characters (one SHA-256 or keccak output). An address is 40

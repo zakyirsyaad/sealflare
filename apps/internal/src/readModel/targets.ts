@@ -91,7 +91,12 @@ const TARGET_COLUMNS = `t.target_id, t.target_type, t.label, t.src, t.codehash, 
 /** The newest vote first, and the target id to break a tie. Every list route uses this order. */
 const ORDER = 'ORDER BY t.last_vote_at DESC NULLS LAST, t.target_id ASC'
 
-/** The same filters for every list route: the target type, and an address that attested. */
+/**
+ * The same filters for every list route: the target type, and an address that attested.
+ *
+ * The guardian of a vote is stored the way the chain handed it over, in lower case, so the
+ * address filter is compared in lower case as well.
+ */
 const FILTERS = `WHERE ($1::text IS NULL OR t.target_type = $1)
   AND ($2::text IS NULL OR EXISTS (
     SELECT 1 FROM attestations a WHERE a.target_id = t.target_id AND a.guardian = $2))`
@@ -165,7 +170,27 @@ export function summaryOf(row: TargetRow): Summary {
   }
 }
 
-/** The last final block the indexer has read. */
+/**
+ * Runs the reads of one answer in one snapshot.
+ *
+ * Postgres gives every statement in a transaction its own snapshot by default, so the rows and
+ * the block they were read at could come from two different moments. The isolation level is
+ * raised before the first read, and then every read of the answer sees the same database.
+ */
+export async function snapshot<T>(sql: Db, work: (tx: Db) => Promise<T>): Promise<T> {
+  return sql.transaction(async (tx) => {
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+    return work(tx)
+  })
+}
+
+/**
+ * The last final block the indexer has read.
+ *
+ * There is one cursor row per indexed contract. Today only the Core contract is indexed, so the
+ * highest block is the Core block. When the court and the vault are indexed as well, this has to
+ * name the cursor of the Core contract, because the rows of this read model come from there.
+ */
 export async function finalizedBlock(sql: Db): Promise<string> {
   const rows = await sql.query<{ last_block: unknown }>('SELECT max(last_block) AS last_block FROM cursor')
   const block = rows[0]?.last_block
@@ -179,13 +204,27 @@ export async function listTargets(
   page: number,
   limit: number,
 ): Promise<{ items: Summary[]; total: number }> {
-  const rows = await sql.query<TargetRow & { total: unknown }>(
-    `SELECT ${TARGET_COLUMNS}, COUNT(*) OVER () AS total FROM targets t ${FILTERS} ${ORDER}
+  const total = await countTargets(sql, filters)
+  const rows = await sql.query<TargetRow>(
+    `SELECT ${TARGET_COLUMNS} FROM targets t ${FILTERS} ${ORDER}
      LIMIT $3 OFFSET $4`,
     [filters.type ?? null, filters.address ?? null, limit, (page - 1) * limit],
   )
-  const total = rows.length === 0 ? 0 : Number(decimalString(rows[0]?.total))
   return { items: rows.map(summaryOf), total }
+}
+
+/**
+ * How many targets the filters match.
+ *
+ * The count is read on its own, so a page past the end of the list still names the real total
+ * instead of an empty one.
+ */
+async function countTargets(sql: Db, filters: TargetFilters): Promise<number> {
+  const rows = await sql.query<{ total: unknown }>(
+    `SELECT count(*)::int AS total FROM targets t ${FILTERS}`,
+    [filters.type ?? null, filters.address ?? null],
+  )
+  return Number(decimalString(rows[0]?.total ?? 0))
 }
 
 /**
@@ -212,7 +251,7 @@ export async function targetDetail(sql: Db, targetId: string): Promise<unknown |
   const row = rows[0]
   if (!row) return null
 
-  const signal = await signalOf(sql, targetId)
+  const signal = await signalOfTarget(sql, targetId)
   const count = await sql.query<{ count: number }>(
     'SELECT count(*)::int AS count FROM attestations WHERE target_id = $1',
     [targetId],
@@ -242,15 +281,14 @@ export async function listAttestations(
   page: number,
   limit: number,
 ): Promise<{ items: unknown[]; total: number }> {
-  const rows = await sql.query<AttestationDbRow & { total: unknown }>(
+  const total = await countAttestations(sql, targetId)
+  const rows = await sql.query<AttestationDbRow>(
     `SELECT tx_hash, guardian, verdict, flags, weight, attestation_index, safe_ordinal, short_proof,
-       evidence_uri, cast_during_dispute, settled, at,
-       COUNT(*) OVER () AS total
+       evidence_uri, cast_during_dispute, settled, at
      FROM attestations WHERE target_id = $1
      ORDER BY attestation_index ASC, tx_hash ASC LIMIT $2 OFFSET $3`,
     [targetId, limit, (page - 1) * limit],
   )
-  const total = rows.length === 0 ? 0 : Number(decimalString(rows[0]?.total))
   const items = rows.map((row) => ({
     index: row.attestation_index,
     guardian: row.guardian,
@@ -268,13 +306,22 @@ export async function listAttestations(
   return { items, total }
 }
 
+/** How many votes a target has. It is read on its own, so an empty page still names the total. */
+async function countAttestations(sql: Db, targetId: string): Promise<number> {
+  const rows = await sql.query<{ total: unknown }>(
+    'SELECT count(*)::int AS total FROM attestations WHERE target_id = $1',
+    [targetId],
+  )
+  return Number(decimalString(rows[0]?.total ?? 0))
+}
+
 /**
  * The signal of a target, from the votes the indexer stored.
  *
  * The votes are grouped in the database, so a target with many votes does not turn into many
  * rows in the answer.
  */
-async function signalOf(sql: Db, targetId: string): Promise<unknown> {
+async function signalOfTarget(sql: Db, targetId: string): Promise<unknown> {
   const rows = await sql.query<SignalTally>(
     `SELECT verdict, weight, count(*)::int AS votes, sum(weight)::int AS "totalWeight",
        bit_or(flags)::int AS flags
@@ -299,8 +346,12 @@ async function readScan(sql: Db, targetId: string): Promise<unknown | null> {
 /**
  * The last sandbox result of a skill.
  *
- * A failed result is kept forever, so a failure is never hidden by a clean result that came
- * later. The failure comes first, and only then the newest result.
+ * A failed result is kept forever, so a fuzz failure is never hidden by a clean result that came
+ * later. The failure comes first, and only then the newest result. A result that is still
+ * `INCOMPLETE` is not a clean result, so the newest result of all is shown in that case.
+ *
+ * The cache holds one result per probe set version and per model. The newest of them is shown,
+ * because the internal service does not know which probe set is the current one.
  */
 async function readSandbox(sql: Db, bundleHash: string | null): Promise<unknown | null> {
   if (!bundleHash) return null
