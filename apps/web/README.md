@@ -211,7 +211,7 @@ on `chain:real`.
 
 ### Verified result
 
-- TDD: the four new suites failed on missing modules first. All 117 web tests pass; typecheck and
+- TDD: the four new suites failed on missing modules first. All 136 web tests pass; typecheck and
   the production build pass; Chromium e2e passes 3 tests at 375 and 1280 px.
 - An independent review found no critical issues and five important ones, each reproduced before
   fixing: the connect prompt reappeared after connect and disconnect, the prompt promised a QR code
@@ -219,6 +219,17 @@ on `chain:real`.
   while unknown, the translator could throw, and the menu lost focus. `wallet.integration.test.tsx`
   uses a real `WagmiProvider` with wagmi's `mock` connector because the mocked suite could not
   see the first of these.
+- The founder's review of this PR found one important issue: in Safari and Firefox on macOS a mouse
+  click does not focus a button, so the wallet menu's `onBlur` closed it before a click on
+  Disconnect, Publish or My activity landed. The `onBlur` close is gone. The document `pointerdown`
+  listener closes the menu on an outside click, Tab closes it and moves focus on, and Escape closes
+  it and returns focus to the button. Two tests dispatch a focus-out with a null `relatedTarget` to
+  reproduce the browser behavior; both failed against the old handler. Also from that review: the
+  switch button names the expected chain (`lib/chain/chains.ts`) and reports a failed switch, a
+  wallet on the wrong network can still disconnect, the menu is reset when the user state changes,
+  the generic `injected` connector reads "Browser wallet" and is hidden when a discovered wallet is
+  listed, connections start on the expected chain, and the `InCooldown` sentence no longer blames an
+  expired challenge.
 - Against `chain:real`, the app's ABI reads returned the expected holders and quota as `number`, and
   two real reverts translated to the right sentences.
 - Not tested: a real wallet connection, because no browser wallet or WalletConnect project ID is

@@ -87,6 +87,12 @@ test('WrongPhase names the current phase and InCooldown the end of the cooldown'
   expect(translateContractError(revert(courtAbi as Abi, 'InCooldown', [endsAt]))?.message).toContain('2026-12-03 12:30 UTC')
 })
 
+test('InCooldown does not blame an expired challenge or lock the target for everyone', () => {
+  const endsAt = BigInt(Date.UTC(2026, 11, 3, 12, 30) / 1000)
+  expect(translateContractError(revert(courtAbi as Abi, 'InCooldown', [endsAt]))?.message)
+    .toBe('You challenged this target recently. You can challenge it again after 2026-12-03 12:30 UTC.')
+})
+
 test('WithdrawalNotReady states when the withdrawal becomes available', () => {
   const at = BigInt(Date.UTC(2026, 11, 8, 9, 5) / 1000)
   expect(translateContractError(revert(vaultAbi as Abi, 'WithdrawalNotReady', [at]))?.message).toContain('2026-12-08 09:05 UTC')
