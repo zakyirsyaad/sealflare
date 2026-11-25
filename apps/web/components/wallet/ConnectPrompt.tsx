@@ -2,10 +2,12 @@
 import { useConnect, useConnectors, type Connector } from 'wagmi'
 import { Button } from '../ui/Button'
 import { Panel } from '../ui/Panel'
-import { expectedChainId } from '../../lib/chain/config'
 import { translateContractError } from '../../lib/chain/errors'
 import { copy } from '../../lib/copy'
 
+// The connection never asks the wallet to switch chains. A switch asked inside connect() turns a
+// refused network change into a rejected connection, and the visitor never reaches the screen
+// that explains the wrong network. The app shows that screen itself, with its own switch button.
 const genericId = 'injected'
 const walletConnectId = 'walletConnect'
 
@@ -30,7 +32,7 @@ export function ConnectPrompt({ onClose }: { onClose: () => void }) {
     <p className="sf-lead">{copy.wallet.connectIntro}</p>
     <ul className="sf-connectors">
       {visibleConnectors(connectors).map(connector => <li key={connector.uid}>
-        <Button className="sf-btn--block" disabled={isPending} onClick={() => mutate({ connector, chainId: expectedChainId }, { onSuccess: onClose })}>{label(connector)}</Button>
+        <Button className="sf-btn--block" disabled={isPending} onClick={() => mutate({ connector }, { onSuccess: onClose })}>{label(connector)}</Button>
       </li>)}
     </ul>
     {failed && <p role="alert" className="sf-lead">{copy.wallet.connectFailed}</p>}
