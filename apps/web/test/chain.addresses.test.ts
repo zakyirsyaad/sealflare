@@ -29,9 +29,17 @@ test('a file that omits court and vault means the modules are not deployed', () 
   expect(result.vault).toBeNull()
 })
 
+test('chain 97 reads the BNB testnet file, which the founder deploys before mainnet', () => {
+  const result = addresses(97, { bscTestnet: file({ chainId: 97, agentId, core }) })
+  expect(result.core).toBe(core)
+  expect(result.court).toBeNull()
+  expect(() => addresses(97, { bsc: file({ chainId: 56, agentId, core }) })).toThrow(/97.*addresses\.bsc-testnet\.json/)
+})
+
 test('a missing file names the chain and how to produce it', () => {
   expect(() => addresses(31337, {})).toThrow(/31337.*pnpm chain/)
   expect(() => addresses(56, {})).toThrow(/56.*addresses\.bsc\.json/)
+  expect(() => addresses(97, {})).toThrow(/97.*addresses\.bsc-testnet\.json/)
 })
 
 test('a malformed address or malformed JSON is rejected with the chain id', () => {
