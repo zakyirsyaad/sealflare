@@ -284,11 +284,13 @@ git commit -m "feat: add wallet connection, the four user states and contract er
 **Interfaces:**
 - Produces:
   - Tabel indexer: `cursor(id, last_block, last_block_hash)`, `events(tx_hash, log_index, block_number, block_hash, contract, name, args jsonb, PRIMARY KEY (tx_hash, log_index))`, `targets`, `attestations`, `guardians`, `challenges`, `jurors`, `bonds`, `bounties`, `balances`, `score_changes`
-  - Tabel operasional: `scan_cache(target_id PRIMARY KEY, src, report jsonb, scanned_at)`, `rate(key, window_start, count, PRIMARY KEY (key, window_start))`, `nonces(address, nonce, expires_at, PRIMARY KEY (address, nonce))`, `sandbox_runs`, `sandbox_cache`, `sandbox_quota`
+  - Tabel operasional: `scan_cache(target_id PRIMARY KEY, src, report jsonb, scanned_at)`, `rate(key, window_start, count, PRIMARY KEY (key, window_start))`, `nonces(address, nonce, expires_at, state, PRIMARY KEY (address, nonce))` (`state` = `reserved` lalu `spent`), `sandbox_runs`, `sandbox_cache`, `sandbox_quota`
   - `migrate(sql): Promise<string[]>` (nama migrasi yang baru dijalankan; aman dijalankan ulang)
   - `createApp(deps: { sql; env; now?: () => Date }): Hono` dengan *middleware* kunci antarlayanan
-  - `POST /rate/take { key, limit, windowSeconds }` → `{ allowed: boolean; retryAfterSeconds: number }`
-  - `POST /nonce/use { address, nonce, expiry }` → `{ fresh: boolean }`
+  - `POST /rate/take { key, limit, windowSeconds }` → `{ allowed: boolean; retryAfterSeconds: number }` (jendela paling lama 3600 detik, supaya baris laju tidak pernah lebih lama dari yang dibersihkan)
+  - `POST /nonce/use { address, nonce, expiry }` → `{ fresh: boolean }` (reservasi)
+  - `POST /nonce/commit { address, nonce }` → `{ committed: boolean }` (nonce jadi terpakai)
+  - `POST /nonce/release { address, nonce }` → `{ released: boolean }` (kembalikan reservasi yang gagal; nonce yang sudah `spent` tidak pernah dikembalikan)
   - `PUT /scans/:targetId`, `GET /scans/:targetId`
 
 - [ ] **Step 1: Tulis tes yang gagal (PGlite)**
@@ -302,6 +304,7 @@ test('rate/take allows up to the limit in a window and then reports when to retr
 test('a new window starts fresh', async () => {})
 test('nonce/use is true once and false on replay', async () => {})
 test('nonce/use refuses an expiry in the past or more than 10 minutes ahead', async () => {})
+test('a spent nonce is never given back, so a replay of a finished request is refused', async () => {})
 test('expired nonces and old rate rows are deleted by cleanup', async () => {})
 test('a stored scan is returned unchanged and passes ScanReport', async () => {})
 test('storing a body that fails ScanReport is 400 and stores nothing', async () => {})
@@ -438,7 +441,7 @@ git commit -m "feat: add target and attestation read routes with the signal brea
 
 Batas laju (A3): scan 20 per 10 menit per kunci IP; bukti 30 per jam per alamat.
 
-Alur `POST /api/evidence`: validasi `EvidenceRequest`; hitung `evidenceHashOf(utf8(reportJson))`; pulihkan penanda tangan dari `EvidenceUpload(evidenceHash, nonce, expiry)` dan cocokkan dengan `address`; `report.author` harus sama dengan `address`; `Core.isAgentIdHolder(address)`; `nonce/use`; unggah byte `reportJson` persis ke Pinata; jawab `{ evidenceURI, evidenceHash }`.
+Alur `POST /api/evidence`: validasi `EvidenceRequest`; hitung `evidenceHashOf(utf8(reportJson))`; pulihkan penanda tangan dari `EvidenceUpload(evidenceHash, nonce, expiry)` dan cocokkan dengan `address`; `report.author` harus sama dengan `address`; `Core.isAgentIdHolder(address)`; `nonce/use` (reservasi); unggah byte `reportJson` persis ke Pinata; `nonce/commit` (nonce jadi terpakai); jawab `{ evidenceURI, evidenceHash }`. Bila unggah gagal, panggil `nonce/release` supaya permintaan bisa ditandatangani lagi; bila hasilnya tidak diketahui, jangan lepaskan reservasinya.
 
 Untuk `GET /api/targets`, validasi query memakai `ListQuery`. Tanpa filter tier, pakai halaman
 internal yang diminta dan isi tier untuk baris di halaman itu. Dengan filter tier, ambil
@@ -469,6 +472,7 @@ test.each([['a signature by another address', 'SIGNATURE_INVALID'], ['an expired
   ['an author different from the signer', 'SIGNATURE_INVALID'], ['a report above the size limit', 'BAD_REQUEST']])(
   '%s is refused with %s and nothing is pinned', async () => {})
 test('a Pinata failure is UPLOAD_FAILED and the nonce is not consumed', async () => {})
+test('a successful upload commits the nonce, so a replay is refused', async () => {})
 // targets
 test('the list fills tier from Core.tierOf, not from the indexer', async () => {})
 test('a matching target beyond the first candidate page appears in the first filtered page', async () => {})
@@ -732,7 +736,7 @@ git commit -m "feat: index Court and Vault events and add the remaining read rou
 - Consumes: `WorkerRunRequest`, `WorkerRunResponse`, `WorkerRunStatus`, `SandboxRunCreateRequest`, `API_EIP712`, `CONSTANTS.SANDBOX_DAILY_RUNS`
 - Produces: `enqueue(request)`, `takeQuota(address, now)`, `refundQuota(runId)`, `cacheGet(bundleHash, probeSetVersion, modelId)`, `cachePut(result)`, `pollOnce()`
 
-Aturan (arsitektur 5.2 dan 5.5): kuota dipotong saat masuk antrean; dikembalikan hanya bila `failure.cause === 'infrastructure'`; hasil `SANDBOX_FUZZ_FAILED` di cache selamanya; hasil `NO_VIOLATION_OBSERVED` hanya cocok untuk `probeSetVersion` dan `modelId` yang sama; layanan internal memverifikasi ulang tanda tangan dan Agent ID sendiri; setiap pelanggaran di jawaban `GET /runs/:id` worker disimpan saat itu juga.
+Aturan (arsitektur 5.2 dan 5.5): kuota dipotong saat masuk antrean; dikembalikan hanya bila `failure.cause === 'infrastructure'`; reservasi nonce dipesan lewat `nonce/use` dan jadi `spent` lewat `nonce/commit` setelah antrean menerima, dan dilepas dengan `nonce/release` hanya bila permintaan ditolak sebelum masuk antrean; hasil `SANDBOX_FUZZ_FAILED` di cache selamanya; hasil `NO_VIOLATION_OBSERVED` hanya cocok untuk `probeSetVersion` dan `modelId` yang sama; layanan internal memverifikasi ulang tanda tangan dan Agent ID sendiri; setiap pelanggaran di jawaban `GET /runs/:id` worker disimpan saat itu juga.
 
 - [ ] **Step 1: Tulis tes yang gagal**
 
@@ -1126,6 +1130,8 @@ git commit -m "test: add end-to-end dispute, publish and narrow-screen checks"
 
 - **Tautan resmi mendapatkan Agent ID** (`NEXT_PUBLIC_AGENT_ID_URL`). Tanpa itu, panel "Get an Agent ID" menunjuk ke tempat kosong.
 - **Variabel lingkungan dan akun** yang dipegang founder: Project ID WalletConnect, kunci RPC, kunci BscScan, token GitHub, JWT Pinata, URL dan kunci layanan internal.
+- **Nonce punya dua keadaan, bukan satu.** Task 4 awalnya meminta satu rute `POST /nonce/use` yang langsung memakai nonce. Itu membuat tes Task 7 "a Pinata failure is UPLOAD_FAILED and the nonce is not consumed" mustahil: nonce sudah terpakai sebelum unggah berjalan. Nonce sekarang punya keadaan `reserved` lalu `spent`: `nonce/use` memesan, `nonce/commit` memakai, dan `nonce/release` mengembalikan reservasi yang gagal, sedangkan nonce yang sudah `spent` tidak pernah dikembalikan. Jadi penolakan pemutaran ulang tetap ditegakkan di layanan internal, bukan hanya di Vercel. Yang terdampak: Task 7 dan Task 13 harus memanggil `nonce/commit` setelah pekerjaannya selesai, dan `nonce/release` hanya ketika pekerjaannya jelas gagal.
+- **Layanan internal menjawab dengan amplop.** Task 4 menulis `POST /rate/take` → `{ allowed, retryAfterSeconds }` dan `POST /nonce/use` → `{ fresh }`. Yang ditulis di `apps/internal` adalah muatan itu di dalam `data`, jadi `{ success: true, data }` dan `{ success: false, error }`, sesuai batasan global bahwa setiap jawaban memakai satu amplop dan Task 6 butuh skema baca bersama di batas internal juga. Bentuknya sama, tetapi kode galatnya milik layanan internal sendiri: `UNAUTHORIZED` dan `RESULT_NOT_CACHED` bukan bagian dari `COMMON_ERROR_CODES` yang beku di `shared/schemas/api.ts`.
 
 Bila pelaksanaan menemukan perjanjian beku lain tidak cukup, catat di sini: apa yang kurang, kenapa tidak bisa diselesaikan di dalam jalur ini, dan siapa yang terdampak.
 
