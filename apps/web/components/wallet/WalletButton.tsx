@@ -29,8 +29,12 @@ export function WalletButton({ pendingCount = 0 }: { pendingCount?: number }) {
     return () => document.removeEventListener('pointerdown', close)
   }, [menu])
   useEffect(() => {
-    setMenu(false)
     if (state.kind !== 'no-wallet') setPrompt(false)
+  }, [state.kind])
+  // The menu only closes when the wallet itself goes away or lands on the wrong network. A change
+  // between the checking states must not close a menu the visitor opened.
+  useEffect(() => {
+    if (state.kind === 'wrong-network' || state.kind === 'no-wallet') setMenu(false)
   }, [state.kind])
 
   if (state.kind === 'wrong-network') {
