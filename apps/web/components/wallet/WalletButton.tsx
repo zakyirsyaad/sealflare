@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { useDisconnect } from 'wagmi'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { ConnectPrompt } from './ConnectPrompt'
@@ -13,6 +14,7 @@ const pendingLabel = (count: number) => (count === 1 ? copy.wallet.pendingOne : 
 
 export function WalletButton({ pendingCount = 0 }: { pendingCount?: number }) {
   const state = useUserState()
+  const { mutate: disconnect } = useDisconnect()
   const [prompt, setPrompt] = useState(false)
   const [menu, setMenu] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -26,9 +28,17 @@ export function WalletButton({ pendingCount = 0 }: { pendingCount?: number }) {
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
   }, [menu])
-  useEffect(() => { if (state.kind !== 'no-wallet') setPrompt(false) }, [state.kind])
+  useEffect(() => {
+    setMenu(false)
+    if (state.kind !== 'no-wallet') setPrompt(false)
+  }, [state.kind])
 
-  if (state.kind === 'wrong-network') return <WrongNetwork />
+  if (state.kind === 'wrong-network') {
+    return <>
+      <WrongNetwork />
+      <Button variant="ghost" onClick={() => disconnect()}>{copy.nav.disconnect}</Button>
+    </>
+  }
   if (state.kind === 'no-wallet' && state.isLoading) return <Button disabled>{copy.common.loading}</Button>
   if (state.kind === 'no-wallet') {
     return <>
@@ -37,11 +47,7 @@ export function WalletButton({ pendingCount = 0 }: { pendingCount?: number }) {
     </>
   }
   const short = shortAddress(state.address)
-  return <div
-    ref={root}
-    className="sf-wallet"
-    onBlur={event => { if (menu && !root.current?.contains(event.relatedTarget as Node | null)) setMenu(false) }}
-  >
+  return <div ref={root} className="sf-wallet">
     <Button
       aria-haspopup="menu"
       aria-expanded={menu}
@@ -51,6 +57,6 @@ export function WalletButton({ pendingCount = 0 }: { pendingCount?: number }) {
       <span className="sf-mono">{short}</span>
       {pendingCount > 0 && <Chip className="sf-chip--count">{pendingCount}</Chip>}
     </Button>
-    {menu && <WalletMenu pendingCount={pendingCount} onClose={() => closeMenu(true)} />}
+    {menu && <WalletMenu pendingCount={pendingCount} onClose={closeMenu} />}
   </div>
 }

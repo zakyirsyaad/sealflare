@@ -75,11 +75,21 @@ function describe({ errorName, args }: Decoded): string | null {
 // retry is true only for TransferFailed and for errors we cannot name; other reverts repeat identically.
 export function translateContractError(error: unknown): TranslatedError | null {
   try {
-    for (const cause of causes(error)) if (isRejection(cause)) return null
+    if (isUserRejection(error)) return null
     const revert = findRevert(error)
     const message = revert ? describe(revert) : null
     return message ? { message, retry: revert?.errorName === 'TransferFailed' } : unknown
   } catch {
     return unknown
+  }
+}
+
+// A rejection in the wallet is not a failure the user needs to read about.
+export function isUserRejection(error: unknown): boolean {
+  try {
+    for (const cause of causes(error)) if (isRejection(cause)) return true
+    return false
+  } catch {
+    return false
   }
 }
