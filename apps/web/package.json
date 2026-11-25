@@ -13,6 +13,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@sealflare/scanner-core": "workspace:*",
     "@sealflare/shared": "workspace:*",
     "@tanstack/react-query": "^5.108.4",
     "@walletconnect/ethereum-provider": "^2.26.0",

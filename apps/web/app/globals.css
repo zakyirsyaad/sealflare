@@ -208,3 +208,15 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-stack { display: grid; gap: 12px; }
 .sf-stack__title { margin: 0; font-size: 18px; font-weight: 500; line-height: 26px; }
 .sf-connectors { display: grid; gap: 8px; margin: 16px 0; padding: 0; list-style: none; }
+
+/* Scan checklist: the Layer 1 checks that tick off one by one */
+.sf-checks { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); background: var(--card); }
+.sf-check { display: flex; gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.sf-check:last-child { border-bottom: 0; }
+.sf-check__mark { width: 14px; color: var(--muted-foreground); font-family: var(--font-mono); }
+.sf-check__id { color: var(--muted-foreground); font-size: 12px; }
+.sf-check[data-status='done'] .sf-check__mark, .sf-check[data-status='passed'] .sf-check__mark { color: var(--positive); }
+.sf-check[data-status='running'] .sf-check__mark { color: var(--foreground); }
+.sf-check[data-status='flagged'] .sf-check__mark { color: var(--warning); }
+.sf-check[data-status='failed'] .sf-check__mark { color: var(--destructive); }
+.sf-check[data-status='skipped'] .sf-check__mark { color: var(--muted-foreground); }
