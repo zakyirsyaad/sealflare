@@ -1,7 +1,7 @@
 import { createScanner, suggestVerdict } from '@sealflare/scanner-core'
 import type { Guard } from '@sealflare/guard'
 import { bundleIdentity, CONSTANTS, type BundleEntry } from '@sealflare/shared/rules'
-import { SKILL_CHECK_IDS, encodeSrc, type Check, type Finding, type RepoFetcher } from '@sealflare/shared/schemas'
+import { SKILL_CHECK_IDS, SkillSource, encodeSrc, type Check, type Finding, type RepoFetcher } from '@sealflare/shared/schemas'
 import { readBundle } from './bundle'
 import { bullet, escapeText, field, join, section, targetLink } from './output'
 
@@ -57,18 +57,38 @@ function pathOf(finding: Finding): string {
   return cut < 0 ? finding.location : finding.location.slice(0, cut)
 }
 
-/** The findings of the files outside the bundle, and the checks they flagged. */
-async function scanExtra(extra: readonly BundleEntry[], manifest: BundleEntry | undefined): Promise<{ findings: Finding[]; flagged: Set<string>; failed: boolean }> {
-  const { parts } = partsOf(extra, manifest)
+/** What the files outside the bundle produced. */
+interface ExtraResult {
+  findings: Finding[]
+  flagged: Set<string>
+  /** A part could not be scanned at all. */
+  failed: boolean
+  /** A file was too large to be scanned. */
+  skipped: number
+}
+
+/**
+ * The findings of the files outside the bundle, and the checks they flagged.
+ *
+ * A file that was changed in the work tree is the manifest of the part it is in, so a scan never
+ * sees two files with the same path. The findings of that working copy are kept, because the scan
+ * of the bundle only saw the committed one.
+ */
+async function scanExtra(extra: readonly BundleEntry[], manifest: BundleEntry | undefined): Promise<ExtraResult> {
+  const { parts, skipped } = partsOf(extra, manifest)
   const findings: Finding[] = []
   const flagged = new Set<string>()
   let failed = false
   for (const part of parts) {
-    const entries = manifest === undefined ? part : [manifest, ...part]
+    const working = part.find(entry => entry.path === 'SKILL.md')
+    const partManifest = working ?? manifest
+    const rest = working === undefined ? part : part.filter(entry => entry !== working)
+    const entries = partManifest === undefined ? rest : [partManifest, ...rest]
     try {
       const report = await createScanner().scanSkill({ owner: 'local', repo: 'local' }, { repo: localRepo(entries) })
       for (const finding of report.findings) {
-        if (manifest !== undefined && pathOf(finding) === manifest.path) continue
+        // The findings of the committed manifest were already reported by the scan of the bundle.
+        if (working === undefined && manifest !== undefined && pathOf(finding) === manifest.path) continue
         findings.push(finding)
       }
       for (const check of report.checks) {
@@ -78,7 +98,7 @@ async function scanExtra(extra: readonly BundleEntry[], manifest: BundleEntry | 
       failed = true
     }
   }
-  return { findings, flagged, failed }
+  return { findings, flagged, failed, skipped }
 }
 
 /**
@@ -101,14 +121,18 @@ export async function scanSkillReport(input: { folder: string; guard: Guard }): 
   const extra = await scanExtra(bundle.extra, manifest)
   const checks: Check[] = report.checks.map(check => {
     if (extra.flagged.has(check.id)) return { ...check, status: 'flagged' as const }
-    if (extra.failed && check.status === 'passed') return { ...check, status: 'failed' as const }
+    // A file that could not be scanned, and a part that could not be scanned at all, mean that the
+    // bundle was not fully checked. A check that did not run is never a pass.
+    if ((extra.failed || extra.skipped > 0) && check.status === 'passed') return { ...check, status: 'failed' as const }
     return check
   })
   const findings = [...report.findings, ...extra.findings]
   const verdict = await input.guard.checkSkill(bundle.hashed)
   // The link of the target page carries the source when the bundle sits in a GitHub work tree, so
-  // the page can be rebuilt from the repository when the cache of the application is gone.
-  const src = bundle.source === null ? undefined : encodeSrc({ ...report.source, ...bundle.source })
+  // the page can be rebuilt from the repository when the cache of the application is gone. The
+  // source is checked with the shared schema, so an unusable one never reaches the link.
+  const merged = bundle.source === null ? null : SkillSource.safeParse({ ...report.source, ...bundle.source })
+  const src = merged !== null && merged.success ? encodeSrc(merged.data) : undefined
   const lines = [
     `Sealflare check for the skill bundle in ${escapeText(input.folder)}`,
     field('Canonical bundle hash', identity.canonicalBundleHash),
@@ -116,6 +140,7 @@ export async function scanSkillReport(input: { folder: string; guard: Guard }): 
     field('Files in the bundle', String(bundle.hashed.length)),
     field('Files outside the bundle', String(bundle.extra.length + bundle.unread)),
     ...(bundle.unread > 0 ? [field('Files outside the bundle that were not read', String(bundle.unread))] : []),
+    ...(extra.skipped > 0 ? [field('Files outside the bundle that were not scanned', String(extra.skipped))] : []),
     field('Tier', verdict.tier),
     field('Safe', verdict.safe ? 'yes' : 'no'),
     field('Verified publisher', verdict.publisher ?? 'none'),

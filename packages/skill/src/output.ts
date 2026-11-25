@@ -80,6 +80,17 @@ export function scanLink(reference: string): string {
   return `/app?q=${encodeURIComponent(reference)}`
 }
 
+/**
+ * Removes the endpoint of the command from a text.
+ *
+ * The endpoint of a paid provider holds its key in the path, and an error of the client prints the
+ * endpoint. The key never reaches the output and never reaches a log line.
+ */
+export function redact(text: string, endpoint?: string): string {
+  const without = endpoint === undefined || endpoint.length === 0 ? text : text.split(endpoint).join('the RPC endpoint')
+  return without.replace(/https?:\/\/\S+/g, 'the RPC endpoint')
+}
+
 export function flagList(names: readonly string[]): string {
   return names.length > 0 ? names.join(', ') : 'none'
 }

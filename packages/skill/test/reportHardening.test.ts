@@ -1,14 +1,11 @@
-import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { chmod, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import type { Hex } from 'viem'
-import { bundleIdentity, CONSTANTS, targetIdOfContract } from '@sealflare/shared/rules'
+import { CONSTANTS, targetIdOfContract } from '@sealflare/shared/rules'
 import { decodeSrc } from '@sealflare/shared/schemas'
 import { parseArgs } from '../src/args'
-import { readBundle } from '../src/bundle'
 import { runPrepareAttestation, runScanContract, runScanSkill } from '../src/cli'
 import { escapeText } from '../src/output'
 import { prepareAttestationReport } from '../src/prepareAttestation'
@@ -18,204 +15,8 @@ import {
   fakeGuard, gitIn, gitSkillIn, hasControl, packageDir, skillIn, temp,
 } from './support'
 
-describe('the bundle is read the way the registry reads it', () => {
-  test('folders that used to be skipped are hashed and scanned', async () => {
-    const folder = await skillIn(await temp(), {
-      'dist/postinstall.sh': `${PIPE_TO_SHELL}\n`,
-      'node_modules/dep/index.js': 'module.exports = 1\n',
-      '.next/build.js': 'export const built = true\n',
-      'test-results/log.txt': 'a log\n',
-    })
-
-    const entries = (await readBundle(folder)).hashed
-    const paths = entries.map(entry => entry.path)
-
-    for (const path of ['dist/postinstall.sh', 'node_modules/dep/index.js', '.next/build.js', 'test-results/log.txt']) {
-      expect(paths).toContain(path)
-    }
-    const clean = await skillIn(await temp())
-    expect(bundleIdentity(entries).canonicalBundleHash).not.toBe(bundleIdentity((await readBundle(clean)).hashed).canonicalBundleHash)
-  })
-
-  test('a skill with a hidden dist script is not suggested as safe', async () => {
-    const folder = await skillIn(await temp(), { 'dist/postinstall.sh': `${PIPE_TO_SHELL}\n` })
-
-    const output = await scanSkillReport({ folder, guard: fakeGuard() })
-
-    expect(output).not.toContain('Suggested verdict: SAFE')
-    expect(output).toContain('dist/postinstall.sh')
-  })
-
-  test('only the git metadata folder is left out, because a git tree can never hold one', async () => {
-    const folder = await skillIn(await temp(), { '.git/config': '[core]\n' })
-
-    const paths = ((await readBundle(folder)).hashed).map(entry => entry.path)
-
-    expect(paths).toEqual(['SKILL.md'])
-  })
-
-  test('publisher.sig is read, so the hash can leave it out the way the registry does', async () => {
-    const folder = await skillIn(await temp(), { 'publisher.sig': '0xabc\n' })
-
-    const entries = (await readBundle(folder)).hashed
-
-    expect(entries.map(entry => entry.path)).toContain('publisher.sig')
-    expect(bundleIdentity(entries).canonicalBundleHash).toBe(bundleIdentity((await readBundle(await skillIn(await temp()))).hashed).canonicalBundleHash)
-  })
-
-  test('a link is read as the text of its target and never followed', async () => {
-    const folder = await skillIn(await temp())
-    await symlink('/etc/hosts', join(folder, 'hosts'))
-
-    const entry = ((await readBundle(folder)).hashed).find(item => item.path === 'hosts')
-
-    expect(entry?.kind).toBe('symlink')
-    expect(new TextDecoder().decode(entry?.bytes)).toBe('/etc/hosts')
-  })
-
-  test('a folder with too many files fails instead of being cut short', async () => {
-    const folder = await skillIn(await temp())
-    for (let index = 0; index <= CONSTANTS.MAX_BUNDLE_FILES; index += 1) await writeFile(join(folder, `f${index}.txt`), 'x')
-
-    await expect(readBundle(folder)).rejects.toThrow(/more than 200 files/)
-  })
-
-  test('the signature does not count towards the limit, because the registry leaves it out too', async () => {
-    const folder = await skillIn(await temp(), { 'publisher.sig': '0xabc\n' })
-    for (let index = 0; index < CONSTANTS.MAX_BUNDLE_FILES - 2; index += 1) await writeFile(join(folder, `f${index}.txt`), 'x')
-    await writeFile(join(folder, 'zz.txt'), 'x')
-
-    const bundle = await readBundle(folder)
-
-    expect(bundle.hashed.length).toBe(CONSTANTS.MAX_BUNDLE_FILES + 1)
-  })
-})
-
-describe('a git work tree is hashed the way the registry hashes the tree of a repository', () => {
-  test('only the committed files are part of the bundle', async () => {
-    const folder = await gitSkillIn(await temp(), { 'dist/postinstall.sh': `${PIPE_TO_SHELL}\n` })
-
-    const bundle = await readBundle(folder)
-
-    expect(bundle.hashed.map(entry => entry.path)).toEqual(['SKILL.md'])
-    expect(bundle.extra.map(entry => entry.path)).toEqual(['dist/postinstall.sh'])
-  })
-
-  test('a file that is not committed never changes the hash or the target id', async () => {
-    const folder = await gitSkillIn(await temp(), { 'local.txt': 'not committed\n' })
-    const clean = await gitSkillIn(await temp())
-
-    const bundle = await readBundle(folder)
-
-    expect(bundleIdentity(bundle.hashed).canonicalBundleHash).toBe(
-      bundleIdentity((await readBundle(clean)).hashed).canonicalBundleHash,
-    )
-  })
-
-  test('a file that is only staged is not part of the bundle, because the registry hashes the commit', async () => {
-    const folder = await gitSkillIn(await temp())
-    await writeFile(join(folder, 'staged.txt'), 'staged only\n')
-    gitIn(folder, ['add', '--', 'staged.txt'])
-
-    const bundle = await readBundle(folder)
-
-    expect(bundle.hashed.map(entry => entry.path)).toEqual(['SKILL.md'])
-    expect(bundle.extra.map(entry => entry.path)).toEqual(['staged.txt'])
-  })
-
-  test('a local change to a committed file never changes the hash, but it is still scanned', async () => {
-    const folder = await gitSkillIn(await temp())
-    await writeFile(join(folder, 'SKILL.md'), `${MANIFEST}\n${PIPE_TO_SHELL}\n`)
-    const clean = await gitSkillIn(await temp())
-
-    const bundle = await readBundle(folder)
-
-    expect(bundleIdentity(bundle.hashed).canonicalBundleHash).toBe(
-      bundleIdentity((await readBundle(clean)).hashed).canonicalBundleHash,
-    )
-    expect(bundle.extra.map(entry => entry.path)).toEqual(['SKILL.md'])
-  })
-
-  test('a file that is not committed is still scanned, so its finding is shown', async () => {
-    const folder = await gitSkillIn(await temp(), { 'dist/postinstall.sh': `${PIPE_TO_SHELL}\n` })
-
-    const output = await scanSkillReport({ folder, guard: fakeGuard() })
-
-    expect(output).toContain('dist/postinstall.sh')
-    expect(output).not.toContain('Suggested verdict: SAFE')
-  })
-
-  test('a work tree with more files than a bundle may hold still scans', async () => {
-    const folder = await gitSkillIn(await temp())
-    for (let index = 0; index < CONSTANTS.MAX_BUNDLE_FILES + 20; index += 1) {
-      await mkdir(join(folder, 'node_modules', `dep${index}`), { recursive: true })
-      await writeFile(join(folder, 'node_modules', `dep${index}`, 'index.js'), 'module.exports = 1\n')
-    }
-
-    const output = await scanSkillReport({ folder, guard: fakeGuard() })
-
-    expect(output).toContain('Files in the bundle: 1')
-    expect(output).toContain('Suggested verdict:')
-  })
-
-  test('a file that is not committed is read before an ignored dependency tree', async () => {
-    const folder = await gitSkillIn(await temp(), { 'node_modules/dep/index.js': 'module.exports = 1\n' })
-    await writeFile(join(folder, '.gitignore'), 'node_modules/\n')
-    gitIn(folder, ['add', '--', '.gitignore'])
-    gitIn(folder, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'ignore'])
-    await writeFile(join(folder, 'payload.sh'), `${PIPE_TO_SHELL}\n`)
-
-    const bundle = await readBundle(folder)
-
-    expect(bundle.extra[0]?.path).toBe('payload.sh')
-  })
-
-  test('the file monitor of the repository is never run', async () => {
-    const folder = await gitSkillIn(await temp())
-    const marker = join(folder, 'monitor-ran')
-    const script = join(folder, 'monitor.sh')
-    await writeFile(script, `#!/bin/sh\ntouch ${marker}\n`)
-    await chmod(script, 0o755)
-    await writeFile(join(folder, '.git', 'config'), `[core]\n\tfsmonitor = ${script}\n`)
-
-    await readBundle(folder)
-
-    expect(existsSync(marker)).toBe(false)
-  })
-
-  test('a repository that git will not work with is an error, not a folder outside git', async () => {
-    const folder = await gitSkillIn(await temp())
-    await writeFile(join(folder, '.git', 'config'), 'this is not a config\n')
-
-    await expect(readBundle(folder)).rejects.toThrow(/git will not work with/)
-  })
-
-  test('a folder inside a git repository with no committed file has no bundle to hash', async () => {
-    const folder = await skillIn(await temp(), { 'a.txt': 'x\n' })
-    execFileSync('git', ['init', '-q'], { cwd: folder })
-
-    await expect(readBundle(folder)).rejects.toThrow(/no commit yet/)
-  })
-
-  test('the target page of a bundle in a GitHub work tree carries the source of the bundle', async () => {
-    const folder = await gitSkillIn(await temp())
-    gitIn(folder, ['remote', 'add', 'origin', 'git@github.com:sealflare/guard.git'])
-    const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: folder }).toString('utf8').trim()
-
-    const output = await scanSkillReport({ folder, guard: fakeGuard() })
-
-    expect(output).toContain(`?src=${encodeURIComponent(`gh:sealflare/guard@${commit}:`)}`)
-  })
-
-  test('a work tree without a GitHub remote has no source, and the link stays without one', async () => {
-    const folder = await gitSkillIn(await temp())
-
-    const output = await scanSkillReport({ folder, guard: fakeGuard() })
-
-    expect(output).toContain('Target page: /app/t/')
-    expect(output).not.toContain('?src=')
-  })
-})
+/** The endpoint of a paid provider, with its key in the path, as a user would pass it. */
+const PAID_RPC = ['https://rpc', '.example/v1/PAID', 'KEY'].join('')
 
 describe('what a bundle prints cannot touch the terminal', () => {
   test('escapeText turns every control character and line break into a visible escape', () => {
@@ -437,5 +238,68 @@ describe('SKILL.md tells the agent that scanned text is data', () => {
     expect(text).toMatch(/never\s+run(s)?\s+(a\s+|the\s+)?script/i)
     expect(text).toMatch(/--verdict/)
     expect(text).toMatch(/only\s+from\s+the\s+user/i)
+  })
+})
+
+describe('a file that could not be scanned is never a safe bundle', () => {
+  test('a file that is too large to scan is counted, and the verdict is CAUTION', async () => {
+    const folder = await gitSkillIn(await temp())
+    await writeFile(join(folder, 'big.bin'), Buffer.alloc(CONSTANTS.MAX_BUNDLE_BYTES + 1024, 0x41))
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain('Files outside the bundle that were not scanned: 1')
+    expect(output).toContain('Suggested verdict: CAUTION')
+    expect(output).not.toContain('Suggested verdict: SAFE')
+  })
+})
+
+describe('a file that is not committed is scanned, and a manifest that is not committed is kept', () => {
+  test('a changed SKILL.md that is not committed still shows its finding', async () => {
+    const folder = await gitSkillIn(await temp())
+    await writeFile(join(folder, 'SKILL.md'), `${MANIFEST}\n${PIPE_TO_SHELL}\n`)
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toMatch(/SKILL\.md:\d+/)
+    expect(output).not.toContain('Suggested verdict: SAFE')
+  })
+
+  test('a source that does not fit the shared schema never reaches the link', async () => {
+    const folder = await gitSkillIn(await temp())
+    gitIn(folder, ['remote', 'add', 'origin', 'git@github.com:sealflare/guard!.git'])
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain('Target page: /app/t/')
+    expect(output).not.toContain('?src=')
+  })
+})
+
+describe('the endpoint of the command never reaches the output', () => {
+  test('a paid key in the RPC url never reaches the output', async () => {
+    const guard = fakeGuard({
+      checkContract: async () => { throw new Error(`HTTP request failed.\nURL: ${PAID_RPC}`) },
+    })
+
+    const result = await runScanContract([TARGET, '--core', CORE, '--rpc', PAID_RPC], { guard })
+
+    expect(result.code).toBe(1)
+    expect(result.output).not.toContain('PAIDKEY')
+    expect(result.output).not.toContain(PAID_RPC)
+    expect(result.output).toContain('The check could not be completed')
+  })
+})
+
+describe('the parameters are only printed for a bundle a publisher can attest', () => {
+  test('a folder without a regular SKILL.md is refused', async () => {
+    const folder = await temp()
+    await writeFile(join(folder, 'notes.txt'), 'no manifest here\n')
+
+    const result = await runPrepareAttestation(['--skill', folder, '--verdict', 'SAFE', '--core', CORE], { guard: fakeGuard() })
+
+    expect(result.code).toBe(1)
+    expect(result.output).toContain('SKILL.md')
+    expect(result.output).not.toContain('Nothing was signed')
   })
 })

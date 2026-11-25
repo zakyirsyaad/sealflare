@@ -16,7 +16,7 @@ import { parseArgs, usage, type Arguments, type CommandSpec } from './args'
 import { readBundle } from './bundle'
 import { guardFor, publicClient } from './client'
 import { rpcUrl } from './env'
-import { escapeText, neutralize } from './output'
+import { escapeText, neutralize, redact } from './output'
 import { resolveInputPath } from './paths'
 import { maskOfFlags, prepareAttestationReport, validateShortProof, type AttestationTarget } from './prepareAttestation'
 import { scanContractReport } from './scanContract'
@@ -61,6 +61,22 @@ export const PREPARE_ATTESTATION_USAGE = usage([
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The endpoint the command reads.
+ *
+ * The endpoint of a paid provider holds its key in the path, so it is removed from every error
+ * message before the message reaches the output.
+ */
+function endpointOf(args: Arguments): string | undefined {
+  const given = args.values.rpc ?? process.env.RPC_URL
+  return given === undefined ? undefined : given.trim()
+}
+
+/** An error message that cannot hold the endpoint of the command. */
+function safeMessage(error: unknown, args: Arguments): string {
+  return redact(message(error), endpointOf(args))
 }
 
 /** Every finished output passes through here, so no text of a bundle or of an error can write to the terminal. */
@@ -119,7 +135,7 @@ export async function runScanContract(argv: readonly string[], deps: RunDeps = {
   try {
     return finish(0, await scanContractReport({ address: validated.data, guard }))
   } catch (error) {
-    return finish(1, `The check could not be completed: ${escapeText(message(error))}`)
+    return finish(1, `The check could not be completed: ${escapeText(safeMessage(error, parsed.args))}`)
   }
 }
 
@@ -138,7 +154,7 @@ export async function runScanSkill(argv: readonly string[], deps: RunDeps = {}):
   try {
     return finish(0, await scanSkillReport({ folder, guard }))
   } catch (error) {
-    return finish(1, `The check could not be completed: ${escapeText(message(error))}`)
+    return finish(1, `The check could not be completed: ${escapeText(safeMessage(error, parsed.args))}`)
   }
 }
 
@@ -225,13 +241,16 @@ export async function runPrepareAttestation(argv: readonly string[], deps: RunDe
     // The bundle of a folder is the committed files of a git work tree, so the target id is the
     // the registry knows.
     const entries = folder === undefined ? undefined : (await readBundle(resolveInputPath(folder))).hashed
+    if (entries !== undefined && !entries.some(entry => entry.path === 'SKILL.md' && entry.kind === 'file')) {
+      throw new Error('The folder holds no SKILL.md file, so it is not a skill bundle that can be attested.')
+    }
     const target = attestationTarget(args, entries)
     if (!isValidFlags(target.type, verdict.data, flags)) {
       throw new Error(`The flags ${names.join(', ') || 'none'} do not fit the verdict ${verdict.data}.`)
     }
     prepared = { target, flags, shortProof, evidence, guard: guardOf(args, deps), ...(entries ? { entries } : {}) }
   } catch (error) {
-    return failure(`The parameters could not be prepared: ${message(error)}`, PREPARE_ATTESTATION_USAGE)
+    return failure(`The parameters could not be prepared: ${safeMessage(error, args)}`, PREPARE_ATTESTATION_USAGE)
   }
   const summary = await summaryOf(prepared.guard, prepared.target, prepared.entries)
   try {
@@ -246,6 +265,6 @@ export async function runPrepareAttestation(argv: readonly string[], deps: RunDe
     })
     return finish(0, output)
   } catch (error) {
-    return failure(`The parameters could not be prepared: ${message(error)}`, PREPARE_ATTESTATION_USAGE)
+    return failure(`The parameters could not be prepared: ${safeMessage(error, args)}`, PREPARE_ATTESTATION_USAGE)
   }
 }

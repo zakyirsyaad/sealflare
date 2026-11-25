@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 
 /**
  * The absolute path of something the user typed.
@@ -9,4 +9,9 @@ import { resolve } from 'node:path'
  */
 export function resolveInputPath(path: string): string {
   return resolve(process.env.INIT_CWD ?? process.cwd(), path)
+}
+
+/** A path in the form the registry uses: the parts are separated by a slash, on every system. */
+export function toPosix(path: string): string {
+  return path.split(sep).join('/')
 }

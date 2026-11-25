@@ -45,11 +45,20 @@ either. A bundle with more than 200 files, or more than 2 MiB, fails instead of 
 The files outside the bundle are scanned in parts, because a scan applies the limits of a bundle to
 the files it gets. A part holds at most 199 files, and the files that are not ignored come first,
 so a dependency tree never fills the limit before a file of the skill itself is read. The files
-that were left out are counted in the report.
+that were left out are counted in the report. A file that is too large to be scanned is counted as
+well, and the suggested verdict is then CAUTION, because a bundle that was not fully checked is
+never a safe bundle.
 
-Git is run with the file monitor of the repository switched off, so a bundle that ships a
-repository of its own cannot make git run a command. A repository that git will not work with, for
-example one with a doubtful owner, is an error and not a folder outside git.
+Git runs in an environment of its own. The file monitor of the repository is switched off, the
+download of a missing object is switched off, every protocol is refused, and the variables that
+point git at another repository or another configuration are dropped, so a bundle that ships a
+repository of its own can never make git run a command or reach the network. The language of git is
+fixed, so a folder outside git is a folder outside git in every language. A repository that git will
+not work with, for example one with a doubtful owner, is an error and not a folder outside git. A
+bundle with a submodule is refused, because the registry can never publish one.
+
+The endpoint of the command never reaches the output. The endpoint of a paid provider holds its key
+in the path, so it is removed from every error message before the message is printed.
 
 pnpm runs a script inside the folder of this package, so a relative path would land there. The
 scripts resolve `<folder>`, `--skill` and `--evidence-file` against `INIT_CWD`, the folder you typed
