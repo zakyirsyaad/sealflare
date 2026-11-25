@@ -1,0 +1,5 @@
+[[allowlists]]
+description = "Ignore test-only signing key fixtures in the publish flow test"
+paths = ['^apps/web/test/publish\.test\.tsx$']
+regexTarget = "line"
+regexes = ['const (ownerKey|otherKey) =']
