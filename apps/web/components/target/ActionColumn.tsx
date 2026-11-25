@@ -6,10 +6,14 @@ import { copy } from '../../lib/copy'
 
 export type ActionColumnProps = {
   tier: TrustTier
+  targetType: 'SMART_CONTRACT' | 'AI_SKILL_BUNDLE'
+  /** Scans the skill's repository as it is now. Null when the source is not known. */
+  currentVersionHref: string | null
 }
 
 /** Why the attest button is closed, in one sentence. */
-function blockedReason(kind: string, attestationsLeft: number | null): string | null {
+function blockedReason(kind: string, attestationsLeft: number | null, codeChanged: boolean): string | null {
+  if (codeChanged) return copy.errors.CodeChangedSincePin
   if (kind === 'no-wallet') return copy.target.attestHint
   if (kind === 'wrong-network') return copy.wallet.switchNetwork
   if (kind === 'no-agent-id') return copy.wallet.agentRequired
@@ -21,10 +25,13 @@ function blockedReason(kind: string, attestationsLeft: number | null): string | 
  * The actions of the target page. The attest button follows the state of the wallet: it is
  * closed with a reason when the user cannot attest yet.
  */
-export function ActionColumn({ tier }: ActionColumnProps) {
+export function ActionColumn({ tier, targetType, currentVersionHref }: ActionColumnProps) {
   const user = useUserState()
   const left = user.kind === 'holder' ? user.attestationsLeft : null
-  const reason = blockedReason(user.kind, left)
+  // ux.md 6.4: a contract whose code changed closes Attest, a skill that changed asks for a new scan.
+  const changed = tier === 'STALE_CODEHASH_DRIFT'
+  const skillChanged = changed && targetType === 'AI_SKILL_BUNDLE'
+  const reason = skillChanged ? null : blockedReason(user.kind, left, changed)
   const busy = user.isLoading || user.isError
   const quota =
     left === null
@@ -32,9 +39,21 @@ export function ActionColumn({ tier }: ActionColumnProps) {
       : copy.target.quotaLeft.replace('{left}', String(left)).replace('{limit}', String(CONSTANTS.DAILY_ATTEST_LIMIT))
   return (
     <aside className="sf-actions" aria-label={copy.attest.action}>
-      <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled={reason !== null || busy}>
-        {copy.attest.action}
-      </Button>
+      {skillChanged ? (
+        currentVersionHref === null ? (
+          <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled>
+            {copy.target.currentVersion}
+          </Button>
+        ) : (
+          <a className="sf-btn sf-btn--primary sf-btn--lg sf-btn--block" href={currentVersionHref}>
+            {copy.target.currentVersion}
+          </a>
+        )
+      ) : (
+        <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled={reason !== null || busy}>
+          {copy.attest.action}
+        </Button>
+      )}
       <Button variant="secondary" className="sf-btn--block" disabled>
         {copy.target.challenge}
       </Button>

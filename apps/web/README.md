@@ -267,18 +267,44 @@ builds from an id alone, from `?src=` alone, or from both.
   Task 10 does not exist yet, so the button has no form. "Open a challenge" and "Fund an audit
   bounty" stay disabled and say the modules are not live. Cost if wrong: Task 10 replaces the
   button with its panel.
-- The evidence of a vote lives in the event log, not in Core. `server/chain.ts` reads the
-  `Attested` events from the block of the target and joins them with the votes by index. A vote
-  without a matching log shows no evidence URI and no evidence link. Cost if wrong: the join is by
-  index, so a reindexed history would shift the evidence.
-- The lag notice counts the blocks between the head of the chain and the block of the scan. It only
-  applies to a contract scan, because a skill bundle has no block. Cost if wrong: the indexer
-  would know the lag of the whole database, not of one scan.
+- The evidence of a vote lives in the event log, not in Core. `server/chain.ts` finds the block the
+  target was created in (a binary search on `createdAt`, cached per process), then reads the
+  `Attested` events from there to the head in ranges of 10,000 blocks (`server/logRange.ts`) and
+  joins them with the votes by index. A span of more than 200 ranges (about 17 days) is refused. A
+  failed range rejects the whole read: the page then keeps the votes and the tier, says that the
+  links could not be read ("Unavailable", never "None"), and sets `evidenceFailed`. The indexer of
+  Task 5 and 6 replaces this read. Cost if wrong: a very old target shows no links until then.
+- The page does not show a lag. A "N blocks behind" notice built from the age of a scan would almost
+  always appear, and would wrongly call the live chain reads stale. `blocksBehind` stays null until
+  the indexer reports its finalized block, and `StaleNotice` is ready for it.
+
+### Review fixes
+
+The founder's review of this PR (#24) found four important issues and four minor ones. Each claim
+was checked against the code first; all were right.
+
+- A `?src=` is only used when it can describe this target. A contract id is the hash of its address,
+  so another address, or a skill source on a contract (or the reverse), runs no scan and the chain
+  tier still renders. A scan is attached only when its id is this page's id. A source that names
+  another version of an on-chain skill is not attached either: the page offers "Scan the current
+  version" for it (`currentVersionId`), and a contract never claims a changed version. A skill
+  source is scanned once, not on every request (`scanStore` keeps the scan per source).
+- The proxy notice no longer says the firewall "never rates it safe" before the on-chain marker is
+  set, since Core can still return COMMUNITY_SAFE then. The flag button follows ux.md 6.5: it appears
+  when the scan flagged DELEGATECALL, with or without an implementation slot.
+- A contract whose code changed closes Attest and says why (`CodeChangedSincePin`). A skill that
+  changed gets "Scan the current version", a link to `/app?q=` for the repository as it is now.
+- Verdicts read "Safe", "Caution" and "Danger" and the history keys rows by index. Core's enums come
+  from `VERDICTS` and `TARGET_TYPES` in `@sealflare/shared/rules`, and an index outside them throws.
+  The publisher roles have no shared list yet, so that list stays local and guarded.
+- `test/chain.evidence.test.ts` runs the real `server/chain.ts` against a local JSON-RPC server that
+  refuses ranges above 10,000 blocks, with an attestation a million blocks behind the head. All four
+  tests fail on the previous `chain.ts`.
 
 ### Verified result
 
-- TDD: the two new suites failed on the missing modules first. All 183 web tests pass across
-  fourteen files; the coverage thresholds hold (components/target 85.62%).
+- TDD: the two new suites failed on the missing modules first. All 291 web tests pass across
+  nineteen files after the review fixes; the coverage thresholds hold (92% of lines over `components/` and `lib/`).
 - Typecheck and the production build pass. The build lists `/app/t/[id]` as a dynamic route.
 - Not tested: nothing of the plan is left open. The Playwright check at 375 px runs against the
   local chain, so it needs the stub contracts and the seeded targets:

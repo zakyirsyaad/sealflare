@@ -1,12 +1,18 @@
 import { expect, test, vi, beforeEach } from 'vitest'
-import { FLAGS, targetIdOfContract } from '@sealflare/shared/rules'
-import { TargetDetail } from '@sealflare/shared/schemas'
+import { FLAGS, canonicalBundleHash, targetIdOfContract, targetIdOfSkill } from '@sealflare/shared/rules'
+import { ScanReport, TargetDetail } from '@sealflare/shared/schemas'
 import { attestationRows, buildDetail, loadTarget, signalOf } from '../server/target'
+import { clearScans } from '../server/scanStore'
 import type { ChainReader, CoreAttestation, CoreTarget } from '../server/chain'
 
 const { reader } = vi.hoisted(() => ({ reader: { current: null as unknown } }))
 
 vi.mock('../server/chain', () => ({ getChainReader: () => reader.current }))
+
+const { scanner } = vi.hoisted(() => ({ scanner: { scanContract: vi.fn(), scanSkill: vi.fn() } }))
+vi.mock('../server/scanner', () => ({
+  getScanEnvironment: () => ({ scanner, rpc: {}, explorer: {}, repo: {}, now: () => new Date('2026-11-25T03:00:00.000Z') }),
+}))
 
 const address = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
 const targetId = targetIdOfContract(address)
@@ -49,7 +55,6 @@ function attestation(overrides: Partial<CoreAttestation> = {}): CoreAttestation 
 
 function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
   return {
-    head: async () => 52_000_012n,
     target: async () => coreTarget(),
     tier: async () => 'UNRATED',
     attestations: async () => [attestation(), attestation({ verdict: 'DANGER', weight: 3, flags: FLAGS.HIDDEN_MINT, safeOrdinal: 0 })],
@@ -64,7 +69,51 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
 
 beforeEach(() => {
   reader.current = fakeReader()
+  clearScans()
+  scanner.scanContract.mockReset()
+  scanner.scanSkill.mockReset()
 })
+
+const otherAddress = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8'
+const codehash = `0x${'22'.repeat(32)}` as const
+const SHA = 'a'.repeat(40)
+const SKILL_SRC = `gh:sealflare/guard@${SHA}:skills/guard`
+
+function contractReport(forAddress: string, blockNumber = '52000000') {
+  return ScanReport.parse({
+    schemaVersion: 1,
+    targetType: 'SMART_CONTRACT',
+    targetId: targetIdOfContract(forAddress as `0x${string}`),
+    source: { kind: 'contract', address: forAddress, codehash, blockNumber },
+    scannedAt: '2026-11-25T03:00:00.000Z',
+    checks: [{ id: 'source_verified', status: 'passed' }],
+    findings: [],
+    flags: 0,
+    suggestedVerdict: null,
+  })
+}
+
+function skillReport(contentHash: `0x${string}`) {
+  const bundle = canonicalBundleHash(contentHash, address)
+  return ScanReport.parse({
+    schemaVersion: 1,
+    targetType: 'AI_SKILL_BUNDLE',
+    targetId: targetIdOfSkill(bundle),
+    source: {
+      kind: 'skill', repo: 'sealflare/guard', commit: SHA, path: 'skills/guard', contentHash,
+      manifestPublisher: address, canonicalBundleHash: bundle, fileCount: 3, totalBytes: 2048,
+    },
+    scannedAt: '2026-11-25T03:00:00.000Z',
+    checks: [{ id: 'bundle_hash', status: 'passed' }],
+    findings: [],
+    flags: 0,
+    suggestedVerdict: null,
+  })
+}
+
+function skillTarget(report: ReturnType<typeof skillReport>) {
+  return coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: report.targetId as `0x${string}` })
+}
 
 test('the tier comes from Core even when the row of the target disagrees', async () => {
   reader.current = fakeReader({ tier: async () => 'UNRATED' })
@@ -117,7 +166,7 @@ test('a target that the registry does not know has no detail', async () => {
 
 test('a chain that cannot be read fails the page instead of showing a tier', async () => {
   reader.current = fakeReader({
-    head: async () => {
+    target: async () => {
       throw new Error('no rpc')
     },
   })
@@ -130,4 +179,97 @@ test('the page tells how many blocks behind the scan is', async () => {
   reader.current = fakeReader()
   const data = await loadTarget(targetId, null)
   expect(data.blocksBehind).toBeNull()
+})
+
+test('a source for another contract neither runs a scan nor shows its findings, and the chain tier still renders', async () => {
+  reader.current = fakeReader({ tier: async () => 'CAUTION_FLAGGED' })
+  scanner.scanContract.mockResolvedValue(contractReport(otherAddress))
+  const data = await loadTarget(targetId, otherAddress)
+  expect(scanner.scanContract).not.toHaveBeenCalled()
+  expect(data.scan).toBeNull()
+  expect(data.versionChanged).toBe(false)
+  expect(data.detail?.tier).toBe('CAUTION_FLAGGED')
+})
+
+test('a contract source opened on an on-chain skill keeps its tier and runs no scan', async () => {
+  const report = skillReport(`0x${'55'.repeat(32)}`)
+  reader.current = fakeReader({ target: async () => skillTarget(report), tier: async () => 'CONFIRMED_DANGER' })
+  const data = await loadTarget(report.targetId, address)
+  expect(scanner.scanContract).not.toHaveBeenCalled()
+  expect(data.detail?.tier).toBe('CONFIRMED_DANGER')
+  expect(data.scan).toBeNull()
+})
+
+test('a skill source on an on-chain contract keeps its tier and runs no scan', async () => {
+  reader.current = fakeReader({ tier: async () => 'CONFIRMED_DANGER' })
+  const data = await loadTarget(targetId, SKILL_SRC)
+  expect(scanner.scanSkill).not.toHaveBeenCalled()
+  expect(data.detail?.tier).toBe('CONFIRMED_DANGER')
+})
+
+test('a scan of the same target is attached', async () => {
+  scanner.scanContract.mockResolvedValue(contractReport(address))
+  const data = await loadTarget(targetId, address)
+  expect(data.scan?.targetId).toBe(targetId)
+  expect(data.versionChanged).toBe(false)
+})
+
+test('a newer version of a skill is not attached, and the page offers the current version instead', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  const current = skillReport(`0x${'66'.repeat(32)}`)
+  reader.current = fakeReader({ target: async () => skillTarget(audited), tier: async () => 'COMMUNITY_SAFE' })
+  scanner.scanSkill.mockResolvedValue(current)
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.scan).toBeNull()
+  expect(data.versionChanged).toBe(true)
+  expect(data.currentVersionId).toBe(current.targetId)
+  expect(data.detail?.tier).toBe('COMMUNITY_SAFE')
+})
+
+test('the same mismatched skill source is scanned once, not on every request', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  scanner.scanSkill.mockResolvedValue(skillReport(`0x${'66'.repeat(32)}`))
+  reader.current = fakeReader({ target: async () => skillTarget(audited) })
+  await loadTarget(audited.targetId, SKILL_SRC)
+  await loadTarget(audited.targetId, SKILL_SRC)
+  expect(scanner.scanSkill).toHaveBeenCalledTimes(1)
+})
+
+test('a contract page never claims a changed version, because its id does not depend on its code', async () => {
+  scanner.scanContract.mockResolvedValue(contractReport(address))
+  const data = await loadTarget(targetId, address)
+  expect(data.versionChanged).toBe(false)
+  expect(data.currentVersionId).toBeNull()
+})
+
+test('the lag is never measured from the age of a scan, because the tier and votes were read live', async () => {
+  scanner.scanContract.mockResolvedValue(contractReport(address, '100'))
+  const data = await loadTarget(targetId, address)
+  expect(data.scan).not.toBeNull()
+  expect(data.blocksBehind).toBeNull()
+})
+
+test('a failed evidence read is reported, the votes and the tier stay, and the page does not fail', async () => {
+  reader.current = fakeReader({
+    evidence: async () => {
+      throw new Error('getLogs range too wide')
+    },
+  })
+  const data = await loadTarget(targetId, null)
+  expect(data.failed).toBe(false)
+  expect(data.evidenceFailed).toBe(true)
+  expect(data.attestations).toHaveLength(2)
+  expect(data.detail).not.toBeNull()
+})
+
+test('a working evidence read is not reported as failed', async () => {
+  const data = await loadTarget(targetId, null)
+  expect(data.evidenceFailed).toBe(false)
+})
+
+test('the evidence is read from the block the target was created in', async () => {
+  const evidence = vi.fn(async () => [])
+  reader.current = fakeReader({ evidence })
+  await loadTarget(targetId, null)
+  expect(evidence).toHaveBeenCalledWith(targetId, 1_700_000_000)
 })

@@ -104,9 +104,38 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     blocksBehind: null,
     unbondingAt: null,
     versionChanged: false,
+    currentVersionId: null,
+    evidenceFailed: false,
     failed: false,
     ...overrides,
   }
+}
+
+function flaggedDelegatecall(extra: Record<string, unknown> = {}) {
+  return scan({
+    checks: [
+      { id: 'source_verified', status: 'passed' },
+      { id: 'admin_functions', status: 'passed' },
+      { id: 'proxy_eip1967', status: 'passed' },
+      { id: 'proxy_beacon', status: 'passed' },
+      { id: 'proxy_eip1167', status: 'passed' },
+      { id: 'delegatecall_opcode', status: 'flagged' },
+      { id: 'dry_run', status: 'passed' },
+    ],
+    suggestedVerdict: null,
+    ...extra,
+  })
+}
+
+const SHA = 'a'.repeat(40)
+function skillDetail(overrides: Partial<TargetDetail> = {}) {
+  return detail({
+    targetType: 'AI_SKILL_BUNDLE',
+    label: 'sealflare/guard',
+    src: `gh:sealflare/guard@${SHA}:skills/guard`,
+    pinnedCodehash: `0x${'77'.repeat(32)}`,
+    ...overrides,
+  })
 }
 
 test('shows the tier in words with one sentence of reason', () => {
@@ -199,8 +228,26 @@ test('a proxy says it cannot get a safe status from IFirewall, and offers the on
   })
   render(<TargetScreen {...props({ scan: report })} />)
   expect(screen.getByText(copy.target.proxyTitle)).toBeInTheDocument()
-  expect(screen.getByText(copy.target.proxyText)).toBeInTheDocument()
+  expect(screen.getByText(copy.target.proxyTextUnmarked)).toBeInTheDocument()
+  expect(screen.queryByText(copy.target.proxyText)).toBeNull()
+})
+
+test('before the on-chain marker is set the page does not claim the firewall never rates the proxy safe', () => {
+  render(<TargetScreen {...props({ scan: flaggedDelegatecall() })} />)
+  expect(screen.queryByText(/never rates it safe/)).toBeNull()
   expect(screen.getByRole('button', { name: copy.target.flagProxy })).toBeInTheDocument()
+})
+
+test('a flagged DELEGATECALL without an implementation slot offers the on-chain flag, as ux.md 6.5 says', () => {
+  render(<TargetScreen {...props({ scan: flaggedDelegatecall() })} />)
+  expect(screen.getByText(copy.target.proxyTitle)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: copy.target.flagProxy })).toBeInTheDocument()
+})
+
+test('no banner and no flag button when the scan found neither a proxy nor a DELEGATECALL', () => {
+  render(<TargetScreen {...props({ scan: scan() })} />)
+  expect(screen.queryByText(copy.target.proxyTitle)).toBeNull()
+  expect(screen.queryByRole('button', { name: copy.target.flagProxy })).toBeNull()
 })
 
 test('a marked proxy does not offer the flag again', () => {
@@ -210,6 +257,7 @@ test('a marked proxy does not offer the flag again', () => {
   })
   render(<TargetScreen {...props({ scan: report, detail: detail({ hasDelegatecall: true }) })} />)
   expect(screen.queryByRole('button', { name: copy.target.flagProxy })).toBeNull()
+  expect(screen.getByText(copy.target.proxyText)).toBeInTheDocument()
 })
 
 test('an unrated target invites "Be the first Guardian" and mentions +2 XP for the first three slots', () => {
@@ -317,4 +365,74 @@ test('the attest button opens for a holder with quota left', () => {
   render(<TargetScreen {...props()} />)
   expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
   expect(screen.getByText('3 of 5 attestations left today')).toBeInTheDocument()
+})
+
+test('a contract whose code changed since it was sealed closes Attest and says why', () => {
+  wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
+  render(<TargetScreen {...props({ detail: detail({ tier: 'STALE_CODEHASH_DRIFT' }) })} />)
+  expect(screen.getByRole('button', { name: copy.attest.action })).toBeDisabled()
+  expect(screen.getByText(copy.errors.CodeChangedSincePin)).toBeInTheDocument()
+})
+
+test('a skill that changed turns Attest into "Scan the current version"', () => {
+  wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
+  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT' }) })} />)
+  expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
+  expect(screen.getByRole('link', { name: copy.target.currentVersion })).toHaveAttribute(
+    'href',
+    `/app?q=${encodeURIComponent('https://github.com/sealflare/guard/tree/main/skills/guard')}`,
+  )
+})
+
+test('a changed skill with no known source still does not offer Attest', () => {
+  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT', src: null }) })} />)
+  expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
+  expect(screen.getByRole('button', { name: copy.target.currentVersion })).toBeDisabled()
+})
+
+test('a tier that is not stale keeps the normal Attest button for a skill', () => {
+  wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
+  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'COMMUNITY_SAFE' }) })} />)
+  expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
+})
+
+test('the version notice links to the page of the current version of the skill', () => {
+  const current = `0x${'88'.repeat(32)}`
+  render(<TargetScreen {...props({ detail: skillDetail(), versionChanged: true, currentVersionId: current, src: `gh:sealflare/guard@${SHA}:skills/guard` })} />)
+  expect(screen.getByRole('link', { name: copy.target.currentVersion })).toHaveAttribute('href', expect.stringContaining(`/app/t/${current}?src=`))
+})
+
+test('verdicts are shown in sentence case, not as the raw enum', async () => {
+  render(<TargetScreen {...props({ attestations: [row({ verdict: 'SAFE' }), row({ index: 1, verdict: 'CAUTION' }), row({ index: 2, verdict: 'DANGER' })] })} />)
+  await userEvent.click(screen.getByRole('tab', { name: /Attestations/ }))
+  const table = screen.getByRole('table', { name: copy.target.attestations })
+  for (const word of ['Safe', 'Caution', 'Danger']) expect(within(table).getByText(word)).toBeInTheDocument()
+  for (const raw of ['SAFE', 'CAUTION', 'DANGER']) expect(within(table).queryByText(raw)).toBeNull()
+})
+
+test('the history names each vote in sentence case and keeps two votes of the same second apart', async () => {
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  render(<TargetScreen {...props({ attestations: [row({ index: 0, verdict: 'SAFE' }), row({ index: 1, verdict: 'SAFE' })] })} />)
+  await userEvent.click(screen.getByRole('tab', { name: copy.target.history }))
+  expect(screen.getAllByText('Safe attestation')).toHaveLength(2)
+  expect(screen.queryByText(/SAFE attestations/)).toBeNull()
+  expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key|unique "key"/)
+  errors.mockRestore()
+})
+
+test('when the evidence links could not be read the tab says so, instead of showing None as if no proof was linked', async () => {
+  render(<TargetScreen {...props({ attestations: [row({ evidenceURI: '', txHash: `0x${'0'.repeat(64)}` })], evidenceFailed: true })} />)
+  await userEvent.click(screen.getByRole('tab', { name: /Attestations/ }))
+  expect(screen.getByText(copy.target.evidenceUnavailable)).toBeInTheDocument()
+  const table = screen.getByRole('table', { name: copy.target.attestations })
+  expect(within(table).getAllByText(copy.target.unavailable)).toHaveLength(2)
+  expect(within(table).queryByText(copy.target.none)).toBeNull()
+})
+
+test('with the evidence read working, an empty URI still reads None', async () => {
+  render(<TargetScreen {...props({ attestations: [row({ evidenceURI: '' })] })} />)
+  await userEvent.click(screen.getByRole('tab', { name: /Attestations/ }))
+  expect(screen.queryByText(copy.target.evidenceUnavailable)).toBeNull()
+  const table = screen.getByRole('table', { name: copy.target.attestations })
+  expect(within(table).getAllByText(copy.target.none).length).toBeGreaterThan(0)
 })

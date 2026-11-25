@@ -8,6 +8,7 @@ import { TargetError } from './TargetError'
 import { TargetMissing } from './TargetMissing'
 import { TargetTabs } from './TargetTabs'
 import { copy } from '../../lib/copy'
+import { scanCurrentVersionHref } from '../../lib/currentVersion'
 import { shortAddress } from '../../lib/format'
 
 export type TargetScreenProps = {
@@ -19,6 +20,8 @@ export type TargetScreenProps = {
   blocksBehind: number | null
   unbondingAt: number | null
   versionChanged: boolean
+  currentVersionId: string | null
+  evidenceFailed: boolean
   failed: boolean
 }
 
@@ -51,15 +54,15 @@ export function TargetScreen(props: TargetScreenProps) {
         hash={detail.pinnedCodehash === `0x${'0'.repeat(64)}` ? null : detail.pinnedCodehash}
         version={props.scan?.source.kind === 'skill' ? props.scan.source.commit : null}
       />
-      {props.versionChanged && props.scan !== null && <VersionNotice targetId={props.scan.targetId} src={props.src} />}
+      {props.versionChanged && props.currentVersionId !== null && <VersionNotice targetId={props.currentVersionId} src={props.src} />}
       <Banners detail={detail} scan={props.scan} unbondingAt={props.unbondingAt} />
       <StaleNotice blocksBehind={props.blocksBehind} />
       <div className="sf-target__body">
         <StatusCard detail={detail} />
-        <ActionColumn tier={detail.tier} />
+        <ActionColumn tier={detail.tier} targetType={detail.targetType} currentVersionHref={scanCurrentVersionHref(detail.src)} />
       </div>
       <section className="sf-frame sf-target__tabs">
-        <TargetTabs detail={detail} rows={props.attestations} scan={props.scan} />
+        <TargetTabs detail={detail} rows={props.attestations} scan={props.scan} evidenceFailed={props.evidenceFailed} />
       </section>
     </div>
   )

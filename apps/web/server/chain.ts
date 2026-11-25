@@ -4,9 +4,10 @@ import { bsc, bscTestnet, foundry } from 'viem/chains'
 import { z } from 'zod'
 import { coreAbi, vaultAbi } from '@sealflare/shared/abi'
 import type { TrustTier } from '@sealflare/shared/rules'
-import { TRUST_TIERS } from '@sealflare/shared/rules'
+import { TARGET_TYPES, TRUST_TIERS, VERDICTS } from '@sealflare/shared/rules'
 import { addresses } from '../lib/chain/addresses'
 import { expectedChainId } from '../lib/chain/config'
+import { collectLogs, firstBlockAtOrAfter } from './logRange'
 
 /** The registry reads the chain. It never writes: every write comes from a wallet. */
 export type CoreTarget = {
@@ -46,18 +47,16 @@ export type BondState = { amount: bigint; withdrawalAvailableAt: number }
 
 /** Everything the target page needs from the chain. */
 export interface ChainReader {
-  head(): Promise<bigint>
   /** Null when the registry has never seen this target. */
   target(targetId: Hex): Promise<CoreTarget | null>
   /** The tier always comes from Core, never from a cached row. */
   tier(targetId: Hex): Promise<TrustTier>
   attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
-  evidence(targetId: Hex): Promise<EvidenceRow[]>
+  /** The evidence of the event log, read from the block the target was created in. Rejects when the log cannot be read in full. */
+  evidence(targetId: Hex, createdAt: number): Promise<EvidenceRow[]>
   bond(targetId: Hex, publisher: Address): Promise<BondState | null>
 }
 
-/** How far back the event log is searched for the attestations of a target. */
-export const EVIDENCE_WINDOW = 50_000n
 /** How many attestation reads run at the same time. */
 const READ_BATCH = 10
 
@@ -74,6 +73,20 @@ const RpcUrls = z
 function rpcUrls(): string[] {
   return RpcUrls.parse(process.env.RPC_URLS)
 }
+
+const PUBLISHER_ROLES = ['NONE', 'THIRD_PARTY_SPONSOR', 'VERIFIED_PUBLISHER'] as const
+
+function pick<T>(list: readonly T[], index: number | bigint, what: string): T {
+  const position = Number(index)
+  const found = Number.isInteger(position) && position >= 0 ? list[position] : undefined
+  if (found === undefined) throw new RangeError(`Core returned an unknown ${what}.`)
+  return found
+}
+
+/** The enums of Core come from the shared lists, and an index outside them throws instead of becoming undefined. */
+export const verdictOf = (index: number | bigint) => pick(VERDICTS, index, 'verdict')
+export const targetTypeOf = (index: number | bigint) => pick(TARGET_TYPES, index, 'target type')
+export const publisherRoleOf = (index: number | bigint) => pick(PUBLISHER_ROLES, index, 'publisher role')
 
 function chainFor(chainId: number) {
   if (chainId === bsc.id) return bsc
@@ -106,7 +119,6 @@ function eventItem<E extends AbiEventItem>(name: E['name']): E {
 }
 
 type AttestedEvent = Extract<AbiEventItem, { name: 'Attested' }>
-type TargetCreatedEvent = Extract<AbiEventItem, { name: 'TargetCreated' }>
 
 function targetExists(target: CoreTarget): boolean {
   return target.createdAt > 0
@@ -120,12 +132,12 @@ async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
     args: [targetId],
   })
   const target = {
-    targetType: Number(raw.targetType) === 1 ? ('AI_SKILL_BUNDLE' as const) : ('SMART_CONTRACT' as const),
+    targetType: targetTypeOf(raw.targetType),
     target: raw.target,
     pinnedCodehash: raw.pinnedCodehash,
     hasDelegatecall: raw.hasDelegatecall,
     publisher: raw.publisher,
-    publisherRole: ['NONE', 'THIRD_PARTY_SPONSOR', 'VERIFIED_PUBLISHER'][Number(raw.publisherRole)] as CoreTarget['publisherRole'],
+    publisherRole: publisherRoleOf(raw.publisherRole),
     safeWeight: Number(raw.safeWeight),
     cautionWeight: Number(raw.cautionWeight),
     dangerWeight: Number(raw.dangerWeight),
@@ -148,7 +160,7 @@ async function readAttestation(targetId: Hex, index: number): Promise<CoreAttest
   })
   return {
     guardian: raw.guardian,
-    verdict: ['SAFE', 'CAUTION', 'DANGER'][Number(raw.verdict)] as CoreAttestation['verdict'],
+    verdict: verdictOf(raw.verdict),
     flags: Number(raw.flags),
     weight: Number(raw.weight),
     safeOrdinal: Number(raw.safeOrdinal),
@@ -168,24 +180,6 @@ async function readAttestations(targetId: Hex, count: number): Promise<CoreAttes
   return rows
 }
 
-/** The block the target was created in, so the log search can start there. */
-async function createdBlock(targetId: Hex, head: bigint): Promise<bigint> {
-  const earliest = head > EVIDENCE_WINDOW ? head - EVIDENCE_WINDOW : 0n
-  try {
-    const logs = await client().getLogs({
-      address: coreAddress(),
-      event: eventItem<TargetCreatedEvent>('TargetCreated'),
-      args: { targetId },
-      fromBlock: earliest,
-      toBlock: head,
-    })
-    const block = logs[0]?.blockNumber
-    return block === undefined ? earliest : block
-  } catch {
-    return earliest
-  }
-}
-
 /** The short proof is bytes on chain. It is shown as the text it is. */
 function proofText(proof: string | undefined): string {
   if (proof === undefined) return ''
@@ -196,27 +190,39 @@ function proofText(proof: string | undefined): string {
   }
 }
 
-async function readEvidence(targetId: Hex): Promise<EvidenceRow[]> {
+/** A target's creation block never changes, so the search for it runs once per process. */
+const createdBlocks = new Map<string, bigint>()
+
+async function createdBlock(targetId: Hex, createdAt: number, head: bigint): Promise<bigint> {
+  const known = createdBlocks.get(targetId.toLowerCase())
+  if (known !== undefined) return known
+  const block = await firstBlockAtOrAfter(createdAt, head, async number =>
+    Number((await client().getBlock({ blockNumber: number })).timestamp),
+  )
+  createdBlocks.set(targetId.toLowerCase(), block)
+  return block
+}
+
+/**
+ * The Attested logs of a target, from the block it was created in to the head, in bounded ranges.
+ * Any failed range, or a target too old to read this way, rejects: the caller reports that the
+ * evidence is unavailable instead of showing an empty list as if no proof was linked.
+ */
+async function readEvidence(targetId: Hex, createdAt: number): Promise<EvidenceRow[]> {
   const head = await client().getBlockNumber()
-  const fromBlock = await createdBlock(targetId, head)
-  try {
-    const logs = await client().getLogs({
-      address: coreAddress(),
-      event: eventItem<AttestedEvent>('Attested'),
-      args: { targetId },
-      fromBlock,
-      toBlock: head,
-    })
-    return logs.map(log => ({
-      index: Number(log.args.index),
-      shortProof: proofText(log.args.shortProof),
-      evidenceURI: log.args.evidenceURI ?? '',
-      txHash: log.transactionHash,
-    }))
-  } catch {
-    // Without the log the votes are still known. The evidence link is then missing, never guessed.
-    return []
-  }
+  const fromBlock = await createdBlock(targetId, createdAt, head)
+  const event = eventItem<AttestedEvent>('Attested')
+  const logs = await collectLogs(
+    (from, to) => client().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
+    fromBlock,
+    head,
+  )
+  return logs.map(log => ({
+    index: Number(log.args.index),
+    shortProof: proofText(log.args.shortProof),
+    evidenceURI: log.args.evidenceURI ?? '',
+    txHash: log.transactionHash,
+  }))
 }
 
 async function readBond(targetId: Hex, publisher: Address): Promise<BondState | null> {
@@ -238,7 +244,6 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
 /** The reader used by the target page. Every call goes out over a public RPC. */
 export function getChainReader(): ChainReader {
   return {
-    head: () => client().getBlockNumber(),
     target: readTarget,
     tier: async targetId => {
       const value = await client().readContract({
@@ -247,9 +252,7 @@ export function getChainReader(): ChainReader {
         functionName: 'tierOf',
         args: [targetId],
       })
-      const tier = TRUST_TIERS[Number(value)]
-      if (tier === undefined) throw new RangeError('Core returned an unknown trust tier.')
-      return tier
+      return pick(TRUST_TIERS, value, 'trust tier')
     },
     attestations: readAttestations,
     evidence: readEvidence,

@@ -9,6 +9,7 @@ export type TargetTabsProps = {
   detail: TargetDetail
   rows: readonly AttestationRow[]
   scan: ScanReport | null
+  evidenceFailed?: boolean
 }
 
 function publisherContent(detail: TargetDetail) {
@@ -28,13 +29,13 @@ function disputeContent(detail: TargetDetail) {
 }
 
 /** The details of a target. The findings open first. */
-export function TargetTabs({ detail, rows, scan }: TargetTabsProps) {
+export function TargetTabs({ detail, rows, scan, evidenceFailed = false }: TargetTabsProps) {
   const items = [
     { id: 'findings', label: copy.target.findings, content: <FindingsTab scan={scan} /> },
     {
       id: 'attestations',
       label: copy.target.attestationCount.replace('{count}', String(rows.length)),
-      content: <AttestationsTab rows={rows} />,
+      content: <AttestationsTab rows={rows} evidenceUnavailable={evidenceFailed} />,
     },
     { id: 'publisher', label: copy.target.publisher, content: publisherContent(detail) },
     { id: 'dispute', label: copy.target.dispute, content: disputeContent(detail) },

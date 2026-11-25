@@ -18,6 +18,9 @@ export function timeLeft(until: Date, now: Date): string {
   const minutes = Math.max(0, Math.ceil(diff / 60000))
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
+export function verdictLabel(verdict: 'SAFE' | 'CAUTION' | 'DANGER'): string {
+  return copy.attest[verdict === 'SAFE' ? 'safe' : verdict === 'CAUTION' ? 'caution' : 'danger']
+}
 export function formatUtc(seconds: number | bigint): string {
   const date = new Date(Number(seconds) * 1000)
   if (Number.isNaN(date.getTime())) throw new RangeError('A valid timestamp is required.')

@@ -2,9 +2,13 @@ import type { AttestationRow } from '@sealflare/shared/schemas'
 import { flagNames } from '@sealflare/shared/rules'
 import { Chip } from '../ui/Chip'
 import { copy } from '../../lib/copy'
-import { flagLabel, shortAddress } from '../../lib/format'
+import { flagLabel, shortAddress, verdictLabel } from '../../lib/format'
 
-export type AttestationsTabProps = { rows: readonly AttestationRow[] }
+export type AttestationsTabProps = {
+  rows: readonly AttestationRow[]
+  /** The event log could not be read in full, so an empty link means unknown, not none. */
+  evidenceUnavailable?: boolean
+}
 
 const ZERO_HASH = `0x${'0'.repeat(64)}`
 
@@ -23,9 +27,12 @@ function Flags({ flags }: { flags: number }) {
 }
 
 /** Who voted, what they voted, with which flags and how much weight it carried. */
-export function AttestationsTab({ rows }: AttestationsTabProps) {
+export function AttestationsTab({ rows, evidenceUnavailable = false }: AttestationsTabProps) {
   if (rows.length === 0) return <p className="sf-tab__empty">{copy.target.noAttestations}</p>
+  const missing = evidenceUnavailable ? copy.target.unavailable : copy.target.none
   return (
+    <>
+    {evidenceUnavailable && <p className="sf-actions__note" role="status">{copy.target.evidenceUnavailable}</p>}
     <table className="sf-table">
       <caption className="sf-sr-only">{copy.target.attestations}</caption>
       <thead>
@@ -45,7 +52,7 @@ export function AttestationsTab({ rows }: AttestationsTabProps) {
             <td className="sf-mono" data-label={copy.target.guardian}>
               {shortAddress(row.guardian)}
             </td>
-            <td data-label={copy.target.verdict}>{row.verdict}</td>
+            <td data-label={copy.target.verdict}>{verdictLabel(row.verdict)}</td>
             <td data-label={copy.target.flags}>
               <Flags flags={row.flags} />
             </td>
@@ -54,7 +61,7 @@ export function AttestationsTab({ rows }: AttestationsTabProps) {
             </td>
             <td data-label={copy.target.evidence}>
               {row.evidenceURI === '' ? (
-                <span className="sf-status__fact-note">{copy.target.none}</span>
+                <span className="sf-status__fact-note">{missing}</span>
               ) : (
                 <a href={row.evidenceURI} target="_blank" rel="noreferrer">
                   {copy.target.evidence}
@@ -63,7 +70,7 @@ export function AttestationsTab({ rows }: AttestationsTabProps) {
             </td>
             <td className="sf-mono" data-label={copy.target.transaction}>
               {row.txHash === ZERO_HASH ? (
-                <span className="sf-status__fact-note">{copy.target.none}</span>
+                <span className="sf-status__fact-note">{missing}</span>
               ) : (
                 <a href={`https://bscscan.com/tx/${row.txHash}`} target="_blank" rel="noreferrer">
                   {row.txHash.slice(0, 10)}
@@ -77,5 +84,6 @@ export function AttestationsTab({ rows }: AttestationsTabProps) {
         ))}
       </tbody>
     </table>
+    </>
   )
 }

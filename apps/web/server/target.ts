@@ -1,9 +1,9 @@
 import 'server-only'
 import type { Hex } from 'viem'
 import { Bytes32Schema, decodeSrc, encodeSrc, TargetDetail, type AttestationRow, type ScanReport, type SignalGroup } from '@sealflare/shared/schemas'
-import { ZERO_ADDRESS, type TrustTier } from '@sealflare/shared/rules'
+import { ZERO_ADDRESS, targetIdOfContract, type TrustTier } from '@sealflare/shared/rules'
 import { getChainReader, type ChainReader, type CoreAttestation, type CoreTarget, type EvidenceRow } from './chain'
-import { getScan, putScan } from './scanStore'
+import { getScan, getScanForSource, putScan, putScanForSource } from './scanStore'
 import { getScanEnvironment } from './scanner'
 
 const ZERO_HASH = `0x${'0'.repeat(64)}` as const
@@ -130,13 +130,27 @@ export function buildDetail(input: DetailInput): TargetDetail {
   }
 }
 
+type OnChainType = CoreTarget['targetType'] | null
+
+/**
+ * Whether a `?src=` can describe this target at all. A contract id is the hash of its address, so
+ * another address is never this target. A skill id is the hash of its bundle, which is only known
+ * after scanning, so any skill source may be a version of it. The kind has to match the registry.
+ */
+function sourceFitsTarget(reference: NonNullable<ReturnType<typeof decodeSrc>>, id: Hex, type: OnChainType): boolean {
+  if (reference.kind === 'skill') return type !== 'SMART_CONTRACT'
+  return type !== 'AI_SKILL_BUNDLE' && targetIdOfContract(reference.address).toLowerCase() === id.toLowerCase()
+}
+
 /** The scan of this target, either the cached one or a fresh one for the given source. */
-export async function loadScan(targetId: Hex, src: string | null): Promise<ScanReport | null> {
+export async function loadScan(targetId: Hex, src: string | null, type: OnChainType = null): Promise<ScanReport | null> {
   const cached = getScan(targetId)
   if (cached) return cached
   if (src === null) return null
   const reference = decodeSrc(src)
-  if (reference === null) return null
+  if (reference === null || !sourceFitsTarget(reference, targetId, type)) return null
+  const known = getScanForSource(src)
+  if (known) return known
   try {
     const { scanner, rpc, explorer, repo } = getScanEnvironment()
     const report =
@@ -147,6 +161,7 @@ export async function loadScan(targetId: Hex, src: string | null): Promise<ScanR
             { repo },
           )
     putScan(report)
+    putScanForSource(src, report)
     return report
   } catch {
     // A scan that fails leaves the page without findings. It never turns into a safe verdict.
@@ -160,21 +175,34 @@ export type TargetPageData = {
   attestations: AttestationRow[]
   scan: ScanReport | null
   src: string | null
+  /** Always null until the indexer reports its finalized block. The scan's age is not the lag of the data. */
   blocksBehind: number | null
   unbondingAt: number | null
+  /** A skill source that names a version other than the rated one. The page then offers that version. */
   versionChanged: boolean
+  currentVersionId: string | null
+  /** The event log could not be read in full, so the evidence and transaction links are unknown. */
+  evidenceFailed: boolean
   failed: boolean
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
-  const head = await reader.head()
   const target = await reader.target(targetId)
   const tier = target ? await reader.tier(targetId) : 'UNRATED'
   const attestations = target ? await reader.attestations(targetId, target.attestationCount) : []
-  const evidence = target ? await reader.evidence(targetId) : []
+  let evidence: EvidenceRow[] = []
+  let evidenceFailed = false
+  if (target) {
+    try {
+      evidence = await reader.evidence(targetId, target.createdAt)
+    } catch {
+      // The votes and the tier come from contract reads and stay. Only the links are unknown.
+      evidenceFailed = true
+    }
+  }
   const bond =
     target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher) : null
-  return { head, target, tier, attestations, evidence, bond }
+  return { target, tier, attestations, evidence, evidenceFailed, bond }
 }
 
 /**
@@ -192,6 +220,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     blocksBehind: null,
     unbondingAt: null,
     versionChanged: false,
+    currentVersionId: null,
+    evidenceFailed: false,
     failed: false,
   }
   if (!parsedId.success) return { ...empty, failed: true }
@@ -202,8 +232,11 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   } catch {
     return { ...empty, failed: true }
   }
-  const scan = await loadScan(id, src)
-  const versionChanged = scan !== null && scan.targetId.toLowerCase() !== id.toLowerCase()
+  const candidate = await loadScan(id, src, chain.target?.targetType ?? null)
+  // Only the scan of this very target is shown. Another target's findings never appear under this tier.
+  const scan = candidate !== null && candidate.targetId.toLowerCase() === id.toLowerCase() ? candidate : null
+  const newerSkill =
+    candidate !== null && scan === null && chain.target?.targetType === 'AI_SKILL_BUNDLE' && candidate.targetType === 'AI_SKILL_BUNDLE'
   const rows = attestationRows(chain.attestations, chain.evidence)
   const built = buildDetail({
     targetId: id,
@@ -216,10 +249,6 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   })
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
-  const blocksBehind =
-    scan?.source.kind === 'contract' && chain.head > BigInt(scan.source.blockNumber)
-      ? Number(chain.head - BigInt(scan.source.blockNumber))
-      : null
   const unbondingAt = chain.bond && chain.bond.withdrawalAvailableAt > 0 ? chain.bond.withdrawalAvailableAt : null
   return {
     targetId: id,
@@ -227,9 +256,11 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     attestations: rows,
     scan,
     src,
-    blocksBehind,
+    blocksBehind: null,
     unbondingAt,
-    versionChanged,
+    versionChanged: newerSkill,
+    currentVersionId: newerSkill && candidate !== null ? candidate.targetId : null,
+    evidenceFailed: chain.evidenceFailed,
     failed: false,
   }
 }
