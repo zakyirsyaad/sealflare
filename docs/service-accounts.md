@@ -21,8 +21,8 @@ VPS, or as GitHub Actions secrets, by the founder.
 | 4 | Pinata | A scoped API key (JWT) limited to pinning JSON and files | 27 Nov (M1) |
 | 5 | WalletConnect (Reown) | A project, with the production domain on its allow list | 27 Nov (M1) |
 | 6 | Anthropic | An API key for the sandbox worker, with a monthly spend limit set in the console | 4 Dec (scanning Task 11) |
-| 7 | Vercel | A project linked to this repository, root `apps/web` | 1 Dec (release) |
-| 8 | VPS | Docker Compose for the internal service, indexer, worker and Postgres, plus a daily `pg_dump` copied off the VPS | 1 Dec for the indexer and internal service, 4 Dec for the worker |
+| 7 | Vercel | Done: project `sealflare`, root `apps/web`, see [deploy/README.md](../deploy/README.md) | 1 Dec (release) |
+| 8 | VPS | Oracle VPS `vps-oracle`, set up in [deploy/README.md](../deploy/README.md): Postgres and daily `pg_dump` run; the internal service, indexer and worker are added when built. Copying dumps off the VPS is still to be decided | 1 Dec for the indexer and internal service, 4 Dec for the worker |
 | 9 | Treasury | An address (ideally a multisig) that receives fees; passed as `TREASURY` to `DeployModules` | testnet rehearsal |
 | 10 | Deployer | The hardware wallet that deploys `Core` and calls `setModules` once | testnet rehearsal |
 
