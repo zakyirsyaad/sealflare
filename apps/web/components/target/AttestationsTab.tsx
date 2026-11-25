@@ -42,13 +42,17 @@ export function AttestationsTab({ rows }: AttestationsTabProps) {
       <tbody>
         {rows.map(row => (
           <tr key={row.index}>
-            <td className="sf-mono">{shortAddress(row.guardian)}</td>
-            <td>{row.verdict}</td>
-            <td>
+            <td className="sf-mono" data-label={copy.target.guardian}>
+              {shortAddress(row.guardian)}
+            </td>
+            <td data-label={copy.target.verdict}>{row.verdict}</td>
+            <td data-label={copy.target.flags}>
               <Flags flags={row.flags} />
             </td>
-            <td className="sf-mono">{row.weight}</td>
-            <td>
+            <td className="sf-mono" data-label={copy.target.weight}>
+              {row.weight}
+            </td>
+            <td data-label={copy.target.evidence}>
               {row.evidenceURI === '' ? (
                 <span className="sf-status__fact-note">{copy.target.none}</span>
               ) : (
@@ -57,7 +61,7 @@ export function AttestationsTab({ rows }: AttestationsTabProps) {
                 </a>
               )}
             </td>
-            <td className="sf-mono">
+            <td className="sf-mono" data-label={copy.target.transaction}>
               {row.txHash === ZERO_HASH ? (
                 <span className="sf-status__fact-note">{copy.target.none}</span>
               ) : (
@@ -66,7 +70,9 @@ export function AttestationsTab({ rows }: AttestationsTabProps) {
                 </a>
               )}
             </td>
-            <td className="sf-mono">{row.at.slice(0, 10)}</td>
+            <td className="sf-mono" data-label={copy.target.when}>
+              {row.at.slice(0, 10)}
+            </td>
           </tr>
         ))}
       </tbody>

@@ -28,13 +28,21 @@ function Row({ label, note, group }: { label: string; note: string; group: Signa
         {label}
         <span className="sf-signal__note">{note}</span>
       </th>
-      <td className="sf-mono">{group.votes.safe}</td>
-      <td className="sf-mono">{group.votes.caution}</td>
-      <td className="sf-mono">{group.votes.danger}</td>
-      <td>
+      <td className="sf-mono" data-label={copy.attest.safe}>
+        {group.votes.safe}
+      </td>
+      <td className="sf-mono" data-label={copy.attest.caution}>
+        {group.votes.caution}
+      </td>
+      <td className="sf-mono" data-label={copy.attest.danger}>
+        {group.votes.danger}
+      </td>
+      <td data-label={copy.target.flagsReported}>
         <FlagChips flags={group.flags} />
       </td>
-      <td className="sf-mono sf-signal__weight">{weight}</td>
+      <td className="sf-mono sf-signal__weight" data-label={copy.target.weight}>
+        {weight}
+      </td>
     </tr>
   )
 }

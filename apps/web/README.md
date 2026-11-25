@@ -240,6 +240,7 @@ builds from an id alone, from `?src=` alone, or from both.
 - `server/scanStore.ts`: the in-memory cache of the last scan per target.
 - `server/target.ts`: the read model assembly.
 - `test/target.test.tsx`, `test/target.server.test.ts`.
+- `e2e/target.spec.ts`: the check of the page at 375 px against the local chain.
 
 ### Decisions that differ from the plan
 
@@ -268,6 +269,18 @@ builds from an id alone, from `?src=` alone, or from both.
 - TDD: the two new suites failed on the missing modules first. All 183 web tests pass across
   fourteen files; the coverage thresholds hold (components/target 85.62%).
 - Typecheck and the production build pass. The build lists `/app/t/[id]` as a dynamic route.
-- Not tested: the Playwright check at 375 px from the plan. It needs the local chain with the stub
-  contracts and the seeded targets, which the CI web server does not start. The CSS keeps the
-  action column sticky below 760 px, but the check itself is still open.
+- Not tested: nothing of the plan is left open. The Playwright check at 375 px runs against the
+  local chain, so it needs the stub contracts and the seeded targets:
+
+  ```bash
+  pnpm chain      # in the repository root, it keeps running
+  pnpm chain:seed
+  cd apps/web && NEXT_PUBLIC_CHAIN_ID=31337 pnpm build
+  pnpm exec playwright test
+  ```
+
+  The check skips itself when the local chain does not run, or when the app was built for another
+  chain. It found two real problems, both fixed here: the identity label of a skill did not wrap, so
+  a long hash overflowed the screen, and the signal table kept its 540 px minimum width on a narrow
+  screen. The two tables of the page now carry the label of every cell, so the numbers still say
+  what they count when the table becomes a list.
