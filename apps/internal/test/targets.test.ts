@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { FLAGS } from '@sealflare/shared/rules'
+import { canonicalBundleHash, targetIdOfSkill } from '@sealflare/shared/rules'
 import { body, createTestDb, get, testApp } from './helpers'
 import {
   asAnswer,
@@ -310,6 +311,72 @@ test('a target whose source does not match its type is refused, not answered', a
   const answer = asAnswer(await body(response))
   expect(answer.success).toBe(false)
   expect(answer.error?.code).toBe('INTERNAL')
+  await close()
+})
+
+test('a skill whose row holds a bundle hash is answered with no source', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  const skill = targetId(20)
+  // The bundle hash is not a source. The read model does not take the source of a skill from
+  // the column, so one row like this cannot take the whole list down.
+  await insertTarget(db, { id: skill, type: 'AI_SKILL_BUNDLE', src: ZERO_HASH, bundleHash: ZERO_HASH })
+
+  const response = await get(app, '/targets')
+  expect(response.status).toBe(200)
+  const list = asAnswer<{ items: { src: unknown }[] }>(await body(response))
+  expect(list.data?.items[0]?.src).toBeNull()
+  await close()
+})
+
+test('a skill with a cached scan shows the pinned reference in the list and the detail', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  const contentHash = `0x${'2'.repeat(64)}` as `0x${string}`
+  const publisher = '0x3333333333333333333333333333333333333333' as `0x${string}`
+  const canonical = canonicalBundleHash(contentHash, publisher)
+  const id = targetIdOfSkill(canonical)
+  await insertTarget(db, { id, type: 'AI_SKILL_BUNDLE', src: null, bundleHash: canonical })
+  await db.query(`INSERT INTO scan_cache (target_id, src, report, scanned_at) VALUES ($1, $2, $3, $4)`, [
+    id,
+    'gh:owner/repo@' + 'a'.repeat(40) + ':skill',
+    JSON.stringify({
+      schemaVersion: 1,
+      targetType: 'AI_SKILL_BUNDLE',
+      targetId: id,
+      source: {
+        kind: 'skill',
+        repo: 'owner/repo',
+        commit: 'a'.repeat(40),
+        path: 'skill',
+        contentHash,
+        manifestPublisher: publisher,
+        canonicalBundleHash: canonical,
+        fileCount: 1,
+        totalBytes: 10,
+      },
+      scannedAt: '2026-11-25T10:00:00.000Z',
+      checks: [
+        { id: 'bundle_hash', status: 'passed' },
+        { id: 'zero_width_unicode', status: 'passed' },
+        { id: 'unlimited_approval', status: 'passed' },
+        { id: 'hardcoded_transfer', status: 'passed' },
+        { id: 'pipe_to_shell', status: 'passed' },
+        { id: 'external_dependency', status: 'passed' },
+        { id: 'helper_scripts', status: 'passed' },
+      ],
+      findings: [],
+      flags: 0,
+      suggestedVerdict: 'SAFE',
+    }),
+    '2026-11-25T10:00:00.000Z',
+  ])
+
+  const expected = `gh:owner/repo@${'a'.repeat(40)}:skill`
+  const list = asAnswer<{ items: { src: unknown }[] }>(await body(await get(app, '/targets')))
+  expect(list.data?.items[0]?.src).toBe(expected)
+  const detail = asAnswer<{ src: unknown }>(await body(await get(app, `/targets/${id}`)))
+  expect(detail.data?.src).toBe(expected)
   await close()
 })
 

@@ -51,16 +51,15 @@ function keyOf(verdict: string): 'safe' | 'caution' | 'danger' {
  * The signal is never collapsed into one number, and it never says a target is safe.
  */
 export function signalOf(rows: readonly SignalVote[]): { newIds: SignalGroup; guardians: SignalGroup } {
-  const newIds = emptyTally()
-  const guardians = emptyTally()
-  for (const row of rows) {
-    const tally = row.weight >= 2 ? guardians : newIds
-    const key = keyOf(row.verdict)
-    tally.votes[key] += 1
-    tally.weight[key] += row.weight
-    tally.flags |= row.flags
-  }
-  return { newIds, guardians }
+  return splitOf(
+    rows.map((row) => ({
+      verdict: row.verdict,
+      weight: row.weight,
+      votes: 1,
+      totalWeight: row.weight,
+      flags: row.flags,
+    })),
+  )
 }
 
 /**
@@ -70,9 +69,18 @@ export function signalOf(rows: readonly SignalVote[]): { newIds: SignalGroup; gu
  * here. A group of weight 0 belongs to the new holders, like a single vote of weight 0 does.
  */
 export function signalOfTallies(tallies: readonly SignalTally[]): { newIds: SignalGroup; guardians: SignalGroup } {
+  return splitOf(tallies)
+}
+
+/**
+ * The one rule that puts every vote in its row.
+ *
+ * Both answers go through here, so the two can never drift apart.
+ */
+function splitOf(groups: readonly SignalTally[]): { newIds: SignalGroup; guardians: SignalGroup } {
   const newIds = emptyTally()
   const guardians = emptyTally()
-  for (const group of tallies) {
+  for (const group of groups) {
     const tally = group.weight >= 2 ? guardians : newIds
     const key = keyOf(group.verdict)
     tally.votes[key] += group.votes

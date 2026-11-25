@@ -51,6 +51,10 @@ Every answer is read in one snapshot, so the rows and the block they were read a
 from two different moments. The number of rows a list holds is counted on its own, so a page
 past the end of the list still names the real total.
 
+The source of a contract is its address. The source of a skill is the pinned GitHub reference
+of its cached scan, because the contract only knows the bundle hash. A skill that was never
+scanned has no source, and the answer says so instead of making something up.
+
 The signal of a target is split in the two rows the interface shows: the new Agent ID holders,
 who vote with weight 1, and the experienced Guardians, who vote with weight 2 or more. Every
 group shows the votes per verdict, the total weight and the flags that were reported. The

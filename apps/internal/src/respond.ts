@@ -1,15 +1,17 @@
 /** The answers the internal service gives. Every answer uses one shape, success or failure. */
 
+import { z } from 'zod'
+import { ResponseMeta, UintStringSchema } from '@sealflare/shared/schemas'
+
 /**
- * The meta of an answer: how fresh the data is, and the page of a list.
+ * The meta of an answer that comes from indexed data.
  *
- * The frozen schema leaves both optional, because a plain answer does not need them. An answer
- * built from indexed data always names the block it was read at, so the type here asks for it.
+ * The frozen schema leaves the block optional, because a plain answer does not need it. An
+ * answer built from indexed data always names the block it was read at, so the type here asks
+ * for it and keeps the frozen shape for the rest.
  */
-export interface ReadMeta {
-  finalizedBlock: string
-  page?: { total: number; page: number; limit: number }
-}
+export const ReadMeta = ResponseMeta.extend({ finalizedBlock: UintStringSchema })
+export type ReadMeta = z.infer<typeof ReadMeta>
 
 export const INTERNAL_ERROR_CODES = [
   'BAD_REQUEST',
