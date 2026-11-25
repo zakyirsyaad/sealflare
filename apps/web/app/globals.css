@@ -198,3 +198,26 @@ a { color: inherit; }
 .sf-theme { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: 12px; color: var(--muted-foreground); }
 .sf-theme input { accent-color: var(--positive); }
 .sf-shell-note { margin: 0; padding: 24px; color: var(--muted-foreground); }
+.sf-wallet { position: relative; }
+.sf-wallet > .sf-btn { gap: 8px; }
+a.sf-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.sf-chip--count { min-width: 20px; justify-content: center; padding: 0 6px; background: var(--primary); color: var(--primary-foreground); font-family: var(--font-mono); }
+.sf-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; display: grid; min-width: 220px; max-width: calc(100vw - 40px); border: 1px solid var(--border); background: var(--card); }
+.sf-menu a, .sf-menu button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 16px; border: 0; background: transparent; color: var(--foreground); text-align: left; text-decoration: none; cursor: pointer; }
+.sf-menu a:hover, .sf-menu button:hover, .sf-menu a:focus-visible, .sf-menu button:focus-visible { background: var(--muted); }
+.sf-stack { display: grid; gap: 12px; }
+.sf-stack__title { margin: 0; font-size: 18px; font-weight: 500; line-height: 26px; }
+.sf-connectors { display: grid; gap: 8px; margin: 16px 0; padding: 0; list-style: none; }
+
+/* Scan checklist: the Layer 1 checks that tick off one by one */
+.sf-checks { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); background: var(--card); }
+.sf-check { display: flex; gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.sf-check:last-child { border-bottom: 0; }
+.sf-check__mark { width: 14px; color: var(--muted-foreground); font-family: var(--font-mono); }
+.sf-check__id { color: var(--muted-foreground); font-size: 12px; }
+.sf-check[data-status='done'] .sf-check__mark { color: var(--muted-foreground); }
+.sf-check[data-status='passed'] .sf-check__mark { color: var(--positive); }
+.sf-check[data-status='running'] .sf-check__mark { color: var(--foreground); }
+.sf-check[data-status='flagged'] .sf-check__mark { color: var(--warning); }
+.sf-check[data-status='failed'] .sf-check__mark { color: var(--destructive); }
+.sf-check[data-status='skipped'] .sf-check__mark { color: var(--muted-foreground); }
