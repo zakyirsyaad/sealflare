@@ -1,0 +1,50 @@
+# Sealflare services on the team VPS. Copied to ~/sealflare/compose.yml; secrets live only in
+# ~/sealflare/.env (mode 600), never in this repository.
+#
+# The internal service, indexer and sandbox worker are added here once lanes 2 and 3 have built
+# them (application Tasks 4 and 5, scanning Tasks 9 to 11). Only the internal service is reachable
+# from outside, through nginx on 127.0.0.1:3040.
+
+name: sealflare
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sealflare
+      POSTGRES_USER: sealflare
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    # No published port: only containers on the internal network reach Postgres.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sealflare -d sealflare"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # internal:
+  #   image: ...                      # apps/internal (lane 3)
+  #   env_file: .env                  # INTERNAL_KEY, WORKER_BEARER_KEY, DATABASE_URL
+  #   ports: ["127.0.0.1:3040:3040"]  # nginx proxies internal.zorvolabs.xyz here
+  #   networks: [internal, egress]
+  #
+  # indexer:
+  #   image: ...                      # apps/indexer (lane 3); RPC_URLS, DATABASE_URL
+  #   networks: [internal, egress]
+  #
+  # worker:
+  #   image: ...                      # packages/sandbox-worker (lane 2)
+  #   networks: [worker]              # reaches only the LLM API and Pinata (architecture 5.2)
+
+networks:
+  # No route to the internet: Postgres and anything only it talks to.
+  internal:
+    internal: true
+  # Outbound access for the internal service and the indexer.
+  egress: {}
+
+volumes:
+  pgdata:
