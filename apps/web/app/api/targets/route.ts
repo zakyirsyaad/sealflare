@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import { ListQuery } from '@sealflare/shared/schemas'
-import { fail, failUnexpected, ok } from '../../../server/respond'
+import type { TargetType, TrustTier } from '@sealflare/shared/rules'
+import { fail, ok } from '../../../server/respond'
 import { internalGet, InternalServiceError, InternalTargetSummary } from '../../../server/internal'
 import { withTiers } from '../../../server/tier'
+import { withDeadline } from '../../../server/deadline'
 
 /** The default size of a page. */
 const DEFAULT_LIMIT = 20
@@ -40,38 +42,78 @@ function readNumber(text: string | null): number | undefined {
 export async function GET(request: Request): Promise<Response> {
   const query = readQuery(new URL(request.url))
   if (!query.ok) return fail('BAD_REQUEST', 'The query of the target list is not valid.', 400)
-  const { page, limit, address, type, tier } = query.value
-  const current = page ?? 1
-  const size = limit ?? DEFAULT_LIMIT
   try {
-    if (tier === undefined) {
-      const answer = await internalGet<{ items: unknown[] }>('/targets', { page: current, limit: size, address, type })
-      const items = InternalTargetSummary.array().safeParse(answer.data.items)
-      if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
-      const filled = await withTiers(items.data)
-      if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
-      const total = answer.meta.page?.total ?? filled.length
-      return ok({ items: filled }, { finalizedBlock: answer.meta.finalizedBlock, page: { total, page: current, limit: size } })
-    }
-    const answer = await internalGet<{ items: unknown[] }>('/targets/tier-candidates', { address, type })
-    const items = InternalTargetSummary.array().safeParse(answer.data.items)
-    if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
-    const filled = await withTiers(items.data)
-    if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
-    // The order of the internal service is kept, so the page of a filter is the page of the
-    // unfiltered list with the rows that do not match taken out.
-    const matching = filled.filter(item => item.tier === tier)
-    const start = (current - 1) * size
-    return ok(
-      { items: matching.slice(start, start + size) },
-      { finalizedBlock: answer.meta.finalizedBlock, page: { total: matching.length, page: current, limit: size } },
-    )
+    return await withDeadline(answerTargets(query.value))
   } catch (error) {
     if (error instanceof InternalServiceError) {
       // The internal service refused or could not answer. There is no list to show, so the answer
       // is an error and never an empty list that looks like a registry without targets.
       return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
     }
-    return failUnexpected('The target list could not be read.', error)
+    // The deadline of the request passed, or the chain could not be read. There is no list.
+    console.error('The target list could not be read.', error instanceof Error ? error.name : 'unknown')
+    return fail('INTERNAL', 'The target list could not be read.', 503)
   }
+}
+
+/** The answer of the target list, with the tier of Core filled in. */
+async function answerTargets(query: z.infer<typeof ListQuery>): Promise<Response> {
+  const { page, limit, address, type, tier } = query
+  const current = page ?? 1
+  const size = limit ?? DEFAULT_LIMIT
+  if (tier === undefined) return answerPage({ page: current, limit: size, address, type })
+  return answerFiltered({ page: current, limit: size, address, type, tier })
+}
+
+/** The page of the internal service, with the tier of every row of that page filled in. */
+async function answerPage(filters: {
+  page: number
+  limit: number
+  address?: string
+  type?: TargetType
+}): Promise<Response> {
+  const answer = await internalGet<{ items: unknown[] }>('/targets', {
+    page: filters.page,
+    limit: filters.limit,
+    address: filters.address,
+    type: filters.type,
+  })
+  const items = InternalTargetSummary.array().safeParse(answer.data.items)
+  if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
+  const filled = await withTiers(items.data)
+  if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
+  const total = answer.meta.page?.total
+  if (total === undefined) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
+  return ok({ items: filled }, { finalizedBlock: answer.meta.finalizedBlock, page: { total, page: filters.page, limit: filters.limit } })
+}
+
+/**
+ * The page of the candidates that match the tier.
+ *
+ * The candidates come from one snapshot of the internal service, the tiers are read from Core,
+ * and only then the page is cut, so the total counts every row that matches.
+ */
+async function answerFiltered(filters: {
+  page: number
+  limit: number
+  address?: string
+  type?: TargetType
+  tier: TrustTier
+}): Promise<Response> {
+  const answer = await internalGet<{ items: unknown[] }>('/targets/tier-candidates', {
+    address: filters.address,
+    type: filters.type,
+  })
+  const items = InternalTargetSummary.array().safeParse(answer.data.items)
+  if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
+  const filled = await withTiers(items.data)
+  if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
+  // The order of the internal service is kept, so the page of a filter is the page of the
+  // unfiltered list with the rows that do not match taken out.
+  const matching = filled.filter(item => item.tier === filters.tier)
+  const start = (filters.page - 1) * filters.limit
+  return ok(
+    { items: matching.slice(start, start + filters.limit) },
+    { finalizedBlock: answer.meta.finalizedBlock, page: { total: matching.length, page: filters.page, limit: filters.limit } },
+  )
 }

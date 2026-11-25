@@ -7,25 +7,6 @@ import { getChainReader, type ChainReader } from './chain'
 /** How many tier reads run at the same time. */
 const BATCH = 20
 
-/** How long the tier of a whole answer may take. A request that passes it answers with an error. */
-const DEADLINE_MS = 8_000
-
-/**
- * The work of a request, with a deadline. A request that passes the deadline answers with an
- * error, and never with half of its rows.
- */
-async function withDeadline<T>(work: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('The deadline of the request passed.')), DEADLINE_MS)
-  })
-  try {
-    return await Promise.race([work, deadline])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
 /**
  * The tier of one target, read from Core.
  *
@@ -61,12 +42,13 @@ export async function tiersAt(reader: ChainReader, targetIds: readonly Hex[]): P
  * The rows of the list with the tier of Core filled in.
  *
  * Null when a tier cannot be read: a row with a guessed tier is never answered, because a tier
- * that is wrong is worse than no answer at all.
+ * that is wrong is worse than no answer at all. The deadline of the request is the deadline of
+ * the route, so this only reads the tiers.
  */
 export async function withTiers(items: readonly TargetSummary[]): Promise<TargetSummary[] | null> {
   let tiers: Map<string, TrustTier>
   try {
-    tiers = await withDeadline(tiersAt(getChainReader(), items.map(item => item.targetId as Hex)))
+    tiers = await tiersAt(getChainReader(), items.map(item => item.targetId as Hex))
   } catch (error) {
     console.error('The trust tier could not be read.', error instanceof Error ? error.name : 'unknown')
     return null

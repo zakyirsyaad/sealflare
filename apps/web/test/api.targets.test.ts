@@ -131,6 +131,31 @@ describe('the public target API', () => {
     expect(blocks.size).toBe(1)
   })
 
+  test('a tier filter reads the candidates of the internal service, not one page of the list', async () => {
+    internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
+    await listRoute(request('/api/targets?tier=COMMUNITY_SAFE'))
+    expect(internalGet).toHaveBeenCalledWith('/targets/tier-candidates', expect.anything())
+  })
+
+  test('a matching target beyond the first candidate page appears in the first filtered page', async () => {
+    const ids = Array.from({ length: 21 }, (_, index) => `0x${String(index + 1).padStart(4, '0')}${'44'.repeat(30)}`)
+    internalGet.mockResolvedValue({ data: { items: ids.map(targetId => summary({ targetId })) }, meta: { finalizedBlock: '12345' } })
+    reader.tierAt.mockImplementation(async (id: string) => (id === ids[20] ? 'COMMUNITY_SAFE' : 'UNRATED'))
+    const response = await listRoute(request('/api/targets?tier=COMMUNITY_SAFE&limit=20'))
+    const body = await answer(response)
+    expect(body.data.items.map((item: { targetId: string }) => item.targetId)).toEqual([ids[20]])
+    expect(body.meta.page).toEqual({ total: 1, page: 1, limit: 20 })
+  })
+
+  test('a list without a total is a 503 and never a wrong number', async () => {
+    internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
+    const response = await listRoute(request('/api/targets'))
+    expect(response.status).toBe(503)
+    const body = await answer(response)
+    expect(body.success).toBe(false)
+    expect(body.data).toBeUndefined()
+  })
+
   test('a filtered page past the end still names the real total', async () => {
     internalGet.mockResolvedValue({ data: { items: [summary({ targetId: FIRST }), summary({ targetId: SECOND })] }, meta: { finalizedBlock: '12345' } })
     reader.tierAt.mockResolvedValue('COMMUNITY_SAFE')

@@ -44,8 +44,9 @@ function withPlaceholderTier(value: unknown): unknown {
 export const InternalTargetSummary = z.preprocess(withPlaceholderTier, TargetSummary)
 export const InternalTargetDetail = z.preprocess(withPlaceholderTier, TargetDetail)
 
-/** How long the public API waits for the internal service. */
-const TIMEOUT_MS = 8_000
+/** How long the public API waits for the internal service. It is shorter than the deadline of the
+ * request, so the chain still has time to answer within it. */
+const TIMEOUT_MS = 5_000
 
 function queryString(query: Record<string, string | number | undefined> | undefined): string {
   if (!query) return ''
@@ -58,13 +59,18 @@ function queryString(query: Record<string, string | number | undefined> | undefi
   return text.length === 0 ? '' : `?${text}`
 }
 
+/** A path always starts with a slash, so it can never be read as part of the host name. */
+function pathOf(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`
+}
+
 async function request<T>(path: string, init: RequestInit): Promise<InternalAnswer<T>> {
   const { INTERNAL_URL, INTERNAL_KEY } = parseInternalEnv(process.env)
   const headers = new Headers(init.headers)
   headers.set('authorization', `Bearer ${INTERNAL_KEY}`)
   let response: Response
   try {
-    response = await fetch(`${INTERNAL_URL.replace(/\/$/, '')}${path}`, {
+    response = await fetch(`${INTERNAL_URL.replace(/\/$/, '')}${pathOf(path)}`, {
       ...init,
       headers,
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -83,11 +89,14 @@ async function request<T>(path: string, init: RequestInit): Promise<InternalAnsw
       typeof error.message === 'string' ? error.message : 'The internal service refused the request.',
     )
   }
+  if (!response.ok || body.data === undefined || body.data === null) {
+    throw new InternalServiceError('INTERNAL', 'The internal service did not answer with data.')
+  }
   const meta = (body.meta ?? {}) as InternalMeta
   return { data: body.data as T, meta }
 }
 
-/** Reads from the internal service. A path without a leading slash is not a path. */
+/** Reads from the internal service. A path without a leading slash still reaches the right route. */
 export async function internalGet<T = unknown>(
   path: string,
   query?: Record<string, string | number | undefined>,

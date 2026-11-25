@@ -4,7 +4,7 @@ import { expectedChainId } from '../../../lib/chain/config'
 import { fail, failUnexpected, ok } from '../../../server/respond'
 import { internalPost, InternalServiceError } from '../../../server/internal'
 import { getChainReader } from '../../../server/chain'
-import { pinEvidence, UploadFailedError } from '../../../server/pinata'
+import { pinEvidence, pinataKey, UploadFailedError } from '../../../server/pinata'
 import { takeRateLimit } from '../../../server/rate'
 
 /** A signed request may not live longer than ten minutes, and never further ahead than that. */
@@ -39,6 +39,8 @@ export async function POST(request: Request): Promise<Response> {
   if (holder !== null) return holder
   const limited = await checkRate(evidence.address)
   if (limited !== null) return limited
+  const configured = checkStorage()
+  if (configured !== null) return configured
   const reserved = await reserveNonce(evidence)
   if (reserved !== null) return reserved
 
@@ -106,10 +108,22 @@ async function checkRate(address: Address): Promise<Response | null> {
 }
 
 /**
+ * The storage has to be usable before the nonce is reserved. A deployment without the key holds
+ * no reservation, so nothing has to be given back later.
+ */
+function checkStorage(): Response | null {
+  try {
+    pinataKey()
+  } catch (error) {
+    return failUnexpected('The evidence could not be stored.', error)
+  }
+  return null
+}
+
+/**
  * Reserves the nonce of the request. A nonce that was used before is refused here, so a replay
  * never reaches the storage.
- */
-async function reserveNonce(evidence: Evidence): Promise<Response | null> {
+ */async function reserveNonce(evidence: Evidence): Promise<Response | null> {
   let fresh: boolean
   try {
     const answer = await internalPost<{ fresh: boolean }>('/nonce/use', {

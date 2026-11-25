@@ -41,10 +41,10 @@ const REPORT = ScanReport.parse({
   suggestedVerdict: 'SAFE',
 })
 
-function request(body: unknown): Request {
+function request(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request('http://localhost/api/scan/contract', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   })
 }
@@ -199,6 +199,30 @@ describe('the scan API', () => {
     scanContract.mockResolvedValue(REPORT)
     await postContract(request({ address: ADDRESS }))
     expect(takeRateLimit).toHaveBeenCalledWith('scan', 'unknown')
+  })
+
+  test('the scan limit is counted per caller the proxy reports', async () => {
+    scanContract.mockResolvedValue(REPORT)
+    await postContract(request({ address: ADDRESS }, { 'x-real-ip': '203.0.113.7' }))
+    expect(takeRateLimit).toHaveBeenLastCalledWith('scan', '203.0.113.7')
+  })
+
+  test('a caller cannot widen its own limit with a forwarded header', async () => {
+    scanContract.mockResolvedValue(REPORT)
+    await postContract(request({ address: ADDRESS }, { 'x-forwarded-for': '198.51.100.9, 203.0.113.7' }))
+    expect(takeRateLimit).toHaveBeenLastCalledWith('scan', '203.0.113.7')
+  })
+
+  test('the address the platform wrote is the one the limit is counted on', async () => {
+    scanContract.mockResolvedValue(REPORT)
+    await postContract(request({ address: ADDRESS }, { 'x-real-ip': '203.0.113.7', 'x-forwarded-for': '198.51.100.9' }))
+    expect(takeRateLimit).toHaveBeenLastCalledWith('scan', '203.0.113.7')
+  })
+
+  test('a request that is not a scan is not counted', async () => {
+    const response = await postContract(request({ address: 'not an address' }))
+    expect(response.status).toBe(400)
+    expect(takeRateLimit).not.toHaveBeenCalled()
   })
 
   test('only server/scanner.ts reads SCANNER', () => {

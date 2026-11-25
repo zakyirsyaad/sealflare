@@ -23,16 +23,16 @@ export async function POST(request: Request) {
   const parsed = ScanContractRequest.safeParse(body)
   if (!parsed.success) return fail('BAD_REQUEST', 'The request is not a valid contract scan.', 400)
   try {
-    // A scan is counted before it runs, so a caller that scans too often is stopped before the
-    // scanner is paid for it.
-    const limit = await takeRateLimit('scan', callerOf(request))
-    if (!limit.allowed) {
-      return fail('RATE_LIMITED', 'Too many scans from this network.', 429, { retryAfterSeconds: limit.retryAfterSeconds })
-    }
     // AddressSchema lowercases, which erases the EIP-55 checksum. Parse the text as sent, with the
     // same parser as the Scan screen, so a mistyped mixed-case address is refused on both paths.
     const reference = parseScanInput((body as { address: string }).address)
     if (reference.kind !== 'contract') return fail('INPUT_NOT_RECOGNIZED', 'That is not a contract address.', 400)
+    // A scan is counted before it runs, so a caller that scans too often is stopped before the
+    // scanner is paid for it. A request that is not a scan at all is not counted.
+    const limit = await takeRateLimit('scan', callerOf(request))
+    if (!limit.allowed) {
+      return fail('RATE_LIMITED', 'Too many scans from this network.', 429, { retryAfterSeconds: limit.retryAfterSeconds })
+    }
     const { scanner, rpc, explorer } = getScanEnvironment()
     const report = await scanner.scanContract(reference.address, { rpc, explorer })
     // The target page shows the findings of this scan, so the report is kept for a short while.

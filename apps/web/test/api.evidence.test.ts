@@ -11,11 +11,11 @@ vi.mock('../server/internal', async importOriginal => {
 const reader = vi.hoisted(() => ({ isAgentIdHolder: vi.fn(), tierAt: vi.fn(), blockNumber: vi.fn() }))
 vi.mock('../server/chain', () => ({ getChainReader: () => reader }))
 
-const { pin, UploadFailedError } = vi.hoisted(() => {
+const { pin, UploadFailedError, pinataKey } = vi.hoisted(() => {
   class UploadFailedError extends Error {}
-  return { pin: vi.fn(), UploadFailedError }
+  return { pin: vi.fn(), UploadFailedError, pinataKey: vi.fn() }
 })
-vi.mock('../server/pinata', () => ({ pinEvidence: pin, UploadFailedError }))
+vi.mock('../server/pinata', () => ({ pinEvidence: pin, UploadFailedError, pinataKey }))
 
 const takeRateLimit = vi.hoisted(() => vi.fn())
 vi.mock('../server/rate', () => ({ takeRateLimit }))
@@ -85,6 +85,8 @@ describe('the evidence API', () => {
     internalGet.mockReset()
     internalPost.mockReset()
     pin.mockReset()
+    pinataKey.mockReset()
+    pinataKey.mockReturnValue('test-key')
     takeRateLimit.mockReset()
     reader.isAgentIdHolder.mockReset()
     reader.isAgentIdHolder.mockResolvedValue(true)
@@ -183,6 +185,18 @@ describe('the evidence API', () => {
     expect(body.error.code).toBe('UPLOAD_FAILED')
     const paths = internalPost.mock.calls.map(call => call[0])
     expect(paths).toEqual(['/nonce/use', '/nonce/release'])
+  })
+
+  test('a deployment without a storage key refuses the upload and holds no reservation', async () => {
+    pinataKey.mockImplementation(() => {
+      throw new Error('PINATA_JWT is not set')
+    })
+    const response = await postEvidence(request(await signedRequest()))
+    expect(response.status).toBeGreaterThanOrEqual(400)
+    const body = await answer(response)
+    expect(body.success).toBe(false)
+    expect(pin).not.toHaveBeenCalled()
+    expect(internalPost).not.toHaveBeenCalled()
   })
 
   test('an upload that failed in an unknown way keeps the reservation', async () => {
