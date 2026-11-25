@@ -27,7 +27,7 @@ const EXPECTED_TABLES = [
   'sandbox_quota',
 ]
 
-const MIGRATIONS = ['001_indexer.sql', '002_operational.sql', '003_guards.sql']
+const MIGRATIONS = ['001_indexer.sql', '002_operational.sql', '003_guards.sql', '004_review_guards.sql']
 
 const MIGRATIONS_DIR = new URL('../migrations/', import.meta.url)
 
@@ -226,7 +226,7 @@ test('the cached sandbox result carries a status from the closed list', async ()
   const insert = (status: string, bundle: string) =>
     db.query(
       `INSERT INTO sandbox_cache (bundle_hash, probe_set_version, model_id, status, result, created_at)
-       VALUES ($1, 'v1', 'model', $2, '{}'::jsonb, now())`,
+       VALUES ($1, 'v1', 'model', $2::text, jsonb_build_object('status', $2::text), now())`,
       [bundle, status],
     )
 
@@ -236,11 +236,28 @@ test('the cached sandbox result carries a status from the closed list', async ()
   await close()
 })
 
+test('the status of a cached result is the status its result carries', async () => {
+  const { db, close } = await createTestDb()
+  const insert = (status: string, result: string, bundle: string) =>
+    db.query(
+      `INSERT INTO sandbox_cache (bundle_hash, probe_set_version, model_id, status, result, created_at)
+       VALUES ($1, 'v1', 'model', $2, $3::jsonb, now())`,
+      [bundle, status, result],
+    )
+
+  await insert('SANDBOX_FUZZ_FAILED', '{"status":"SANDBOX_FUZZ_FAILED"}', `0x${'1'.repeat(64)}`)
+  // A status that says something else than the result is refused by the database itself.
+  await expect(
+    insert('NO_VIOLATION_OBSERVED', '{"status":"SANDBOX_FUZZ_FAILED"}', `0x${'2'.repeat(64)}`),
+  ).rejects.toThrow()
+  await close()
+})
+
 test('a failed sandbox result is never replaced by a clean one and never removed', async () => {
   const { db, close } = await createTestDb()
   await db.query(
     `INSERT INTO sandbox_cache (bundle_hash, probe_set_version, model_id, status, result, created_at)
-     VALUES ($1, 'v1', 'model', 'SANDBOX_FUZZ_FAILED', '{}'::jsonb, now())`,
+     VALUES ($1, 'v1', 'model', 'SANDBOX_FUZZ_FAILED', '{"status":"SANDBOX_FUZZ_FAILED"}'::jsonb, now())`,
     [`0x${'1'.repeat(64)}`],
   )
 
@@ -254,11 +271,26 @@ test('a failed sandbox result is never replaced by a clean one and never removed
   await close()
 })
 
+test('a failed sandbox result is never rewritten with another result or another bundle', async () => {
+  const { db, close } = await createTestDb()
+  await db.query(
+    `INSERT INTO sandbox_cache (bundle_hash, probe_set_version, model_id, status, result, created_at)
+     VALUES ($1, 'v1', 'model', 'SANDBOX_FUZZ_FAILED', '{"status":"SANDBOX_FUZZ_FAILED"}'::jsonb, now())`,
+    [`0x${'1'.repeat(64)}`],
+  )
+
+  await expect(
+    db.query(`UPDATE sandbox_cache SET result = '{"status":"SANDBOX_FUZZ_FAILED","clean":true}'::jsonb`),
+  ).rejects.toThrow()
+  await expect(db.query(`UPDATE sandbox_cache SET bundle_hash = $1`, [`0x${'9'.repeat(64)}`])).rejects.toThrow()
+  await close()
+})
+
 test('a failed sandbox result is found by the bundle alone', async () => {
   const { db, close } = await createTestDb()
   await db.query(
     `INSERT INTO sandbox_cache (bundle_hash, probe_set_version, model_id, status, result, created_at)
-     VALUES ($1, 'v1', 'model', 'SANDBOX_FUZZ_FAILED', '{}'::jsonb, now())`,
+     VALUES ($1, 'v1', 'model', 'SANDBOX_FUZZ_FAILED', '{"status":"SANDBOX_FUZZ_FAILED"}'::jsonb, now())`,
     [`0x${'1'.repeat(64)}`],
   )
 
@@ -326,5 +358,14 @@ test('the rate row keeps the length of its window', async () => {
 
   const rows = await db.query<{ window_seconds: number }>('SELECT window_seconds FROM rate')
   expect(rows[0]?.window_seconds).toBe(600)
+  await close()
+})
+
+test('a rate row with no window of its own is refused by the database itself', async () => {
+  const { db, close } = await createTestDb()
+
+  await expect(
+    db.query('INSERT INTO rate (key, window_start, window_seconds, count) VALUES ($1, 1, 0, 1)', ['a'.repeat(64)]),
+  ).rejects.toThrow()
   await close()
 })

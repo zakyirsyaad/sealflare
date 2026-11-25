@@ -109,16 +109,17 @@ async function migrateOne(db: Db, file: MigrationFile): Promise<boolean> {
 }
 
 /**
- * The longest rate window a caller may ask for. A rate row carries no window length of its own,
- * because the caller decides it, so this is also how long a row may live.
+ * The longest rate window a caller may ask for. A rate row carries the window length it was
+ * counted in, so two limits on the same key never share a counter, and this is also how long a
+ * row may live.
  */
 export const RATE_MAX_WINDOW_SECONDS = 3600
 
 /**
  * Deletes the rows that are only useful while they are fresh.
  *
- * A rate row carries no window length of its own, because the caller decides it, so the caller
- * also says how long a row may live at most.
+ * A rate row carries the window length it was counted in, so the caller also says how long a row
+ * may live at most.
  */
 export async function cleanup(
   db: Db,
