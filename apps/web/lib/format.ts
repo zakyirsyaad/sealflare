@@ -35,3 +35,10 @@ export function tierReason(detail: Pick<TargetDetail, 'tier' | 'hasDelegatecall'
   if (!entry) throw new RangeError('Unknown trust tier.')
   return entry.reason
 }
+/** A flag name in words: HIDDEN_MINT becomes "Hidden mint". */
+export function flagLabel(name: string): string {
+  const words = name.toLowerCase().split('_')
+  const first = words[0] ?? ''
+  const head = `${first.charAt(0).toUpperCase()}${first.slice(1)}`
+  return [head, ...words.slice(1)].join(' ')
+}

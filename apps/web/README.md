@@ -223,3 +223,51 @@ on `chain:real`.
   two real reverts translated to the right sentences.
 - Not tested: a real wallet connection, because no browser wallet or WalletConnect project ID is
   available in this environment.
+
+## Task 9: target page
+
+The page at `/app/t/[id]` shows one target: its identity, its status, the community signal, the
+actions a holder can take, and the tabs with the findings, the attestations and the history. It
+builds from an id alone, from `?src=` alone, or from both.
+
+### Files
+
+- `app/app/t/[id]/page.tsx`, `app/app/t/[id]/loading.tsx`: the route and the skeleton.
+- `components/target/`: `Identity`, `StatusCard`, `SignalBreakdown`, `ActionColumn`, `Banners`,
+  `FindingsTab`, `AttestationsTab`, `HistoryTab`, `StaleNotice`, `TargetTabs`, `TargetScreen`,
+  `TargetMissing`, `TargetError`, `TargetSkeleton`.
+- `server/chain.ts`: the only place that reads Core and Vault.
+- `server/scanStore.ts`: the in-memory cache of the last scan per target.
+- `server/target.ts`: the read model assembly.
+- `test/target.test.tsx`, `test/target.server.test.ts`.
+
+### Decisions that differ from the plan
+
+- The plan expects the indexer of Task 5 to supply the data. That task does not exist yet, so the
+  page reads Core and Vault itself, server side, with viem. The tier always comes from
+  `Core.tierOf` and is never recomputed from the votes. When the indexer lands, `server/target.ts`
+  is the only file that changes. Cost if wrong: one more read path to remove.
+- The findings come from an in-memory store that the Task 8 scan routes fill. Without a cached scan
+  and without `?src=`, the page honestly says "This version has not been scanned yet." A scan that
+  fails leaves the page without findings and never becomes a safe verdict. Cost if wrong: the store
+  does not survive a restart, so a page opened without `?src=` can lack findings.
+- The Attest button opens only when the wallet holds an Agent ID and has quota left. The panel of
+  Task 10 does not exist yet, so the button has no form. "Open a challenge" and "Fund an audit
+  bounty" stay disabled and say the modules are not live. Cost if wrong: Task 10 replaces the
+  button with its panel.
+- The evidence of a vote lives in the event log, not in Core. `server/chain.ts` reads the
+  `Attested` events from the block of the target and joins them with the votes by index. A vote
+  without a matching log shows no evidence URI and no evidence link. Cost if wrong: the join is by
+  index, so a reindexed history would shift the evidence.
+- The lag notice counts the blocks between the head of the chain and the block of the scan. It only
+  applies to a contract scan, because a skill bundle has no block. Cost if wrong: the indexer
+  would know the lag of the whole database, not of one scan.
+
+### Verified result
+
+- TDD: the two new suites failed on the missing modules first. All 183 web tests pass across
+  fourteen files; the coverage thresholds hold (components/target 85.62%).
+- Typecheck and the production build pass. The build lists `/app/t/[id]` as a dynamic route.
+- Not tested: the Playwright check at 375 px from the plan. It needs the local chain with the stub
+  contracts and the seeded targets, which the CI web server does not start. The CSS keeps the
+  action column sticky below 760 px, but the check itself is still open.

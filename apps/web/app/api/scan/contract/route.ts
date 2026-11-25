@@ -1,6 +1,7 @@
 import { ScanContractRequest, ScanError } from '@sealflare/shared/schemas'
 import { fail, ok } from '../../../../server/respond'
 import { getScanEnvironment } from '../../../../server/scanner'
+import { putScan } from '../../../../server/scanStore'
 
 const STATUS: Record<string, number> = {
   INPUT_NOT_RECOGNIZED: 400,
@@ -21,6 +22,8 @@ export async function POST(request: Request) {
   const { scanner, rpc, explorer } = getScanEnvironment()
   try {
     const report = await scanner.scanContract(parsed.data.address, { rpc, explorer })
+    // The target page shows the findings of this scan, so the report is kept for a short while.
+    putScan(report)
     return ok(report)
   } catch (error) {
     if (error instanceof ScanError) return fail(error.code, error.message, STATUS[error.code] ?? 400, error.details)
