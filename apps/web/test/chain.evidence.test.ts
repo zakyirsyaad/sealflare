@@ -14,7 +14,13 @@ const T0 = 1_700_000_000
 const timestampOf = (block: bigint) => T0 + Number(block)
 
 type Request = { method: string; params: unknown[] }
-const state = { logRanges: [] as Array<[bigint, bigint]>, blockReads: 0, failRangeStartingAt: null as bigint | null }
+const state = {
+  logRanges: [] as Array<[bigint, bigint]>,
+  blockReads: 0,
+  failRangeStartingAt: null as bigint | null,
+  head: HEAD,
+  logs: [] as ReturnType<typeof attestedLog>[],
+}
 
 const attested = coreAbi.find(item => item.type === 'event' && item.name === 'Attested')!
 
@@ -34,7 +40,7 @@ function attestedLog(block: bigint, index: number, uri: string) {
 const LOGS = [attestedLog(CREATED_BLOCK + 10n, 0, 'ipfs://old'), attestedLog(HEAD - 5n, 1, 'ipfs://new')]
 
 function answer({ method, params }: Request): unknown {
-  if (method === 'eth_blockNumber') return numberToHex(HEAD)
+  if (method === 'eth_blockNumber') return numberToHex(state.head)
   if (method === 'eth_getBlockByNumber') {
     state.blockReads += 1
     const number = BigInt(params[0] as string)
@@ -53,7 +59,7 @@ function answer({ method, params }: Request): unknown {
     if (to - from + 1n > LOG_RANGE) throw Object.assign(new Error('query returned more than the allowed block range'), { rpc: -32005 })
     if (from === state.failRangeStartingAt) throw Object.assign(new Error('upstream timeout'), { rpc: -32000 })
     if (filter.topics[1] !== TARGET) return []
-    return LOGS.filter(log => BigInt(log.blockNumber) >= from && BigInt(log.blockNumber) <= to)
+    return state.logs.filter(log => BigInt(log.blockNumber) >= from && BigInt(log.blockNumber) <= to)
   }
   throw Object.assign(new Error(`unexpected ${method}`), { rpc: -32601 })
 }
@@ -89,6 +95,8 @@ beforeEach(async () => {
   state.logRanges = []
   state.blockReads = 0
   state.failRangeStartingAt = null
+  state.head = HEAD
+  state.logs = [...LOGS]
   const { clearEvidenceCache } = await import('../server/chain')
   clearEvidenceCache()
 })
@@ -99,7 +107,7 @@ async function reader() {
 
 describe('the evidence of a target, read through a public-RPC-like node', () => {
   test('an attestation a million blocks old is found, from the creation block, in ranges the node accepts', async () => {
-    const rows = await (await reader()).evidence(TARGET, timestampOf(CREATED_BLOCK))
+    const rows = await (await reader()).evidence(TARGET, timestampOf(CREATED_BLOCK), 2)
     expect(rows.map(row => row.evidenceURI)).toEqual(['ipfs://old', 'ipfs://new'])
     expect(state.logRanges[0]![0]).toBe(CREATED_BLOCK)
     expect(state.logRanges.at(-1)![1]).toBe(HEAD)
@@ -110,31 +118,65 @@ describe('the evidence of a target, read through a public-RPC-like node', () => 
 
   test('one range that fails fails the whole read instead of returning a list with a hole', async () => {
     state.failRangeStartingAt = CREATED_BLOCK + LOG_RANGE
-    await expect((await reader()).evidence(TARGET, timestampOf(CREATED_BLOCK))).rejects.toThrow()
+    await expect((await reader()).evidence(TARGET, timestampOf(CREATED_BLOCK), 2)).rejects.toThrow()
   })
 
   test('the creation block is searched once per process, not on every page view', async () => {
     const chain = await reader()
     const unseen = `0x${'ef'.repeat(32)}` as Hex
-    await chain.evidence(unseen, timestampOf(CREATED_BLOCK))
+    await chain.evidence(unseen, timestampOf(CREATED_BLOCK), 0)
     const first = state.blockReads
     expect(first).toBeGreaterThan(0)
-    await chain.evidence(unseen, timestampOf(CREATED_BLOCK))
+    await chain.evidence(unseen, timestampOf(CREATED_BLOCK), 0)
     expect(state.blockReads).toBe(first)
   })
 
-  test('a second view of the same target reads only the blocks that came after the last one', async () => {
+  test('a second view of the same target reads the tail above the confirmed block again, and keeps the rows', async () => {
     const chain = await reader()
     const target = `0x${'12'.repeat(32)}` as Hex
-    await chain.evidence(target, timestampOf(CREATED_BLOCK))
+    await chain.evidence(target, timestampOf(CREATED_BLOCK), 0)
     const first = state.logRanges.length
-    await chain.evidence(target, timestampOf(CREATED_BLOCK))
-    // The head has not moved, so no range is read a second time.
-    expect(state.logRanges.length).toBe(first)
+    await chain.evidence(target, timestampOf(CREATED_BLOCK), 0)
+    // The head has not moved, but the blocks above the confirmed one are read again, because a log
+    // that a node did not return for them has to be read a second time.
+    expect(state.logRanges.length).toBe(first + 1)
+    expect(state.logRanges.at(-1)![0]).toBe(HEAD - 11n)
+  })
+
+  test('a later view reads only the blocks that came after the last one and keeps the old rows', async () => {
+    const chain = await reader()
+    const target = TARGET
+    const first = await chain.evidence(target, timestampOf(CREATED_BLOCK), 2)
+    expect(first.map(row => row.evidenceURI)).toEqual(['ipfs://old', 'ipfs://new'])
+    const ranges = state.logRanges.length
+    state.logs = [...state.logs, attestedLog(HEAD + 500n, 2, 'ipfs://later')]
+    state.head = HEAD + 1_000n
+    const rows = await chain.evidence(target, timestampOf(CREATED_BLOCK), 3)
+    // The read starts above the confirmed block of the last read and covers the new blocks.
+    expect(state.logRanges[ranges]![0]).toBe(HEAD - 11n)
+    expect(state.logRanges.at(-1)![1]).toBe(HEAD + 1_000n)
+    expect(rows.map(row => row.evidenceURI)).toEqual(['ipfs://old', 'ipfs://new', 'ipfs://later'])
+  })
+
+  test('a failed delta leaves the cursor where it was, so the same blocks are read again', async () => {
+    const chain = await reader()
+    const target = `0x${'56'.repeat(32)}` as Hex
+    await chain.evidence(target, timestampOf(CREATED_BLOCK), 0)
+    state.failRangeStartingAt = HEAD - 11n
+    await expect(chain.evidence(target, timestampOf(CREATED_BLOCK), 0)).rejects.toThrow()
+    state.failRangeStartingAt = null
+    await chain.evidence(target, timestampOf(CREATED_BLOCK), 0)
+    // The failed range is read again, because the cursor never moved past it.
+    expect(state.logRanges.at(-1)![0]).toBe(HEAD - 11n)
+  })
+
+  test('a log that is missing leaves a hole, and the page is told the log is not complete', async () => {
+    state.logs = [attestedLog(CREATED_BLOCK + 10n, 0, 'ipfs://old')]
+    await expect((await reader()).evidence(TARGET, timestampOf(CREATED_BLOCK), 2)).rejects.toThrow(/not complete/)
   })
 
   test('a target too old to be read this way is refused, not read halfway', async () => {
     const old = `0x${'cd'.repeat(32)}` as Hex
-    await expect((await reader()).evidence(old, T0)).rejects.toThrow(RangeError)
+    await expect((await reader()).evidence(old, T0, 0)).rejects.toThrow(RangeError)
   })
 })

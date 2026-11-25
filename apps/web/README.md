@@ -274,6 +274,12 @@ builds from an id alone, from `?src=` alone, or from both.
   failed range rejects the whole read: the page then keeps the votes and the tier, says that the
   links could not be read ("Unavailable", never "None"), and sets `evidenceFailed`. The indexer of
   Task 5 and 6 replaces this read. Cost if wrong: a very old target shows no links until then.
+- The cache of the read stops at the confirmed block, twelve blocks below the head, and not at the
+  head. A log that a node did not return for a block that was not final yet is read again on the
+  next view, and the rows are kept by their index, so a log that is read twice stays one row. The
+  rows have to cover every attestation of the target: a log that is missing leaves a hole, the
+  cache is dropped and the read rejects, so the page says the links are unknown instead of showing
+  a list with a hole in it.
 - The page does not show a lag. A "N blocks behind" notice built from the age of a scan would almost
   always appear, and would wrongly call the live chain reads stale. `blocksBehind` stays null until
   the indexer reports its finalized block, and `StaleNotice` is ready for it.
@@ -300,6 +306,21 @@ was checked against the code first; all were right.
 - `test/chain.evidence.test.ts` runs the real `server/chain.ts` against a local JSON-RPC server that
   refuses ranges above 10,000 blocks, with an attestation a million blocks behind the head. All four
   tests fail on the previous `chain.ts`.
+
+The second round of the review found three more issues in this PR, one of them important.
+
+- The cursor of the evidence cache stopped at the confirmed block and not at the head. The tail
+  above it is read again on the next view, because a log that a node did not return for a block
+  that was not final yet would otherwise never be read again. The rows are kept by their index, so
+  a log that is read twice stays one row. The rows have to cover every attestation of the target:
+  a missing log leaves a hole, the cache is dropped, and the read rejects, so the page says the
+  links are unknown instead of showing a list with a hole.
+- The publisher of a skill is only compared when the registry names a verified publisher. For a
+  sponsored skill the registry holds the sponsor and not the author of the bundle, and an
+  unclaimed skill has no publisher at all, so the link is neither a new version nor a foreign
+  bundle. The page then says that the bundle cannot be compared, which is what it knows.
+- The test of the evidence reads a head that moves: a later view reads only the blocks that came
+  after the last one, keeps the old rows, and a failed range leaves the cursor where it was.
 
 ### Verified result
 

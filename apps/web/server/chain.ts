@@ -53,7 +53,7 @@ export interface ChainReader {
   tier(targetId: Hex): Promise<TrustTier>
   attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
   /** The evidence of the event log, read from the block the target was created in. Rejects when the log cannot be read in full. */
-  evidence(targetId: Hex, createdAt: number): Promise<EvidenceRow[]>
+  evidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]>
   bond(targetId: Hex, publisher: Address): Promise<BondState | null>
 }
 
@@ -216,34 +216,62 @@ export function clearEvidenceCache(): void {
 }
 
 /**
+ * How many blocks the read waits before it trusts a log. A block that is this far behind the head
+ * is not going to change, so a log that is read from it stays read.
+ */
+const CONFIRMATIONS = 12n
+
+/**
  * The Attested logs of a target, from the block it was created in to the head, in bounded ranges.
  * Any failed range, or a target too old to read this way, rejects: the caller reports that the
  * evidence is unavailable instead of showing an empty list as if no proof was linked.
+ *
+ * The cache stops at the confirmed block, not at the head. The blocks above it are read again on
+ * the next view, because a log that a node did not return for a block that is not final yet would
+ * otherwise never be read again. The rows are kept by their index, so a log that is read twice
+ * stays one row.
  */
-async function readEvidence(targetId: Hex, createdAt: number): Promise<EvidenceRow[]> {
+async function readEvidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]> {
   const head = await client().getBlockNumber()
   const key = targetId.toLowerCase()
   const cached = evidenceCache.get(key)
   const fromBlock = cached === undefined ? await createdBlock(targetId, createdAt, head) : cached.block + 1n
   // Nothing new since the last read of this target.
-  if (fromBlock > head) return cached?.rows ?? []
+  if (fromBlock > head) return completeRows(key, cached?.rows ?? [], count)
   const event = eventItem<AttestedEvent>('Attested')
   const logs = await collectLogs(
     (from, to) => client().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
     fromBlock,
     head,
   )
-  const rows = [
-    ...(cached?.rows ?? []),
-    ...logs.map(log => ({
+  const byIndex = new Map<number, EvidenceRow>()
+  for (const row of cached?.rows ?? []) byIndex.set(row.index, row)
+  for (const log of logs) {
+    byIndex.set(Number(log.args.index), {
       index: Number(log.args.index),
       shortProof: proofText(log.args.shortProof),
       evidenceURI: log.args.evidenceURI ?? '',
       txHash: log.transactionHash,
-    })),
-  ]
-  evidenceCache.set(key, { block: head, rows })
-  return rows
+    })
+  }
+  const rows = [...byIndex.values()].sort((left, right) => left.index - right.index)
+  const confirmed = head > CONFIRMATIONS ? head - CONFIRMATIONS : 0n
+  evidenceCache.set(key, { block: confirmed, rows })
+  return completeRows(key, rows, count)
+}
+
+/**
+ * The rows have to cover every attestation of the target. A log that is missing leaves a hole, and
+ * a list with a hole is never shown as the complete list of the evidence. The cache is dropped, so
+ * the next view reads the history of the target again.
+ */
+function completeRows(key: string, rows: readonly EvidenceRow[], count: number): EvidenceRow[] {
+  const found = new Set(rows.map(row => row.index))
+  const missing: number[] = []
+  for (let index = 0; index < count; index += 1) if (!found.has(index)) missing.push(index)
+  if (missing.length === 0) return [...rows]
+  evidenceCache.delete(key)
+  throw new Error(`The event log of the target is not complete: the attestations ${missing.join(', ')} are missing.`)
 }
 
 async function readBond(targetId: Hex, publisher: Address): Promise<BondState | null> {

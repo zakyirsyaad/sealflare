@@ -183,6 +183,8 @@ export type TargetPageData = {
   currentVersionId: string | null
   /** The link names another bundle than the one the registry rated. */
   differentBundle: boolean
+  /** The link names another bundle, and the registry has no verified publisher to compare it with. */
+  uncheckedBundle: boolean
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
   failed: boolean
@@ -197,7 +199,7 @@ async function readChain(reader: ChainReader, targetId: Hex) {
   // A target without attestations has no event to read. The log is never walked for nothing.
   if (target && target.attestationCount > 0) {
     try {
-      evidence = await reader.evidence(targetId, target.createdAt)
+      evidence = await reader.evidence(targetId, target.createdAt, target.attestationCount)
     } catch {
       // The votes and the tier come from contract reads and stay. Only the links are unknown.
       evidenceFailed = true
@@ -225,6 +227,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     versionChanged: false,
     currentVersionId: null,
     differentBundle: false,
+    uncheckedBundle: false,
     evidenceFailed: false,
     failed: false,
   }
@@ -240,19 +243,25 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   // Only the scan of this very target is shown. Another target's findings never appear under this tier.
   const scan = candidate !== null && candidate.targetId.toLowerCase() === id.toLowerCase() ? candidate : null
   // A skill source may only claim to be a newer version of the rated skill when it names the same
-  // publisher. The registry only knows the verified publisher, so a link that names another one is
-  // a different bundle and never a new version of this target.
-  const samePublisher =
+  // publisher. Only a verified publisher can be compared: for a sponsored skill the registry
+  // holds the sponsor and not the author of the bundle, and an unclaimed skill has no publisher at
+  // all. Without a verified publisher the link is neither a new version nor a foreign bundle, and
+  // the page says nothing that it cannot know.
+  const verifiedPublisher =
     chain.target !== null &&
-    chain.target.publisher !== ZERO_ADDRESS &&
+    chain.target.publisherRole === 'VERIFIED_PUBLISHER' &&
+    chain.target.publisher !== ZERO_ADDRESS
+  const samePublisher =
+    verifiedPublisher &&
     candidate !== null &&
     candidate.source.kind === 'skill' &&
-    candidate.source.manifestPublisher.toLowerCase() === chain.target.publisher.toLowerCase()
+    candidate.source.manifestPublisher.toLowerCase() === chain.target!.publisher.toLowerCase()
   const isSkillTarget = chain.target?.targetType === 'AI_SKILL_BUNDLE'
-  const newerSkill =
-    candidate !== null && scan === null && isSkillTarget && candidate.targetType === 'AI_SKILL_BUNDLE' && samePublisher
-  const foreignBundle =
-    candidate !== null && scan === null && isSkillTarget && candidate.targetType === 'AI_SKILL_BUNDLE' && !samePublisher
+  const otherSkill =
+    candidate !== null && scan === null && isSkillTarget && candidate.targetType === 'AI_SKILL_BUNDLE'
+  const newerSkill = otherSkill && samePublisher
+  const foreignBundle = otherSkill && verifiedPublisher && !samePublisher
+  const uncheckedBundle = otherSkill && !verifiedPublisher
   const rows = attestationRows(chain.attestations, chain.evidence)
   const built = buildDetail({
     targetId: id,
@@ -261,7 +270,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     attestations: chain.attestations,
     scan,
     bond: chain.bond?.amount ?? 0n,
-    src: foreignBundle ? null : src,
+    // A bundle that cannot be tied to this target never becomes the source of the page.
+    src: foreignBundle || uncheckedBundle ? null : src,
   })
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
@@ -277,6 +287,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     versionChanged: newerSkill,
     currentVersionId: newerSkill && candidate !== null ? candidate.targetId : null,
     differentBundle: foreignBundle,
+    uncheckedBundle,
     evidenceFailed: chain.evidenceFailed,
     failed: false,
   }

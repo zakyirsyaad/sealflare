@@ -218,7 +218,7 @@ test('a newer version of a skill is not attached, and the page offers the curren
   const audited = skillReport(`0x${'55'.repeat(32)}`)
   const current = skillReport(`0x${'66'.repeat(32)}`)
   reader.current = fakeReader({
-    target: async () => skillTarget(audited, { publisher: address }),
+    target: async () => skillTarget(audited, { publisher: address, publisherRole: 'VERIFIED_PUBLISHER' }),
     tier: async () => 'COMMUNITY_SAFE',
   })
   scanner.scanSkill.mockResolvedValue(current)
@@ -226,6 +226,7 @@ test('a newer version of a skill is not attached, and the page offers the curren
   expect(data.scan).toBeNull()
   expect(data.versionChanged).toBe(true)
   expect(data.differentBundle).toBe(false)
+  expect(data.uncheckedBundle).toBe(false)
   expect(data.currentVersionId).toBe(current.targetId)
   expect(data.detail?.tier).toBe('COMMUNITY_SAFE')
 })
@@ -234,7 +235,8 @@ test('a skill link that names another publisher is a different bundle, not a new
   const audited = skillReport(`0x${'55'.repeat(32)}`)
   const other = skillReport(`0x${'66'.repeat(32)}`)
   reader.current = fakeReader({
-    target: async () => skillTarget(audited, { publisher: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' }),
+    target: async () =>
+      skillTarget(audited, { publisher: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', publisherRole: 'VERIFIED_PUBLISHER' }),
     tier: async () => 'COMMUNITY_SAFE',
   })
   scanner.scanSkill.mockResolvedValue(other)
@@ -242,6 +244,7 @@ test('a skill link that names another publisher is a different bundle, not a new
   expect(data.scan).toBeNull()
   expect(data.versionChanged).toBe(false)
   expect(data.differentBundle).toBe(true)
+  expect(data.uncheckedBundle).toBe(false)
   // The foreign source is not attached, so the page never offers to scan it again.
   expect(data.detail?.src).toBeNull()
 })
@@ -252,7 +255,24 @@ test('a skill target without a publisher on chain never claims a link as a new v
   scanner.scanSkill.mockResolvedValue(skillReport(`0x${'66'.repeat(32)}`))
   const data = await loadTarget(audited.targetId, SKILL_SRC)
   expect(data.versionChanged).toBe(false)
-  expect(data.differentBundle).toBe(true)
+  expect(data.differentBundle).toBe(false)
+  expect(data.uncheckedBundle).toBe(true)
+  expect(data.detail?.src).toBeNull()
+})
+
+test('a sponsored skill never claims that a link names another bundle, because the sponsor is not the author', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  reader.current = fakeReader({
+    target: async () =>
+      skillTarget(audited, { publisher: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', publisherRole: 'THIRD_PARTY_SPONSOR' }),
+    tier: async () => 'COMMUNITY_SAFE',
+  })
+  scanner.scanSkill.mockResolvedValue(skillReport(`0x${'66'.repeat(32)}`))
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.versionChanged).toBe(false)
+  expect(data.differentBundle).toBe(false)
+  expect(data.uncheckedBundle).toBe(true)
+  expect(data.detail?.src).toBeNull()
 })
 
 test('the same mismatched skill source is scanned once, not on every request', async () => {
@@ -300,7 +320,7 @@ test('the evidence is read from the block the target was created in', async () =
   const evidence = vi.fn(async () => [])
   reader.current = fakeReader({ evidence })
   await loadTarget(targetId, null)
-  expect(evidence).toHaveBeenCalledWith(targetId, 1_700_000_000)
+  expect(evidence).toHaveBeenCalledWith(targetId, 1_700_000_000, 2)
 })
 
 test('a target without attestations never reads the event log', async () => {

@@ -22,6 +22,7 @@ export type TargetScreenProps = {
   versionChanged: boolean
   currentVersionId: string | null
   differentBundle: boolean
+  uncheckedBundle: boolean
   evidenceFailed: boolean
   failed: boolean
 }
@@ -31,6 +32,15 @@ function ForeignNotice() {
   return (
     <div className="sf-version">
       <p>{copy.target.differentBundle}</p>
+    </div>
+  )
+}
+
+/** The link names another bundle, and the registry has no publisher to compare it with. */
+function UncheckedNotice() {
+  return (
+    <div className="sf-version">
+      <p>{copy.target.uncheckedBundle}</p>
     </div>
   )
 }
@@ -66,6 +76,7 @@ export function TargetScreen(props: TargetScreenProps) {
       />
       {props.versionChanged && props.currentVersionId !== null && <VersionNotice targetId={props.currentVersionId} src={props.src} />}
       {props.differentBundle && <ForeignNotice />}
+      {props.uncheckedBundle && <UncheckedNotice />}
       <Banners detail={detail} scan={props.scan} unbondingAt={props.unbondingAt} />
       <StaleNotice blocksBehind={props.blocksBehind} />
       <div className="sf-target__body">

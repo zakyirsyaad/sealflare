@@ -165,6 +165,7 @@ export const copy = {
     "noBounty": "No bounty.",
     "currentVersion": "Scan the current version",
     "differentBundle": "This link names a different bundle. It is not a version of the skill that was rated.",
+    "uncheckedBundle": "This link names another bundle. The registry has no verified publisher for this skill, so the bundle cannot be compared with the one that was rated.",
     "flagProxy": "Flag as proxy on-chain",
     "proxyReason": "This is a proxy and cannot receive a safe firewall verdict.",
     "challenge": "Open a challenge",

@@ -106,6 +106,7 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     versionChanged: false,
     currentVersionId: null,
     differentBundle: false,
+    uncheckedBundle: false,
     evidenceFailed: false,
     failed: false,
     ...overrides,
@@ -404,6 +405,12 @@ test('a link that names another bundle says so, and the page offers no version o
   expect(screen.getByText(copy.target.differentBundle)).toBeInTheDocument()
   // The foreign source is not attached to the target, so there is nothing to scan again.
   expect(screen.queryByRole('link', { name: copy.target.currentVersion })).toBeNull()
+})
+
+test('a link that names another bundle and cannot be compared says nothing that the page cannot know', () => {
+  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT', src: null }), uncheckedBundle: true })} />)
+  expect(screen.getByText(copy.target.uncheckedBundle)).toBeInTheDocument()
+  expect(screen.queryByText(copy.target.differentBundle)).toBeNull()
 })
 
 test('the version notice links to the page of the current version of the skill', () => {
