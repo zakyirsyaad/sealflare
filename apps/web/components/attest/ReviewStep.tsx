@@ -2,7 +2,7 @@
 import type { Verdict } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { flagLabel } from '../../lib/format'
+import { flagLabel, shortAddress } from '../../lib/format'
 import { AttestButton } from './AttestButton'
 import { flagsOf, type Choice } from './choice'
 import type { AttestState } from './useAttest'
@@ -43,6 +43,11 @@ const verdictName: Record<Verdict, string> = {
   DANGER: copy.attest.danger,
 }
 
+/** An address is shortened, a repository name is not. */
+function labelOf(label: string): string {
+  return /^0x[0-9a-fA-F]{40}$/.test(label) ? shortAddress(label) : label
+}
+
 function Row({ name, value }: { name: string; value: React.ReactNode }) {
   return (
     <div className="sf-rows__row">
@@ -72,7 +77,7 @@ export function ReviewStep(props: ReviewStepProps) {
       <section className="sf-stack">
         <span className="sf-mono">{copy.attest.onChain}</span>
         <div className="sf-rows">
-          <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{props.label}</span>} />
+          <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{labelOf(props.label)}</span>} />
           <Row name={copy.attest.rowVerdict} value={verdictName[verdict]} />
           <Row
             name={copy.attest.rowFlag}
@@ -80,7 +85,7 @@ export function ReviewStep(props: ReviewStepProps) {
               flags.length === 0 ? (
                 copy.target.none
               ) : (
-                <span className="sf-mono">{flags.map(flagLabel).join(', ')}</span>
+                <span className="sf-mono">{flags.join(', ')}</span>
               )
             }
           />

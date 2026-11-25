@@ -13,7 +13,7 @@ import { CONSTANTS } from '@sealflare/shared/rules'
 import { copy } from '../../lib/copy'
 import { ReviewStep } from './ReviewStep'
 import { VerdictStep } from './VerdictStep'
-import { addFlag, canReview, chooseVerdict, emptyChoice, removeFlag, setQuote, type Choice } from './choice'
+import { addFlag, canReview, chooseVerdict, emptyChoice, provedFlags, removeFlag, setQuote, type Choice } from './choice'
 import { useAttest } from './useAttest'
 
 export type AttestPanelProps = {
@@ -70,6 +70,9 @@ export function AttestPanel(props: AttestPanelProps) {
     address,
   })
   const scanFlags = props.scan?.flags ?? 0
+  // Only the flags whose excerpt travels with the report are proved. Every other flag waits for
+  // a quote the Guardian writes, so no line on-chain is ever empty.
+  const proved = provedFlags(choice, props.scan, props.targetId)
   const left = user.kind === 'holder' ? user.attestationsLeft : null
 
   const submit = () => {
@@ -101,8 +104,9 @@ export function AttestPanel(props: AttestPanelProps) {
           suggestion={props.scan?.suggestedVerdict ?? null}
           tier={props.tier}
           targetType={props.targetType}
-          canContinue={canReview(choice, scanFlags)}
-          onChoose={(verdict: Verdict) => setChoice(chooseVerdict(verdict, scanFlags))}
+          provedFlags={proved}
+          canContinue={canReview(choice, proved)}
+          onChoose={(verdict: Verdict) => setChoice(chooseVerdict(verdict, scanFlags, choice.quotes))}
           onAddFlag={(flag: FlagName) => setChoice(addFlag(choice, flag))}
           onRemoveFlag={(flag: FlagName) => setChoice(removeFlag(choice, flag))}
           onQuote={(flag: FlagName, quote: string) => setChoice(setQuote(choice, flag, quote))}

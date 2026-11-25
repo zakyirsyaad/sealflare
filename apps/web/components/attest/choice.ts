@@ -16,11 +16,12 @@ export const emptyChoice: Choice = { verdict: null, flags: 0, quotes: {} }
  * Choosing a verdict takes the flags of the scanner with it.
  *
  * A Safe vote carries no flags at all, so choosing it clears them. Caution and Danger need at
- * least one flag, which the Guardian adds when the scanner found nothing.
+ * least one flag, which the Guardian adds when the scanner found nothing. The quotes the
+ * Guardian wrote stay, so a wrong choice can be corrected without writing them again.
  */
-export function chooseVerdict(verdict: Verdict, scanFlags: number): Choice {
-  if (verdict === 'SAFE') return { verdict, flags: 0, quotes: {} }
-  return { verdict, flags: scanFlags, quotes: {} }
+export function chooseVerdict(verdict: Verdict, scanFlags: number, quotes: Record<string, string> = {}): Choice {
+  if (verdict === 'SAFE') return { verdict, flags: 0, quotes }
+  return { verdict, flags: scanFlags, quotes }
 }
 
 /** Adds a flag the Guardian reports. */
@@ -49,18 +50,45 @@ export function flagsOf(choice: Choice): FlagName[] {
   return (Object.keys(FLAGS) as FlagName[]).filter(name => (choice.flags & FLAGS[name]) !== 0)
 }
 
-/** The flags the scanner did not find and that still wait for a quote. */
-export function missingQuotes(choice: Choice, scanFlags: number): FlagName[] {
+/**
+ * The scan that travels with the report.
+ *
+ * A report may only carry a scan of its own target, and only when it still holds every flag the
+ * scan found. Otherwise the scan stays out, and no excerpt of it may be written on-chain.
+ */
+export function travellingScan(
+  choice: Choice,
+  scan: ScanReport | null,
+  targetId: string,
+): ScanReport | null {
+  if (scan === null) return null
+  if (scan.targetId !== targetId) return null
+  if ((choice.flags & scan.flags) !== scan.flags) return null
+  return scan
+}
+
+/**
+ * The flags whose excerpt travels with the report.
+ *
+ * Without the scan no excerpt travels, so every flag the Guardian reports has to carry a quote
+ * the Guardian wrote. The other way, an excerpt on-chain is never empty.
+ */
+export function provedFlags(choice: Choice, scan: ScanReport | null, targetId: string): number {
+  return travellingScan(choice, scan, targetId)?.flags ?? 0
+}
+
+/** The flags that still wait for a quote from the Guardian. */
+export function missingQuotes(choice: Choice, proved: number): FlagName[] {
   return flagsOf(choice).filter(
-    name => (scanFlags & FLAGS[name]) === 0 && (choice.quotes[name] ?? '').trim().length === 0,
+    name => (proved & FLAGS[name]) === 0 && (choice.quotes[name] ?? '').trim().length === 0,
   )
 }
 
 /** A Safe vote needs no flag. Caution and Danger need at least one, and every flag needs proof. */
-export function canReview(choice: Choice, scanFlags: number): boolean {
+export function canReview(choice: Choice, proved: number): boolean {
   if (choice.verdict === null) return false
   if (choice.verdict !== 'SAFE' && choice.flags === 0) return false
-  return missingQuotes(choice, scanFlags).length === 0
+  return missingQuotes(choice, proved).length === 0
 }
 
 /**

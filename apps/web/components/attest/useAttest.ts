@@ -10,7 +10,7 @@ import { addresses } from '../../lib/chain/addresses'
 import { expectedChainId } from '../../lib/chain/config'
 import { isUserRejection, translateContractError } from '../../lib/chain/errors'
 import { copy } from '../../lib/copy'
-import { shortProofOf } from './choice'
+import { shortProofOf, travellingScan } from './choice'
 
 /** The states of an attestation, from the summary to the vote on the chain. */
 export type AttestState = 'idle' | 'signing-evidence' | 'uploading' | 'signing-tx' | 'pending' | 'failed' | 'done'
@@ -60,21 +60,6 @@ function freshNonce(): string {
 }
 
 /**
- * The scan that may travel with the report.
- *
- * The report may only carry a scan of its own target, and only when the report still holds every
- * flag the scan found. Otherwise the scan stays out, because a report that leaves out a finding
- * of its own scan is not a valid report.
- */
-function attachedScan(target: AttestTarget, flags: number): ScanReport | null {
-  const scan = target.scan
-  if (scan === null) return null
-  if (scan.targetId !== target.targetId) return null
-  if ((flags & scan.flags) !== scan.flags) return null
-  return scan
-}
-
-/**
  * The report that is signed, uploaded and hashed.
  *
  * The scan is only attached when the flags of the report hold every flag the scan found, because
@@ -84,7 +69,7 @@ function attachedScan(target: AttestTarget, flags: number): ScanReport | null {
 export function buildReport(target: AttestTarget, input: AttestInput): EvidenceReport {
   const author = target.address
   if (author === null) throw new Error('The report needs the address of the Guardian.')
-  const scan = attachedScan(target, input.flags)
+  const scan = travellingScan({ verdict: input.verdict, flags: input.flags, quotes: input.quotes }, target.scan, target.targetId)
   const report = {
     schemaVersion: 1 as const,
     kind: 'attestation' as const,
@@ -112,7 +97,12 @@ type Prepared = {
  * Guardian for a signature.
  */
 function prepare(target: AttestTarget, input: AttestInput, core: Address): Prepared | null {
-  const parsed = EvidenceReport.safeParse(buildReport(target, input))
+  let parsed: ReturnType<typeof EvidenceReport.safeParse>
+  try {
+    parsed = EvidenceReport.safeParse(buildReport(target, input))
+  } catch {
+    return null
+  }
   if (!parsed.success) return null
   const reportJson = JSON.stringify(parsed.data)
   return {
@@ -148,9 +138,10 @@ async function approveEvidence(
   }
 }
 
-/** The message a failed upload shows. A rate limit says so, anything else stays plain. */
+/** The message a failed upload shows. A rate limit and a wrong hash say so. */
 function uploadMessage(failure: unknown): string {
   if (failure instanceof ApiError && failure.code === 'RATE_LIMITED') return copy.attest.rateLimited
+  if (failure instanceof ApiError && failure.code === 'HASH_MISMATCH') return copy.attest.hashMismatch
   return copy.attest.uploadFailed
 }
 
@@ -161,7 +152,7 @@ async function uploadReport(
 ): Promise<string> {
   const answer = await api.uploadEvidence(body)
   if (answer.evidenceHash.toLowerCase() !== evidenceHash.toLowerCase()) {
-    throw new ApiError('INTERNAL', copy.attest.uploadFailed)
+    throw new ApiError('HASH_MISMATCH', copy.attest.hashMismatch)
   }
   return answer.evidenceURI
 }
@@ -215,6 +206,51 @@ async function approveTransaction(
   }
 }
 
+
+/**
+ * The two approvals and the upload between them.
+ *
+ * The order never changes: the report is signed first, then uploaded, and only then is the
+ * transaction asked for. A refusal in the wallet is not a failure the user has to read about.
+ */
+async function runAttestation(params: {
+  target: AttestTarget
+  input: AttestInput
+  prepared: Prepared
+  sign: SignTypedDataAsync
+  write: WriteContractAsync
+  progress: (state: AttestState) => void
+}): Promise<Step<Hex>> {
+  params.progress('signing-evidence')
+  const signed = await approveEvidence(params.sign, params.prepared)
+  if (!signed.ok) return signed
+
+  params.progress('uploading')
+  const uploaded = await approveEvidenceUpload(
+    {
+      reportJson: params.prepared.reportJson,
+      address: params.target.address ?? '',
+      nonce: params.prepared.nonce,
+      expiry: params.prepared.expiry,
+      signature: signed.value,
+    },
+    params.prepared.evidenceHash,
+  )
+  if (!uploaded.ok) return uploaded
+
+  params.progress('signing-tx')
+  return approveTransaction(params.write, {
+    core: params.prepared.core,
+    targetId: params.target.targetId,
+    targetType: params.target.targetType,
+    verdict: params.input.verdict,
+    flags: params.input.flags,
+    evidenceHash: params.prepared.evidenceHash,
+    shortProof: params.prepared.shortProof,
+    evidenceURI: uploaded.value,
+  })
+}
+
 /**
  * The attestation of one target.
  *
@@ -228,7 +264,6 @@ export function useAttest(target: AttestTarget) {
   const [state, setState] = useState<AttestState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<Hex | null>(null)
-  const [verdict, setVerdict] = useState<Verdict | null>(null)
   const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
 
   const fail = useCallback((message: string) => {
@@ -264,50 +299,21 @@ export function useAttest(target: AttestTarget) {
       fail(copy.attest.reportInvalid)
       return
     }
-    setVerdict(input.verdict)
     setError(null)
-    setState('signing-evidence')
-
-    const signed = await approveEvidence(signTypedDataAsync, prepared)
-    if (!signed.ok) {
-      if (signed.state === 'idle') setState('idle')
-      else fail(signed.message ?? copy.errors.unknown)
-      return
-    }
-
-    setState('uploading')
-    const uploaded = await approveEvidenceUpload(
-      {
-        reportJson: prepared.reportJson,
-        address: target.address,
-        nonce: prepared.nonce,
-        expiry: prepared.expiry,
-        signature: signed.value,
-      },
-      prepared.evidenceHash,
-    )
-    if (!uploaded.ok) {
-      fail(uploaded.message ?? copy.attest.uploadFailed)
-      return
-    }
-
-    setState('signing-tx')
-    const sent = await approveTransaction(writeContractAsync, {
-      core: prepared.core,
-      targetId: target.targetId,
-      targetType: target.targetType,
-      verdict: input.verdict,
-      flags: input.flags,
-      evidenceHash: prepared.evidenceHash,
-      shortProof: prepared.shortProof,
-      evidenceURI: uploaded.value,
+    const result = await runAttestation({
+      target,
+      input,
+      prepared,
+      sign: signTypedDataAsync,
+      write: writeContractAsync,
+      progress: setState,
     })
-    if (!sent.ok) {
-      if (sent.state === 'idle') setState('idle')
-      else fail(sent.message ?? copy.errors.unknown)
+    if (!result.ok) {
+      if (result.state === 'idle') setState('idle')
+      else fail(result.message ?? copy.errors.unknown)
       return
     }
-    setTxHash(sent.value)
+    setTxHash(result.value)
     setState('pending')
   }
 
@@ -317,5 +323,5 @@ export function useAttest(target: AttestTarget) {
     setTxHash(null)
   }, [])
 
-  return { state, error, txHash, verdict, submit, reset }
+  return { state, error, txHash, submit, reset }
 }

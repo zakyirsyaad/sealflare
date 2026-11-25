@@ -11,6 +11,8 @@ export type VerdictStepProps = {
   choice: Choice
   /** The flags of the scanner, as a bit mask. */
   scanFlags: number
+  /** The flags whose excerpt travels with the report. Every other flag needs a quote. */
+  provedFlags: number
   /** What the scanner proposes. It is never chosen before the Guardian chooses it. */
   suggestion: Verdict | null
   tier: TrustTier
@@ -52,7 +54,10 @@ export function VerdictStep(props: VerdictStepProps) {
   const { choice } = props
   const pickable = pickableVerdicts(props.tier)
   const chosen = flagsOf(choice)
-  const waiting = missingQuotes(choice, props.scanFlags)
+  const waiting = missingQuotes(choice, props.provedFlags)
+  // Every flag whose excerpt does not travel with the report carries a quote of the Guardian.
+  // The field stays on the screen once it has a quote, so the Guardian can correct it.
+  const needsQuote = flagsOf(choice).filter(name => (props.provedFlags & FLAGS[name]) === 0)
   const options: Verdict[] = ['SAFE', 'CAUTION', 'DANGER']
   const available = flagsOfType(props.targetType).filter(name => !chosen.includes(name))
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({})
@@ -85,7 +90,7 @@ export function VerdictStep(props: VerdictStepProps) {
             aria-checked={choice.verdict === verdict}
             className="sf-opt"
             disabled={!pickable[verdict]}
-            tabIndex={choice.verdict === verdict || (choice.verdict === null && verdict === options[0]) ? 0 : -1}
+            tabIndex={choice.verdict === verdict || (choice.verdict === null && verdict === pickableOptions[0]) ? 0 : -1}
             ref={element => {
               buttons.current[verdict] = element
             }}
@@ -95,8 +100,14 @@ export function VerdictStep(props: VerdictStepProps) {
               if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') move(verdict, -1)
             }}
           >
-            <span className="sf-opt__title">{label[verdict]}</span>
-            <span className="sf-opt__help">{help[verdict]}</span>
+            <span aria-hidden="true" className="sf-opt__marker" />
+            <span>
+              <span className="sf-opt__title">
+                {label[verdict]}
+                {props.suggestion === verdict && <span className="sf-mono"> {copy.attest.suggested}</span>}
+              </span>
+              <span className="sf-opt__help">{help[verdict]}</span>
+            </span>
           </button>
         ))}
         {props.tier === 'CONFIRMED_DANGER' && <p className="sf-lead">{copy.attest.dangerSafe}</p>}
@@ -139,12 +150,12 @@ export function VerdictStep(props: VerdictStepProps) {
           <p className="sf-lead">{copy.attest.noScanFlags}</p>
         )}
       </section>
-      {waiting.map(name => (
+      {needsQuote.map(name => (
         <section key={name} className="sf-stack">
           <label className="sf-opt__title" htmlFor={`quote-${name}`}>
             {copy.attest.quoteFor.replace('{flag}', flagLabel(name))}
           </label>
-          <p className="sf-lead">{copy.attest.quoteHint}</p>
+          {waiting.includes(name) && <p className="sf-lead">{copy.attest.quoteHint}</p>}
           <input
             id={`quote-${name}`}
             className="sf-input"

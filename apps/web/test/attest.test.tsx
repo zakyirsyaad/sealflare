@@ -81,6 +81,44 @@ function scan(overrides: Record<string, unknown> = {}) {
   })
 }
 
+/** A scan with two findings, so one of them can be taken back. */
+function twoFindingScan() {
+  return ScanReport.parse({
+    schemaVersion: 1,
+    targetType: 'SMART_CONTRACT',
+    targetId,
+    source: { kind: 'contract', address, codehash, blockNumber: '52000000' },
+    scannedAt: '2026-11-25T03:00:00.000Z',
+    checks: [
+      { id: 'source_verified', status: 'flagged' },
+      { id: 'admin_functions', status: 'flagged' },
+      { id: 'proxy_eip1967', status: 'passed' },
+      { id: 'proxy_beacon', status: 'passed' },
+      { id: 'proxy_eip1167', status: 'passed' },
+      { id: 'delegatecall_opcode', status: 'passed' },
+      { id: 'dry_run', status: 'passed' },
+    ],
+    findings: [
+      {
+        flag: 'UNVERIFIED_SOURCE',
+        checkId: 'source_verified',
+        title: 'The source is not verified',
+        location: 'explorer',
+        excerpt: 'the contract is not verified on the explorer',
+      },
+      {
+        flag: 'HIDDEN_MINT',
+        checkId: 'admin_functions',
+        title: 'The owner can mint',
+        location: 'owner.mint',
+        excerpt: 'function mint(address to)',
+      },
+    ],
+    flags: FLAGS.UNVERIFIED_SOURCE | FLAGS.HIDDEN_MINT,
+    suggestedVerdict: 'CAUTION',
+  })
+}
+
 /** A scan that found nothing, so every check passed. */
 function cleanScan() {
   return ScanReport.parse({
@@ -246,7 +284,7 @@ test('an evidence answer with another hash stops before the transaction', async 
   panel()
   await toReview('Safe')
   await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
-  expect(await screen.findByText(copy.attest.uploadFailed)).toBeInTheDocument()
+  expect(await screen.findByText(copy.attest.hashMismatch)).toBeInTheDocument()
   expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
 })
 
@@ -372,6 +410,31 @@ test('target under dispute: attesting is allowed and both notes are shown', asyn
   await toReview('Safe')
   expect(screen.getByText(copy.attest.disputeNoteXp)).toBeInTheDocument()
   expect(screen.getByText(copy.attest.disputeNoteJury)).toBeInTheDocument()
+})
+
+test('a scanner flag that will not travel with the report waits for a quote of the Guardian', async () => {
+  panel({ scan: twoFindingScan() })
+  await userEvent.click(radio('Caution'))
+  await userEvent.click(screen.getByRole('button', { name: 'Remove Hidden mint' }))
+  // The scan cannot travel with the report now, so the flag that stays needs a quote.
+  expect(screen.getByText('Quote from the evidence for Unverified source')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: copy.attest.review })).toBeDisabled()
+  await userEvent.type(screen.getByRole('textbox'), 'the owner can mint')
+  expect(screen.getByRole('button', { name: copy.attest.review })).toBeEnabled()
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  const sent = uploadEvidence.mock.calls[0]?.[0] as { reportJson: string }
+  expect(sent.reportJson).toContain('the owner can mint')
+  expect(sent.reportJson).not.toContain('the contract is not verified on the explorer')
+})
+
+test('a report that cannot be built asks for no signature', async () => {
+  panel({ targetId: '0x1234' })
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByText(copy.attest.reportInvalid)).toBeInTheDocument()
+  expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
 })
 
 test('confirmed danger: Safe is disabled, Caution and Danger remain', () => {
