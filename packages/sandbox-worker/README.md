@@ -293,8 +293,8 @@ and runs as the `node` user. Only the worker, shared package and necessary works
 are copied. Dockerfile-specific ignore rules keep other lanes, Git data and environment files
 out of the build context. `/healthz` is the container health check. Ensure a bind-mounted
 run directory is writable by UID/GID 1000; a new named volume inherits the image permissions.
-`Dockerfile.dockerignore` is the single build-context exclusion file. Digest update configuration
-belongs to the founder-owned repository config; see the [review follow-up notes](docs/minor-review.md).
+`Dockerfile.dockerignore` is the single build-context exclusion file. Dependabot is configured
+to check this Dockerfile weekly; see the [review follow-up notes](docs/minor-review.md).
 
 The founder's VPS/Compose configuration must enforce these network rules:
 

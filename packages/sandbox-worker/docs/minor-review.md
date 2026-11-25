@@ -31,8 +31,8 @@ The digest was resolved from the official `node:24-slim` manifest on 25 November
 `docker buildx imagetools inspect`. The Dockerfile is pinned to
 `sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530`.
 
-The repository's `.github/dependabot.yml` currently updates GitHub Actions only. Docker digest
-update automation needs the founder to add this entry under its existing `updates` list:
+The repository's `.github/dependabot.yml` includes this weekly Docker updater alongside its
+GitHub Actions updater:
 
 ```yaml
 - package-ecosystem: docker
@@ -43,8 +43,10 @@ update automation needs the founder to add this entry under its existing `update
     prefix: chore
 ```
 
-That configuration lives outside the scanning lane. Pinning and the reproducible build are
-included here; the proposed automation entry is ready for the founder's repository-config work.
+The lane owner explicitly authorized this repository-config change on 25 November 2026.
+The updater scans this package's Dockerfile and proposes base-image updates with a `chore`
+commit prefix. Scheduled checks take effect after the configuration reaches the default branch;
+each proposed update still needs the repository's CI and review checks.
 
 ## Operational limits
 
