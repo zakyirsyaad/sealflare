@@ -1,0 +1,13 @@
+# Version updates for GitHub Actions only. npm version updates stay off until after the hackathon;
+# security updates for npm still arrive through Dependabot security updates in the repo settings.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

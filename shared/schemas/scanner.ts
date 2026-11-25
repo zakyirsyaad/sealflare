@@ -16,10 +16,11 @@ export interface RpcAdapter {
 
 export interface ExplorerAdapter {
   /** null means the explorer did not answer. It never means "not verified". */
-  getSource(address: Address): Promise<{ verified: boolean; files: { path: string; content: string }[] } | null>
+  getSource(address: Address): Promise<{ verified: boolean; files: { path: string; content: string }[]; abi?: unknown } | null>
 }
 
-export type RepoRef = { owner: string; repo: string; commit?: string }
+/** Select at most one of commit or branch. Neither means the default branch. */
+export type RepoRef = { owner: string; repo: string; commit?: string; branch?: string }
 export type SkillRef = { owner: string; repo: string; commit: string; path: string }
 
 export interface RepoFetcher {

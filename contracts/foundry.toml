@@ -30,3 +30,13 @@ fail_on_revert = false
 [profile.fork]
 match_path = "test/fork/*"
 no_match_path = "test/__nothing__/*"
+
+[fmt]
+# Frozen at v0-frozen: formatting them would change files the other lanes build on.
+ignore = [
+  "src/interfaces/**/*.sol",
+  "src/lib/Constants.sol",
+  "src/lib/Rules.sol",
+  "src/lib/Ids.sol",
+  "src/lib/BindTypes.sol",
+]

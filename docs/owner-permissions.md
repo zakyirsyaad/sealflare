@@ -100,6 +100,9 @@ that had not yet accepted it.
   reveal after seeing them, at the cost of the juror stake.
 - A publisher whose bond withdrawal has already matured can finish withdrawing before a
   challenge locks the bond.
+- Two expired disputes on the same target within 30 days raise the forfeit of the next
+  challenger who lets a dispute expire to 100% of the stake. A publisher could provoke expiries on
+  purpose to make honest challengers more careful.
 
 ## Audit status
 
