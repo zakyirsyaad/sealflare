@@ -1,7 +1,8 @@
 # Sealflare web
 
 Task 2 provides the App Router shell, shared design tokens, base UI components, UX copy,
-formatting helpers and validated environment boundaries. Landing and Docs belong to the founder.
+formatting helpers and validated environment boundaries. Task 3 adds the chain layer: wallet
+connection, the user states and contract error messages. Landing and Docs belong to the founder.
 
 ## Versions and official installation references
 
@@ -14,8 +15,10 @@ Checked on 22 November 2026 against the official documentation and npm registry:
 | TypeScript | 7.0.2 | Strict, inherited from the workspace |
 | Vitest | 5.1.1 | jsdom 27.4.0, Testing Library React 16.3.3 |
 | Playwright | 1.65.1 | Chromium smoke tests on the production build |
-| wagmi | 3.7.11 available | Integrate in Task 3 with viem 2 and TanStack Query |
-| WalletConnect Ethereum provider | 2.26.0 available | Task 3 uses wagmi's WalletConnect connector and a founder project ID |
+| wagmi | 3.7.11 | Task 3. The connection hook is `useConnection`; `useAccount` is deprecated in v3 |
+| viem | 2.58.4 | Peer of wagmi |
+| TanStack Query | 5.108.4 | Peer of wagmi |
+| WalletConnect Ethereum provider | 2.26.0 | Used by wagmi's `walletConnect` connector; needs a founder project ID |
 | Reown AppKit | 2.0.0 available | Current WalletConnect App SDK docs use AppKit; no extra wallet UI installed in Task 2 |
 
 Official references:
@@ -49,16 +52,21 @@ pnpm --filter @sealflare/web build
 pnpm --filter @sealflare/web dev
 ```
 
-Open `/app`. The scan service and wallet connection are supplied by later tasks. The Connect
-wallet control is disabled until Task 3, and the shell shows no fabricated results or counts.
+Open `/app`. The scan service is supplied by a later task. The Connect wallet control opens the
+connect prompt, and the shell shows no fabricated results or counts.
 Navigation destinations for later tasks intentionally have no placeholder result pages.
 
 ## Environment
 
 `lib/env.public.ts` is the client-safe entry point. Next.js needs explicit references to public
-variables at build time. Chain ID defaults to 56, modules default to false, and the WalletConnect
-project ID can be omitted until wallet integration is enabled. Modules accept only `true` or
-`false`. Public values are fixed at build time; rebuild when they change.
+variables at build time. Public values are fixed at build time; rebuild when they change.
+
+| Public variable | Value |
+| --- | --- |
+| `NEXT_PUBLIC_CHAIN_ID` | `56` (default) or `31337`; anything else fails at startup naming the variable |
+| `NEXT_PUBLIC_MODULES_LIVE` | `true` or `false` (default `false`) |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Optional. Without it the connect prompt offers only the browser wallet and no QR option |
+| `NEXT_PUBLIC_AGENT_ID_URL` | Optional HTTP(S) link for "Get an Agent ID". Unset shows plain text and a note |
 
 `lib/env.ts` is guarded by `server-only` and exposes `publicEnv` and `serverEnv`. It validates
 server values on import, and `instrumentation.ts` imports it at Node server startup. Missing or
@@ -88,7 +96,7 @@ pnpm --filter @sealflare/web e2e
 ```
 
 The smoke suite checks `/app` at 375px and 1280px in both themes, keyboard focus, navigation,
-disabled wallet state, horizontal overflow and browser runtime errors. Screenshots go to the
+the connect prompt, horizontal overflow and browser runtime errors. Screenshots go to the
 ignored `test-results/` directory. These checks cover the shell, not the future scan/wallet flows.
 The Panel component uses a native modal dialog for focus containment, Escape and background
 inertness. Tabs support ArrowLeft, ArrowRight, Home and End.
@@ -128,3 +136,89 @@ inertness. Tabs support ArrowLeft, ArrowRight, Home and End.
   (`EPERM`). Re-running with the permitted sandbox escalation completed successfully.
 - The lockfile preserves the staged Task 1 importer and adds the web importer and required
   package/peer snapshots. pnpm also refreshes Vitest optional-peer snapshots in shared/scanner.
+
+## Task 3: chain layer
+
+Files: `lib/chain/{addresses,config,errors,modules,userState}.ts` and `components/wallet/*`.
+`Web3Provider` wraps only `app/app/layout.tsx`, so the landing page and docs stay wallet free.
+
+- **Addresses.** `shared/abi/addresses.local.json` is gitignored and `addresses.bsc.json` does not
+  exist until the Core release, so they cannot be imported statically. `next.config.ts` reads
+  whichever exists and inlines it as `NEXT_PUBLIC_ADDRESSES_LOCAL` and `NEXT_PUBLIC_ADDRESSES_BSC`.
+  Run `pnpm chain` first and restart `next dev` after the file changes. `addresses(chainId)` throws
+  a message that says what to run when the file is missing. A zero `court` or `vault` becomes `null`.
+- **User states.** `useUserState()` reads `Core.isAgentIdHolder` and `Core.attestationsLeftToday`
+  directly, never the indexer, pinned to the expected chain. Reads are disabled without a wallet,
+  on the wrong network, or when the address file is missing. In those cases, and while a read is
+  loading or failed, the state is `checking` with `isLoading` or `isError` set, never `no-agent-id`.
+  `attestationsLeft` is `null` until the quota read succeeds. `isLoading` is also true while wagmi
+  reconnects after a reload, so the header shows a disabled button instead of flashing "Connect wallet".
+  `error` carries a developer-facing message; render a sentence from `copy`, not this text.
+- **Contract errors.** `translateContractError()` returns `null` when the user rejects in the
+  wallet and a sentence otherwise. A test fails if an error is added to the Core, Court or Vault ABI
+  without a sentence in `copy.errors`.
+- **Modules.** `moduleGate(modulesLive)` returns the disabled state and the fixed sentence.
+- **Environment.** `NEXT_PUBLIC_AGENT_ID_URL` is the official Agent ID link. Until the founder sets
+  it, `NoAgentId` shows the label as plain text and says the link is not published yet.
+
+### Decisions that differ from the plan
+
+- `UserState` has a fifth kind, `checking`. Without it a wallet whose holder check is still loading
+  or has failed would be shown as having no Agent ID, which sends real holders to the wrong panel.
+  The hook also returns `isLoading` and `isError`. Cost if wrong: consumers must handle one more
+  kind. The plan types the quota as a number; it is `number | null` here because 0 would tell a
+  holder with an unknown quota that the daily limit is used up.
+- `translateContractError` never throws and never shows a revert string, only ABI-decoded names
+  with sentences from `copy`. `retry` is true for `TransferFailed` and for errors it cannot name,
+  because every other revert repeats identically. ux.md section 5 asks for a retry button in the
+  failed state; the panel can show one regardless of this flag. Cost if wrong: Task 10 may need it
+  true for more errors.
+- `moduleGate` lives in `lib/chain/modules.ts`, not in `config.ts`, so it can be tested without
+  mocking the wallet config.
+- `WalletButton` takes `pendingCount` as a prop and the header passes nothing yet. The count comes
+  from the activity endpoint, which a later task builds.
+
+### Stub and real contract differences
+
+Probed on a local Anvil with the same reads and simulated `attest` calls, once per deployment:
+
+| Check | `pnpm chain` (stub) | `pnpm chain:real` |
+| --- | --- | --- |
+| `isAgentIdHolder` after `chain:seed` | true for accounts 0 to 4, false for account 5 | same |
+| `attestationsLeftToday`, account 1 | 5 | 2 (the seed script attested three times) |
+| `attest` from a wallet without an Agent ID | does not revert | reverts with `NotAgentIdHolder` |
+| `attest` with invalid arguments | does not revert | reverts (`InvalidFlags` for the probe used) |
+
+The stub never decrements the quota and accepts any caller, as documented. The No Agent ID panel
+can be driven on the stub through the read alone, but write errors and the daily limit only show up
+on `chain:real`.
+
+### Open items
+
+- Public reads use viem's default BNB Chain RPC. A dedicated endpoint cannot go in a
+  `NEXT_PUBLIC_` variable if it is paid, so the founder needs to decide on one before release.
+- WalletConnect metadata (name, URL, icon) is not set, so wallets show generic app details.
+- `@reown/appkit`, pulled in by the WalletConnect provider, has a build script that pnpm blocks.
+  It was not approved, and pairing is untested because no project ID exists yet.
+- Node 26 prints an `ExperimentalWarning` about `localStorage` during the production build. The
+  build succeeds.
+- `moduleGate(modulesLive)` trusts the flag. With the flag on and a zero Court or Vault address in
+  the file, actions would be enabled against a missing contract. Keeping the flag honest is the
+  founder's release step; Task 12 or later can also check the addresses.
+- Task 10 must render a `copy` sentence when `useUserState().isError` is true, and show a loading
+  state on "Check again" (the hook does not expose `isFetching`).
+
+### Verified result
+
+- TDD: the four new suites failed on missing modules first. All 117 web tests pass; typecheck and
+  the production build pass; Chromium e2e passes 3 tests at 375 and 1280 px.
+- An independent review found no critical issues and five important ones, each reproduced before
+  fixing: the connect prompt reappeared after connect and disconnect, the prompt promised a QR code
+  without a WalletConnect connector and hid connection failures, the attestation quota read as 0
+  while unknown, the translator could throw, and the menu lost focus. `wallet.integration.test.tsx`
+  uses a real `WagmiProvider` with wagmi's `mock` connector because the mocked suite could not
+  see the first of these.
+- Against `chain:real`, the app's ABI reads returned the expected holders and quota as `number`, and
+  two real reverts translated to the right sentences.
+- Not tested: a real wallet connection, because no browser wallet or WalletConnect project ID is
+  available in this environment.

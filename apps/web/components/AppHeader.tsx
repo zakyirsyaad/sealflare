@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Button } from './ui/Button'
+import { WalletButton } from './wallet/WalletButton'
 import { copy } from '../lib/copy'
 
 const links = [
@@ -23,7 +23,7 @@ export function AppHeader() {
     </nav>
     <div className="sf-header-actions">
       <label className="sf-theme"><input type="checkbox" checked={light} onChange={event => setLight(event.target.checked)} />{copy.nav.theme}</label>
-      <Button disabled title={copy.common.walletPending}>{copy.nav.connectWallet}</Button>
+      <WalletButton />
     </div>
   </div></header>
 }

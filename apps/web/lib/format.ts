@@ -18,6 +18,12 @@ export function timeLeft(until: Date, now: Date): string {
   const minutes = Math.max(0, Math.ceil(diff / 60000))
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
+export function formatUtc(seconds: number | bigint): string {
+  const date = new Date(Number(seconds) * 1000)
+  if (Number.isNaN(date.getTime())) throw new RangeError('A valid timestamp is required.')
+  const iso = date.toISOString()
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+}
 export function tierLabel(tier: TrustTier): string {
   const entry = copy.tiers[tier]
   if (!entry) throw new RangeError('Unknown trust tier.')

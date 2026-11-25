@@ -198,3 +198,13 @@ a { color: inherit; }
 .sf-theme { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: 12px; color: var(--muted-foreground); }
 .sf-theme input { accent-color: var(--positive); }
 .sf-shell-note { margin: 0; padding: 24px; color: var(--muted-foreground); }
+.sf-wallet { position: relative; }
+.sf-wallet > .sf-btn { gap: 8px; }
+a.sf-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.sf-chip--count { min-width: 20px; justify-content: center; padding: 0 6px; background: var(--primary); color: var(--primary-foreground); font-family: var(--font-mono); }
+.sf-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; display: grid; min-width: 220px; max-width: calc(100vw - 40px); border: 1px solid var(--border); background: var(--card); }
+.sf-menu a, .sf-menu button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 16px; border: 0; background: transparent; color: var(--foreground); text-align: left; text-decoration: none; cursor: pointer; }
+.sf-menu a:hover, .sf-menu button:hover, .sf-menu a:focus-visible, .sf-menu button:focus-visible { background: var(--muted); }
+.sf-stack { display: grid; gap: 12px; }
+.sf-stack__title { margin: 0; font-size: 18px; font-weight: 500; line-height: 26px; }
+.sf-connectors { display: grid; gap: 8px; margin: 16px 0; padding: 0; list-style: none; }
