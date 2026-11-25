@@ -1,8 +1,11 @@
-import type { Address, Hex, Log, PublicClient } from 'viem'
+import type { Address, Hex, PublicClient } from 'viem'
 import type { Db } from '@sealflare/internal/db'
 import { assertCursorStillOnChain, readCursor, writeCursor } from './cursor'
-import { decodeCoreLogs, toJsonValue, type TimedEvent } from './decode'
+import { decodeRange, type AnyEvent, type IndexedAddresses } from './decodeAll'
+import { toJsonValue } from './decode'
 import { applyCoreEvent } from './handlers/core'
+import { applyCourtEvent } from './handlers/court'
+import { applyVaultEvent } from './handlers/vault'
 
 /** How many blocks the indexer reads in one range. */
 export const DEFAULT_BATCH = 2000
@@ -10,7 +13,8 @@ export const DEFAULT_BATCH = 2000
 export interface IndexOnceDeps {
   client: PublicClient
   sql: Db
-  addresses: { core: Address }
+  /** The contracts to read. The Core is always read; the Court and the Vault are optional. */
+  addresses: IndexedAddresses
   batch?: number
   /**
    * The block Core was deployed in. The first read starts here when there is no cursor yet, so a
@@ -29,7 +33,7 @@ export interface IndexOnceResult {
 }
 
 /**
- * Reads the Core events of the next range and writes them to the database.
+ * Reads the events of the next range and writes them to the database.
  *
  * The range stops at the last final block, so the indexer never reads a block the chain may
  * still change. The events, the raw log and the cursor go into one transaction, so a failure
@@ -48,14 +52,18 @@ export async function indexOnce(deps: IndexOnceDeps): Promise<IndexOnceResult> {
   if (from > finalized) return { from: finalized + 1n, to: finalized, events: 0 }
   const to = from + batch - 1n < finalized ? from + batch - 1n : finalized
 
-  const logs = await deps.client.getLogs({ address: deps.addresses.core, fromBlock: from, toBlock: to })
-  const events = await decodeRange(deps.client, logs)
+  const logs = await deps.client.getLogs({
+    address: contractsToRead(deps.addresses),
+    fromBlock: from,
+    toBlock: to,
+  })
+  const events = await decodeRange(deps.client, logs, deps.addresses)
   const lastBlockHash = await blockHashAt(deps.client, to)
 
   await deps.sql.transaction(async (tx) => {
-    for (const event of events) {
-      if (!(await recordEvent(tx, event))) continue
-      await applyCoreEvent(tx, event)
+    for (const entry of events) {
+      if (!(await recordEvent(tx, entry))) continue
+      await applyEvent(tx, entry)
     }
     await writeCursor(tx, cursorId, to, lastBlockHash)
   })
@@ -63,27 +71,27 @@ export async function indexOnce(deps: IndexOnceDeps): Promise<IndexOnceResult> {
   return { from, to, events: events.length }
 }
 
-/** Decodes the logs of a range and gives every event the time of the block it was mined in. */
-async function decodeRange(client: PublicClient, logs: readonly Log[]): Promise<TimedEvent[]> {
-  const decoded = decodeCoreLogs(logs)
-  const times = new Map<bigint, Date>()
-  for (const event of decoded) {
-    if (times.has(event.blockNumber)) continue
-    const block = await client.getBlock({ blockNumber: event.blockNumber })
-    times.set(event.blockNumber, new Date(Number(block.timestamp) * 1000))
-  }
-  return decoded.map((event) => {
-    const at = times.get(event.blockNumber)
-    if (!at) throw new Error(`The block ${event.blockNumber} of an event has no time.`)
-    return { ...event, at }
-  })
+/** The contracts the indexer reads, without the same address twice. */
+function contractsToRead(addresses: IndexedAddresses): Address[] {
+  const list = [addresses.core]
+  if (addresses.court) list.push(addresses.court)
+  if (addresses.vault) list.push(addresses.vault)
+  return [...new Set(list.map((address) => address.toLowerCase() as Address))]
+}
+
+/** Writes the event with the handler of its contract. */
+async function applyEvent(tx: Db, entry: AnyEvent): Promise<void> {
+  if (entry.kind === 'core') return applyCoreEvent(tx, entry.event)
+  if (entry.kind === 'court') return applyCourtEvent(tx, entry.event)
+  return applyVaultEvent(tx, entry.event)
 }
 
 /**
  * Writes the raw log. The row says whether the event was read before, so a range that is read
  * twice does not count its votes twice.
  */
-async function recordEvent(tx: Db, event: TimedEvent): Promise<boolean> {
+async function recordEvent(tx: Db, entry: AnyEvent): Promise<boolean> {
+  const event = entry.event
   const rows = await tx.query<{ tx_hash: string }>(
     `INSERT INTO events (tx_hash, log_index, block_number, block_hash, contract, name, args)
      VALUES ($1, $2, $3, $4, $5, $6, $7)

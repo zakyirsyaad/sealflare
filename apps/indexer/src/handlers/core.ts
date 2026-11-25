@@ -3,7 +3,8 @@ import { weightOf } from '@sealflare/shared/rules'
 import type { Db } from '@sealflare/internal/db'
 import type { TimedEvent } from '../decode'
 import { CHALLENGE_OUTCOMES, PUBLISHER_ROLES, SCORE_REASONS, TARGET_TYPE_NAMES, VERDICT_NAMES, nameOf } from '../enums'
-import { FatalIndexError } from '../fatal'
+import { missingRow, requireGuardian, requireTarget } from './rows'
+import { fillBountySlot } from './vault'
 
 /** The address the contract stores as a bytes32. */
 function addressOf(target: Hex): Address {
@@ -78,8 +79,8 @@ async function applyGuardianCreated(tx: Db, event: TimedEvent & { name: 'Guardia
 async function applyAttested(tx: Db, event: TimedEvent & { name: 'Attested' }): Promise<void> {
   const verdict = nameOf(VERDICT_NAMES, event.args.verdict)
   if (!verdict) throw new Error(`The Core contract recorded a vote with an unknown verdict ${event.args.verdict}`)
-  await requireTarget(tx, event.args.targetId)
-  await requireGuardian(tx, event.args.guardian)
+  await requireTarget(tx, event.args.targetId, 'Core')
+  await requireGuardian(tx, event.args.guardian, 'Core')
   const duringDispute = await isUnderDispute(tx, event.args.targetId)
   await tx.query(
     `INSERT INTO attestations (tx_hash, log_index, target_id, guardian, verdict, flags, weight,
@@ -123,6 +124,14 @@ async function applyAttested(tx: Db, event: TimedEvent & { name: 'Attested' }): 
       event.at.toISOString(),
     ],
   )
+  // A vote may fill a slot of a bounty of its target, when the bounty was made before the vote.
+  await fillBountySlot(tx, {
+    targetId: event.args.targetId,
+    attestationIndex: event.args.index,
+    guardian: event.args.guardian,
+    verdict,
+    at: event.at,
+  })
 }
 
 /** A vote that happened while a challenge was open was cast during a dispute. */
@@ -142,49 +151,18 @@ async function isUnderDispute(tx: Db, targetId: Hex): Promise<boolean> {
  * heard of, and the write would quietly change nothing. That would leave a target looking
  * unflagged and unconfirmed, so the indexer stops here and says what to fix.
  */
-async function requireTarget(tx: Db, targetId: Hex): Promise<void> {
-  const rows = await tx.query<{ found: boolean }>(
-    'SELECT EXISTS (SELECT 1 FROM targets WHERE target_id = $1) AS found',
-    [targetId],
-  )
-  if (!rows[0]?.found) throw missingRow('target', targetId)
-}
-
-async function requireGuardian(tx: Db, guardian: Address): Promise<void> {
-  const rows = await tx.query<{ found: boolean }>(
-    'SELECT EXISTS (SELECT 1 FROM guardians WHERE address = $1) AS found',
-    [lower(guardian)],
-  )
-  if (!rows[0]?.found) throw missingRow('guardian', lower(guardian))
-}
-
 async function requireAttestation(tx: Db, targetId: Hex, index: number): Promise<void> {
   const rows = await tx.query<{ found: boolean }>(
     'SELECT EXISTS (SELECT 1 FROM attestations WHERE target_id = $1 AND attestation_index = $2) AS found',
     [targetId, index],
   )
-  if (!rows[0]?.found) throw missingRow('attestation', `${targetId} index ${index}`)
-}
-
-/**
- * The event names a row the database does not have.
- *
- * Reading the same range again will not fix it, so the indexer stops with this error instead of
- * looping over the range. The message names the start block, and it says that a cursor wins over
- * it, because a database that has already read a range keeps the cursor of that range.
- */
-function missingRow(what: string, key: string): FatalIndexError {
-  return new FatalIndexError(
-    `The Core event names the ${what} ${key}, which the database does not have. ` +
-      `START_BLOCK must be at or before the block of the first Core event. ` +
-      `A cursor that already exists wins over START_BLOCK, so clear the cursor to read the range again.`,
-  )
+  if (!rows[0]?.found) throw missingRow('attestation', `${targetId} index ${index}`, 'Core')
 }
 
 async function applyPublisherBound(tx: Db, event: TimedEvent & { name: 'PublisherBound' }): Promise<void> {
   const role = nameOf(PUBLISHER_ROLES, event.args.role)
   if (!role) throw new Error(`The Core contract bound a publisher with an unknown role ${event.args.role}`)
-  await requireTarget(tx, event.args.targetId)
+  await requireTarget(tx, event.args.targetId, 'Core')
   await tx.query('UPDATE targets SET publisher = $2, publisher_role = $3 WHERE target_id = $1', [
     event.args.targetId,
     lower(event.args.publisher),
@@ -196,7 +174,7 @@ async function applyDelegatecallFlagged(
   tx: Db,
   event: TimedEvent & { name: 'DelegatecallFlagged' },
 ): Promise<void> {
-  await requireTarget(tx, event.args.targetId)
+  await requireTarget(tx, event.args.targetId, 'Core')
   await tx.query('UPDATE targets SET has_delegatecall = true WHERE target_id = $1', [event.args.targetId])
 }
 
@@ -205,18 +183,18 @@ async function applyAttestationSettled(
   event: TimedEvent & { name: 'AttestationSettled' },
 ): Promise<void> {
   await requireAttestation(tx, event.args.targetId, event.args.index)
-  await tx.query('UPDATE attestations SET settled = true WHERE target_id = $1 AND attestation_index = $2', [
-    event.args.targetId,
-    event.args.index,
-  ])
+  await tx.query(
+    'UPDATE attestations SET settled = true, settled_xp = $3 WHERE target_id = $1 AND attestation_index = $2',
+    [event.args.targetId, event.args.index, event.args.delta],
+  )
 }
 
 async function applyScoreChanged(tx: Db, event: TimedEvent & { name: 'ScoreChanged' }): Promise<void> {
   const reason = nameOf(SCORE_REASONS, event.args.reason) ?? String(event.args.reason)
-  await requireGuardian(tx, event.args.guardian)
+  await requireGuardian(tx, event.args.guardian, 'Core')
   await tx.query(
-    `INSERT INTO score_changes (guardian, tx_hash, log_index, delta, reason, at)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO score_changes (guardian, tx_hash, log_index, delta, reason, at, target_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (guardian, tx_hash, log_index) DO NOTHING`,
     [
       lower(event.args.guardian),
@@ -225,6 +203,7 @@ async function applyScoreChanged(tx: Db, event: TimedEvent & { name: 'ScoreChang
       event.args.delta,
       reason,
       event.at.toISOString(),
+      event.args.targetId,
     ],
   )
   await tx.query('UPDATE guardians SET score = $2, weight = $3 WHERE address = $1', [
@@ -232,10 +211,18 @@ async function applyScoreChanged(tx: Db, event: TimedEvent & { name: 'ScoreChang
     event.args.newScore,
     weightOf(event.args.newScore),
   ])
+  // A penalty for a SAFE vote on a target that was confirmed dangerous is charged once. The
+  // guardian does not owe it any more once the contract has charged it.
+  if (reason === 'SAFE_ON_DANGER') {
+    await tx.query(
+      'UPDATE guardians SET pending_penalties = GREATEST(pending_penalties - 1, 0) WHERE address = $1',
+      [lower(event.args.guardian)],
+    )
+  }
 }
 
 async function applyDisputeMarked(tx: Db, event: TimedEvent & { name: 'DisputeMarked' }): Promise<void> {
-  await requireTarget(tx, event.args.targetId)
+  await requireTarget(tx, event.args.targetId, 'Core')
   await tx.query('UPDATE targets SET active_challenge_id = $2 WHERE target_id = $1', [
     event.args.targetId,
     event.args.challengeId.toString(),
@@ -245,7 +232,11 @@ async function applyDisputeMarked(tx: Db, event: TimedEvent & { name: 'DisputeMa
 async function applyVerdictApplied(tx: Db, event: TimedEvent & { name: 'VerdictApplied' }): Promise<void> {
   const outcome = nameOf(CHALLENGE_OUTCOMES, event.args.outcome)
   if (!outcome) throw new Error(`The Core contract applied a verdict with an unknown outcome ${event.args.outcome}`)
-  await requireTarget(tx, event.args.targetId)
+  await requireTarget(tx, event.args.targetId, 'Core')
+  const before = await tx.query<{ confirmed_danger: boolean }>(
+    'SELECT confirmed_danger FROM targets WHERE target_id = $1',
+    [event.args.targetId],
+  )
   // The contract adds the verdict's flags only to the verdict that confirms the danger for the
   // first time, so the flags of a later verdict are left out.
   await tx.query(
@@ -255,5 +246,25 @@ async function applyVerdictApplied(tx: Db, event: TimedEvent & { name: 'VerdictA
        active_flags = CASE WHEN $2 = 'UPHELD' AND NOT confirmed_danger THEN active_flags | $3 ELSE active_flags END
      WHERE target_id = $1`,
     [event.args.targetId, outcome, event.args.flags],
+  )
+  // A SAFE vote on a target that is confirmed dangerous owes a penalty that the contract has
+  // not charged yet. Only the verdict that confirms the danger counts, because a later verdict
+  // confirms nothing new.
+  if (outcome === 'UPHELD' && !before[0]?.confirmed_danger) {
+    await addPendingPenalties(tx, event.args.targetId)
+  }
+}
+
+/**
+ * The penalties the guardians of a target owe.
+ *
+ * Every SAFE vote on the target is a penalty the contract has not charged yet, and the counter
+ * of the guardian moves with it.
+ */
+async function addPendingPenalties(tx: Db, targetId: Hex): Promise<void> {
+  await tx.query(
+    `UPDATE guardians SET pending_penalties = pending_penalties + 1
+     WHERE address IN (SELECT guardian FROM attestations WHERE target_id = $1 AND verdict = 'SAFE')`,
+    [targetId],
   )
 }
