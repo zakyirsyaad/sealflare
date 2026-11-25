@@ -68,7 +68,7 @@ export function Banners({ detail, scan, unbondingAt }: BannersProps) {
           <div>
             <div className="sf-banner__title">{copy.target.proxyTitle}</div>
             <div className="sf-banner__text">{detail.hasDelegatecall ? copy.target.proxyText : copy.target.proxyTextUnmarked}</div>
-            {!detail.hasDelegatecall && foundDelegatecall(scan) && (
+            {!detail.hasDelegatecall && proxy && (
               <div className="sf-banners__action">
                 <Button variant="secondary" disabled>
                   {copy.target.flagProxy}

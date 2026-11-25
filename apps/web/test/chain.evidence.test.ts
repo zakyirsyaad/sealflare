@@ -85,10 +85,12 @@ afterAll(() => {
   delete process.env.NEXT_PUBLIC_ADDRESSES_BSC
 })
 
-beforeEach(() => {
+beforeEach(async () => {
   state.logRanges = []
   state.blockReads = 0
   state.failRangeStartingAt = null
+  const { clearEvidenceCache } = await import('../server/chain')
+  clearEvidenceCache()
 })
 
 async function reader() {
@@ -119,6 +121,16 @@ describe('the evidence of a target, read through a public-RPC-like node', () => 
     expect(first).toBeGreaterThan(0)
     await chain.evidence(unseen, timestampOf(CREATED_BLOCK))
     expect(state.blockReads).toBe(first)
+  })
+
+  test('a second view of the same target reads only the blocks that came after the last one', async () => {
+    const chain = await reader()
+    const target = `0x${'12'.repeat(32)}` as Hex
+    await chain.evidence(target, timestampOf(CREATED_BLOCK))
+    const first = state.logRanges.length
+    await chain.evidence(target, timestampOf(CREATED_BLOCK))
+    // The head has not moved, so no range is read a second time.
+    expect(state.logRanges.length).toBe(first)
   })
 
   test('a target too old to be read this way is refused, not read halfway', async () => {

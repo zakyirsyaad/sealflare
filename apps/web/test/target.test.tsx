@@ -105,6 +105,7 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     unbondingAt: null,
     versionChanged: false,
     currentVersionId: null,
+    differentBundle: false,
     evidenceFailed: false,
     failed: false,
     ...overrides,
@@ -230,6 +231,8 @@ test('a proxy says it cannot get a safe status from IFirewall, and offers the on
   expect(screen.getByText(copy.target.proxyTitle)).toBeInTheDocument()
   expect(screen.getByText(copy.target.proxyTextUnmarked)).toBeInTheDocument()
   expect(screen.queryByText(copy.target.proxyText)).toBeNull()
+  // A recognised proxy is not marked on chain yet, so the on-chain flag is still offered.
+  expect(screen.getByRole('button', { name: copy.target.flagProxy })).toBeInTheDocument()
 })
 
 test('before the on-chain marker is set the page does not claim the firewall never rates the proxy safe', () => {
@@ -380,7 +383,7 @@ test('a skill that changed turns Attest into "Scan the current version"', () => 
   expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
   expect(screen.getByRole('link', { name: copy.target.currentVersion })).toHaveAttribute(
     'href',
-    `/app?q=${encodeURIComponent('https://github.com/sealflare/guard/tree/main/skills/guard')}`,
+    `/app?q=${encodeURIComponent('https://github.com/sealflare/guard')}`,
   )
 })
 
@@ -394,6 +397,13 @@ test('a tier that is not stale keeps the normal Attest button for a skill', () =
   wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
   render(<TargetScreen {...props({ detail: skillDetail({ tier: 'COMMUNITY_SAFE' }) })} />)
   expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
+})
+
+test('a link that names another bundle says so, and the page offers no version of it', () => {
+  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT', src: null }), differentBundle: true })} />)
+  expect(screen.getByText(copy.target.differentBundle)).toBeInTheDocument()
+  // The foreign source is not attached to the target, so there is nothing to scan again.
+  expect(screen.queryByRole('link', { name: copy.target.currentVersion })).toBeNull()
 })
 
 test('the version notice links to the page of the current version of the skill', () => {

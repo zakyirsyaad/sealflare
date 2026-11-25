@@ -181,6 +181,8 @@ export type TargetPageData = {
   /** A skill source that names a version other than the rated one. The page then offers that version. */
   versionChanged: boolean
   currentVersionId: string | null
+  /** The link names another bundle than the one the registry rated. */
+  differentBundle: boolean
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
   failed: boolean
@@ -192,7 +194,8 @@ async function readChain(reader: ChainReader, targetId: Hex) {
   const attestations = target ? await reader.attestations(targetId, target.attestationCount) : []
   let evidence: EvidenceRow[] = []
   let evidenceFailed = false
-  if (target) {
+  // A target without attestations has no event to read. The log is never walked for nothing.
+  if (target && target.attestationCount > 0) {
     try {
       evidence = await reader.evidence(targetId, target.createdAt)
     } catch {
@@ -221,6 +224,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     unbondingAt: null,
     versionChanged: false,
     currentVersionId: null,
+    differentBundle: false,
     evidenceFailed: false,
     failed: false,
   }
@@ -235,8 +239,20 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   const candidate = await loadScan(id, src, chain.target?.targetType ?? null)
   // Only the scan of this very target is shown. Another target's findings never appear under this tier.
   const scan = candidate !== null && candidate.targetId.toLowerCase() === id.toLowerCase() ? candidate : null
+  // A skill source may only claim to be a newer version of the rated skill when it names the same
+  // publisher. The registry only knows the verified publisher, so a link that names another one is
+  // a different bundle and never a new version of this target.
+  const samePublisher =
+    chain.target !== null &&
+    chain.target.publisher !== ZERO_ADDRESS &&
+    candidate !== null &&
+    candidate.source.kind === 'skill' &&
+    candidate.source.manifestPublisher.toLowerCase() === chain.target.publisher.toLowerCase()
+  const isSkillTarget = chain.target?.targetType === 'AI_SKILL_BUNDLE'
   const newerSkill =
-    candidate !== null && scan === null && chain.target?.targetType === 'AI_SKILL_BUNDLE' && candidate.targetType === 'AI_SKILL_BUNDLE'
+    candidate !== null && scan === null && isSkillTarget && candidate.targetType === 'AI_SKILL_BUNDLE' && samePublisher
+  const foreignBundle =
+    candidate !== null && scan === null && isSkillTarget && candidate.targetType === 'AI_SKILL_BUNDLE' && !samePublisher
   const rows = attestationRows(chain.attestations, chain.evidence)
   const built = buildDetail({
     targetId: id,
@@ -245,7 +261,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     attestations: chain.attestations,
     scan,
     bond: chain.bond?.amount ?? 0n,
-    src,
+    src: foreignBundle ? null : src,
   })
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
@@ -260,6 +276,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     unbondingAt,
     versionChanged: newerSkill,
     currentVersionId: newerSkill && candidate !== null ? candidate.targetId : null,
+    differentBundle: foreignBundle,
     evidenceFailed: chain.evidenceFailed,
     failed: false,
   }

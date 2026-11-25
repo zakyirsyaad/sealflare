@@ -204,25 +204,46 @@ async function createdBlock(targetId: Hex, createdAt: number, head: bigint): Pro
 }
 
 /**
+ * The logs that were already read, per target, with the block they were read up to. A later view
+ * of the same target fetches only the blocks that came after it, so a page view does not read the
+ * whole history again.
+ */
+const evidenceCache = new Map<string, { block: bigint; rows: EvidenceRow[] }>()
+
+/** The read logs of the tests start from an empty cache, as a fresh process would. */
+export function clearEvidenceCache(): void {
+  evidenceCache.clear()
+}
+
+/**
  * The Attested logs of a target, from the block it was created in to the head, in bounded ranges.
  * Any failed range, or a target too old to read this way, rejects: the caller reports that the
  * evidence is unavailable instead of showing an empty list as if no proof was linked.
  */
 async function readEvidence(targetId: Hex, createdAt: number): Promise<EvidenceRow[]> {
   const head = await client().getBlockNumber()
-  const fromBlock = await createdBlock(targetId, createdAt, head)
+  const key = targetId.toLowerCase()
+  const cached = evidenceCache.get(key)
+  const fromBlock = cached === undefined ? await createdBlock(targetId, createdAt, head) : cached.block + 1n
+  // Nothing new since the last read of this target.
+  if (fromBlock > head) return cached?.rows ?? []
   const event = eventItem<AttestedEvent>('Attested')
   const logs = await collectLogs(
     (from, to) => client().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
     fromBlock,
     head,
   )
-  return logs.map(log => ({
-    index: Number(log.args.index),
-    shortProof: proofText(log.args.shortProof),
-    evidenceURI: log.args.evidenceURI ?? '',
-    txHash: log.transactionHash,
-  }))
+  const rows = [
+    ...(cached?.rows ?? []),
+    ...logs.map(log => ({
+      index: Number(log.args.index),
+      shortProof: proofText(log.args.shortProof),
+      evidenceURI: log.args.evidenceURI ?? '',
+      txHash: log.transactionHash,
+    })),
+  ]
+  evidenceCache.set(key, { block: head, rows })
+  return rows
 }
 
 async function readBond(targetId: Hex, publisher: Address): Promise<BondState | null> {

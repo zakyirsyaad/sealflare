@@ -4,8 +4,9 @@ import { scanCurrentVersionHref } from '../lib/currentVersion'
 const sha = 'a'.repeat(40)
 
 test('a pinned skill source becomes a link that scans the current head of the repository, not the pinned commit', () => {
+  // The link names the repository, not a branch: the default branch is not always main.
   expect(scanCurrentVersionHref(`gh:sealflare/guard@${sha}:skills/guard`))
-    .toBe(`/app?q=${encodeURIComponent('https://github.com/sealflare/guard/tree/main/skills/guard')}`)
+    .toBe(`/app?q=${encodeURIComponent('https://github.com/sealflare/guard')}`)
 })
 
 test('a skill at the root of its repository links to the bare repository', () => {

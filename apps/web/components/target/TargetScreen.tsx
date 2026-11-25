@@ -21,8 +21,18 @@ export type TargetScreenProps = {
   unbondingAt: number | null
   versionChanged: boolean
   currentVersionId: string | null
+  differentBundle: boolean
   evidenceFailed: boolean
   failed: boolean
+}
+
+/** The link names another bundle than the one the registry rated. */
+function ForeignNotice() {
+  return (
+    <div className="sf-version">
+      <p>{copy.target.differentBundle}</p>
+    </div>
+  )
 }
 
 function VersionNotice({ targetId, src }: { targetId: string; src: string | null }) {
@@ -55,6 +65,7 @@ export function TargetScreen(props: TargetScreenProps) {
         version={props.scan?.source.kind === 'skill' ? props.scan.source.commit : null}
       />
       {props.versionChanged && props.currentVersionId !== null && <VersionNotice targetId={props.currentVersionId} src={props.src} />}
+      {props.differentBundle && <ForeignNotice />}
       <Banners detail={detail} scan={props.scan} unbondingAt={props.unbondingAt} />
       <StaleNotice blocksBehind={props.blocksBehind} />
       <div className="sf-target__body">

@@ -111,8 +111,8 @@ function skillReport(contentHash: `0x${string}`) {
   })
 }
 
-function skillTarget(report: ReturnType<typeof skillReport>) {
-  return coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: report.targetId as `0x${string}` })
+function skillTarget(report: ReturnType<typeof skillReport>, overrides: Partial<CoreTarget> = {}) {
+  return coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: report.targetId as `0x${string}`, ...overrides })
 }
 
 test('the tier comes from Core even when the row of the target disagrees', async () => {
@@ -217,13 +217,42 @@ test('a scan of the same target is attached', async () => {
 test('a newer version of a skill is not attached, and the page offers the current version instead', async () => {
   const audited = skillReport(`0x${'55'.repeat(32)}`)
   const current = skillReport(`0x${'66'.repeat(32)}`)
-  reader.current = fakeReader({ target: async () => skillTarget(audited), tier: async () => 'COMMUNITY_SAFE' })
+  reader.current = fakeReader({
+    target: async () => skillTarget(audited, { publisher: address }),
+    tier: async () => 'COMMUNITY_SAFE',
+  })
   scanner.scanSkill.mockResolvedValue(current)
   const data = await loadTarget(audited.targetId, SKILL_SRC)
   expect(data.scan).toBeNull()
   expect(data.versionChanged).toBe(true)
+  expect(data.differentBundle).toBe(false)
   expect(data.currentVersionId).toBe(current.targetId)
   expect(data.detail?.tier).toBe('COMMUNITY_SAFE')
+})
+
+test('a skill link that names another publisher is a different bundle, not a new version', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  const other = skillReport(`0x${'66'.repeat(32)}`)
+  reader.current = fakeReader({
+    target: async () => skillTarget(audited, { publisher: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' }),
+    tier: async () => 'COMMUNITY_SAFE',
+  })
+  scanner.scanSkill.mockResolvedValue(other)
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.scan).toBeNull()
+  expect(data.versionChanged).toBe(false)
+  expect(data.differentBundle).toBe(true)
+  // The foreign source is not attached, so the page never offers to scan it again.
+  expect(data.detail?.src).toBeNull()
+})
+
+test('a skill target without a publisher on chain never claims a link as a new version', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  reader.current = fakeReader({ target: async () => skillTarget(audited), tier: async () => 'COMMUNITY_SAFE' })
+  scanner.scanSkill.mockResolvedValue(skillReport(`0x${'66'.repeat(32)}`))
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.versionChanged).toBe(false)
+  expect(data.differentBundle).toBe(true)
 })
 
 test('the same mismatched skill source is scanned once, not on every request', async () => {
@@ -272,4 +301,12 @@ test('the evidence is read from the block the target was created in', async () =
   reader.current = fakeReader({ evidence })
   await loadTarget(targetId, null)
   expect(evidence).toHaveBeenCalledWith(targetId, 1_700_000_000)
+})
+
+test('a target without attestations never reads the event log', async () => {
+  const evidence = vi.fn(async () => [])
+  reader.current = fakeReader({ evidence, target: async () => coreTarget({ attestationCount: 0 }) })
+  const data = await loadTarget(targetId, null)
+  expect(evidence).not.toHaveBeenCalled()
+  expect(data.evidenceFailed).toBe(false)
 })

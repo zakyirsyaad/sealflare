@@ -164,6 +164,7 @@ export const copy = {
     "noDisputes": "No disputes.",
     "noBounty": "No bounty.",
     "currentVersion": "Scan the current version",
+    "differentBundle": "This link names a different bundle. It is not a version of the skill that was rated.",
     "flagProxy": "Flag as proxy on-chain",
     "proxyReason": "This is a proxy and cannot receive a safe firewall verdict.",
     "challenge": "Open a challenge",
