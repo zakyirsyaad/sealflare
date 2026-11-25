@@ -2,6 +2,9 @@ import { parseScanInput } from '@sealflare/scanner-core'
 import { ScanContractRequest, ScanError } from '@sealflare/shared/schemas'
 import { fail, failUnexpected, ok } from '../../../../server/respond'
 import { getScanEnvironment } from '../../../../server/scanner'
+import { putScan } from '../../../../server/scanStore'
+import { takeRateLimit } from '../../../../server/rate'
+import { callerOf } from '../../../../server/caller'
 
 const STATUS: Record<string, number> = {
   INPUT_NOT_RECOGNIZED: 400,
@@ -24,8 +27,16 @@ export async function POST(request: Request) {
     // same parser as the Scan screen, so a mistyped mixed-case address is refused on both paths.
     const reference = parseScanInput((body as { address: string }).address)
     if (reference.kind !== 'contract') return fail('INPUT_NOT_RECOGNIZED', 'That is not a contract address.', 400)
+    // A scan is counted before it runs, so a caller that scans too often is stopped before the
+    // scanner is paid for it. A request that is not a scan at all is not counted.
+    const limit = await takeRateLimit('scan', callerOf(request))
+    if (!limit.allowed) {
+      return fail('RATE_LIMITED', 'Too many scans from this network.', 429, { retryAfterSeconds: limit.retryAfterSeconds })
+    }
     const { scanner, rpc, explorer } = getScanEnvironment()
     const report = await scanner.scanContract(reference.address, { rpc, explorer })
+    // The target page shows the findings of this scan, so the report is kept for a short while.
+    putScan(report)
     return ok(report)
   } catch (error) {
     if (error instanceof ScanError) return fail(error.code, error.message, STATUS[error.code] ?? 400, error.details)

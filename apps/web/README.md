@@ -234,3 +234,111 @@ on `chain:real`.
   two real reverts translated to the right sentences.
 - Not tested: a real wallet connection, because no browser wallet or WalletConnect project ID is
   available in this environment.
+
+## Task 9: target page
+
+The page at `/app/t/[id]` shows one target: its identity, its status, the community signal, the
+actions a holder can take, and the tabs with the findings, the attestations and the history. It
+builds from an id alone, from `?src=` alone, or from both.
+
+### Files
+
+- `app/app/t/[id]/page.tsx`, `app/app/t/[id]/loading.tsx`: the route and the skeleton.
+- `components/target/`: `Identity`, `StatusCard`, `SignalBreakdown`, `ActionColumn`, `Banners`,
+  `FindingsTab`, `AttestationsTab`, `HistoryTab`, `StaleNotice`, `TargetTabs`, `TargetScreen`,
+  `TargetMissing`, `TargetError`, `TargetSkeleton`.
+- `server/chain.ts`: the only place that reads Core and Vault.
+- `server/scanStore.ts`: the in-memory cache of the last scan per target.
+- `server/target.ts`: the read model assembly.
+- `test/target.test.tsx`, `test/target.server.test.ts`.
+- `e2e/target.spec.ts`: the check of the page at 375 px against the local chain.
+
+### Decisions that differ from the plan
+
+- The plan expects the indexer of Task 5 to supply the data. That task does not exist yet, so the
+  page reads Core and Vault itself, server side, with viem. The tier always comes from
+  `Core.tierOf` and is never recomputed from the votes. When the indexer lands, `server/target.ts`
+  is the only file that changes. Cost if wrong: one more read path to remove.
+- The findings come from an in-memory store that the Task 8 scan routes fill. Without a cached scan
+  and without `?src=`, the page honestly says "This version has not been scanned yet." A scan that
+  fails leaves the page without findings and never becomes a safe verdict. Cost if wrong: the store
+  does not survive a restart, so a page opened without `?src=` can lack findings.
+- The Attest button opens only when the wallet holds an Agent ID and has quota left. The panel of
+  Task 10 does not exist yet, so the button has no form. "Open a challenge" and "Fund an audit
+  bounty" stay disabled and say the modules are not live. Cost if wrong: Task 10 replaces the
+  button with its panel.
+- The evidence of a vote lives in the event log, not in Core. `server/chain.ts` finds the block the
+  target was created in (a binary search on `createdAt`, cached per process), then reads the
+  `Attested` events from there to the head in ranges of 10,000 blocks (`server/logRange.ts`) and
+  joins them with the votes by index. A span of more than 200 ranges (about 17 days) is refused. A
+  failed range rejects the whole read: the page then keeps the votes and the tier, says that the
+  links could not be read ("Unavailable", never "None"), and sets `evidenceFailed`. The indexer of
+  Task 5 and 6 replaces this read. Cost if wrong: a very old target shows no links until then.
+- The cache of the read stops at the confirmed block, twelve blocks below the head, and not at the
+  head. A log that a node did not return for a block that was not final yet is read again on the
+  next view, and the rows are kept by their index, so a log that is read twice stays one row. The
+  rows have to cover every attestation of the target: a log that is missing leaves a hole, the
+  cache is dropped and the read rejects, so the page says the links are unknown instead of showing
+  a list with a hole in it.
+- The page does not show a lag. A "N blocks behind" notice built from the age of a scan would almost
+  always appear, and would wrongly call the live chain reads stale. `blocksBehind` stays null until
+  the indexer reports its finalized block, and `StaleNotice` is ready for it.
+
+### Review fixes
+
+The founder's review of this PR (#24) found four important issues and four minor ones. Each claim
+was checked against the code first; all were right.
+
+- A `?src=` is only used when it can describe this target. A contract id is the hash of its address,
+  so another address, or a skill source on a contract (or the reverse), runs no scan and the chain
+  tier still renders. A scan is attached only when its id is this page's id. A source that names
+  another version of an on-chain skill is not attached either: the page offers "Scan the current
+  version" for it (`currentVersionId`), and a contract never claims a changed version. A skill
+  source is scanned once, not on every request (`scanStore` keeps the scan per source).
+- The proxy notice no longer says the firewall "never rates it safe" before the on-chain marker is
+  set, since Core can still return COMMUNITY_SAFE then. The flag button follows ux.md 6.5: it appears
+  when the scan flagged DELEGATECALL, with or without an implementation slot.
+- A contract whose code changed closes Attest and says why (`CodeChangedSincePin`). A skill that
+  changed gets "Scan the current version", a link to `/app?q=` for the repository as it is now.
+- Verdicts read "Safe", "Caution" and "Danger" and the history keys rows by index. Core's enums come
+  from `VERDICTS` and `TARGET_TYPES` in `@sealflare/shared/rules`, and an index outside them throws.
+  The publisher roles have no shared list yet, so that list stays local and guarded.
+- `test/chain.evidence.test.ts` runs the real `server/chain.ts` against a local JSON-RPC server that
+  refuses ranges above 10,000 blocks, with an attestation a million blocks behind the head. All four
+  tests fail on the previous `chain.ts`.
+
+The second round of the review found three more issues in this PR, one of them important.
+
+- The cursor of the evidence cache stopped at the confirmed block and not at the head. The tail
+  above it is read again on the next view, because a log that a node did not return for a block
+  that was not final yet would otherwise never be read again. The rows are kept by their index, so
+  a log that is read twice stays one row. The rows have to cover every attestation of the target:
+  a missing log leaves a hole, the cache is dropped, and the read rejects, so the page says the
+  links are unknown instead of showing a list with a hole.
+- The publisher of a skill is only compared when the registry names a verified publisher. For a
+  sponsored skill the registry holds the sponsor and not the author of the bundle, and an
+  unclaimed skill has no publisher at all, so the link is neither a new version nor a foreign
+  bundle. The page then says that the bundle cannot be compared, which is what it knows.
+- The test of the evidence reads a head that moves: a later view reads only the blocks that came
+  after the last one, keeps the old rows, and a failed range leaves the cursor where it was.
+
+### Verified result
+
+- TDD: the two new suites failed on the missing modules first. All 291 web tests pass across
+  nineteen files after the review fixes; the coverage thresholds hold (92% of lines over `components/` and `lib/`).
+- Typecheck and the production build pass. The build lists `/app/t/[id]` as a dynamic route.
+- Not tested: nothing of the plan is left open. The Playwright check at 375 px runs against the
+  local chain, so it needs the stub contracts and the seeded targets:
+
+  ```bash
+  pnpm chain      # in the repository root, it keeps running
+  pnpm chain:seed
+  cd apps/web && NEXT_PUBLIC_CHAIN_ID=31337 pnpm build
+  pnpm exec playwright test
+  ```
+
+  The check skips itself when the local chain does not run, or when the app was built for another
+  chain. It found two real problems, both fixed here: the identity label of a skill did not wrap, so
+  a long hash overflowed the screen, and the signal table kept its 540 px minimum width on a narrow
+  screen. The two tables of the page now carry the label of every cell, so the numbers still say
+  what they count when the table becomes a list.

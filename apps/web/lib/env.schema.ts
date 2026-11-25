@@ -30,3 +30,11 @@ export const parsePublicEnv = (input: Record<string, string | undefined>) => par
 export const parseServerEnv = (input: Record<string, string | undefined>) => parse(serverSchema, input)
 // Exactly "mock" or "real". A missing or mistyped value must never pick a scanner by default.
 export const parseScannerMode = (input: Record<string, string | undefined>) => parse(serverSchema.pick({ SCANNER: true }), input).SCANNER
+
+/** The door to the internal service and the key that opens it. */
+const internalSchema = z.object({ INTERNAL_URL: httpUrl, INTERNAL_KEY: required })
+export const parseInternalEnv = (input: Record<string, string | undefined>) => parse(internalSchema, input)
+
+/** The key that lets the API store evidence. */
+const pinataSchema = z.object({ PINATA_JWT: required })
+export const parsePinataEnv = (input: Record<string, string | undefined>) => parse(pinataSchema, input)
