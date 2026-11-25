@@ -1,6 +1,11 @@
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
-import { AddressSchema, Bytes32Schema, TargetTypeSchema } from '@sealflare/shared/schemas'
+import {
+  AddressSchema,
+  AttestationRow,
+  Bytes32Schema,
+  TargetTypeSchema,
+} from '@sealflare/shared/schemas'
 import type { Db } from '../db'
 import { fail, okWithMeta } from '../respond'
 import {
@@ -11,6 +16,7 @@ import {
   finalizedBlock,
   listAttestations,
   listTargets,
+  snapshot,
   targetDetail,
   tierCandidates,
   type TargetFilters,
@@ -28,6 +34,12 @@ import {
 const ListQuery = z.object({
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+  type: TargetTypeSchema.optional(),
+  address: AddressSchema.optional(),
+})
+
+/** The query of the candidate route. It has no page, because it returns every candidate. */
+const CandidateQuery = z.object({
   type: TargetTypeSchema.optional(),
   address: AddressSchema.optional(),
 })
@@ -66,6 +78,14 @@ function readListQuery(c: Context): {
   }
 }
 
+/** Reads the filters of the candidate route, or the reason they cannot be read. */
+function readCandidateQuery(c: Context): { ok: true; value: TargetFilters } | { ok: false } {
+  const raw = c.req.query()
+  const parsed = CandidateQuery.safeParse({ type: raw.type, address: raw.address })
+  if (!parsed.success) return { ok: false }
+  return { ok: true, value: { type: parsed.data.type, address: parsed.data.address } }
+}
+
 export function targetRoutes(deps: TargetRouteDeps): Hono {
   const app = new Hono()
 
@@ -75,24 +95,26 @@ export function targetRoutes(deps: TargetRouteDeps): Hono {
       return c.json(fail('BAD_REQUEST', 'The query of the target list is not valid.'), 400)
     }
     const { page, limit, filters } = query.value
-    const { items, total } = await listTargets(deps.sql, filters, page, limit)
+    // The rows and the block they were read at come from one snapshot.
+    const { items, total, block } = await snapshot(deps.sql, async (tx) => {
+      const list = await listTargets(tx, filters, page, limit)
+      return { ...list, block: await finalizedBlock(tx) }
+    })
     const parsed = InternalTargetSummary.array().safeParse(items)
     if (!parsed.success) return c.json(fail('INTERNAL', 'The indexed targets cannot be read.'), 500)
-    const block = await finalizedBlock(deps.sql)
     return c.json(okWithMeta({ items: parsed.data }, { finalizedBlock: block, page: { total, page, limit } }))
   })
 
   app.get('/tier-candidates', async (c) => {
-    const query = readListQuery(c)
+    const query = readCandidateQuery(c)
     if (!query.ok) {
       return c.json(fail('BAD_REQUEST', 'The query of the candidate list is not valid.'), 400)
     }
     try {
       // The candidates and the cursor come from one snapshot, so the answer cannot show a
       // candidate that is not there any more while it names the block it was read at.
-      const { items, block } = await deps.sql.transaction(async (tx) => {
-        await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
-        const candidates = await tierCandidates(tx, query.value.filters)
+      const { items, block } = await snapshot(deps.sql, async (tx) => {
+        const candidates = await tierCandidates(tx, query.value)
         return { items: candidates, block: await finalizedBlock(tx) }
       })
       const parsed = InternalTargetSummary.array().safeParse(items)
@@ -114,11 +136,13 @@ export function targetRoutes(deps: TargetRouteDeps): Hono {
     if (!params.success) {
       return c.json(fail('BAD_REQUEST', 'The target id is not a 32 byte hex value.'), 400)
     }
-    const detail = await targetDetail(deps.sql, params.data.targetId)
+    const { detail, block } = await snapshot(deps.sql, async (tx) => {
+      const found = await targetDetail(tx, params.data.targetId)
+      return { detail: found, block: await finalizedBlock(tx) }
+    })
     if (!detail) return c.json(fail('NOT_FOUND', 'There is no such target.'), 404)
     const parsed = InternalTargetDetail.safeParse(detail)
     if (!parsed.success) return c.json(fail('INTERNAL', 'The indexed target cannot be read.'), 500)
-    const block = await finalizedBlock(deps.sql)
     return c.json(okWithMeta(parsed.data, { finalizedBlock: block }))
   })
 
@@ -132,12 +156,18 @@ export function targetRoutes(deps: TargetRouteDeps): Hono {
       return c.json(fail('BAD_REQUEST', 'The query of the attestation list is not valid.'), 400)
     }
     const { page, limit } = query.value
-    if (!(await targetExists(deps.sql, params.data.targetId))) {
-      return c.json(fail('NOT_FOUND', 'There is no such target.'), 404)
-    }
-    const { items, total } = await listAttestations(deps.sql, params.data.targetId, page, limit)
-    const block = await finalizedBlock(deps.sql)
-    return c.json(okWithMeta({ items }, { finalizedBlock: block, page: { total, page, limit } }))
+    const { items, total, block, found } = await snapshot(deps.sql, async (tx) => {
+      const exists = await targetExists(tx, params.data.targetId)
+      if (!exists) return { items: [], total: 0, block: await finalizedBlock(tx), found: false }
+      const list = await listAttestations(tx, params.data.targetId, page, limit)
+      return { ...list, block: await finalizedBlock(tx), found: true }
+    })
+    if (!found) return c.json(fail('NOT_FOUND', 'There is no such target.'), 404)
+    // The votes are checked with the frozen read model, so a row that does not fit it is
+    // refused instead of answered.
+    const parsed = AttestationRow.array().safeParse(items)
+    if (!parsed.success) return c.json(fail('INTERNAL', 'The indexed votes cannot be read.'), 500)
+    return c.json(okWithMeta({ items: parsed.data }, { finalizedBlock: block, page: { total, page, limit } }))
   })
 
   return app

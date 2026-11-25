@@ -33,6 +33,36 @@ test('the list is newest vote first and paged', async () => {
   await close()
 })
 
+test('a page past the end still names the real total', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  await insertTarget(db, { id: targetId(1) })
+  await insertTarget(db, { id: targetId(2) })
+  await insertTarget(db, { id: targetId(3) })
+
+  const answer = asAnswer<{ items: unknown[] }>(await body(await get(app, '/targets?limit=2&page=9')))
+  expect(answer.success).toBe(true)
+  expect(answer.data?.items).toEqual([])
+  expect(answer.meta?.page).toEqual({ total: 3, page: 9, limit: 2 })
+  await close()
+})
+
+test('the attestation list past the end still names the real total', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  const id = targetId(18)
+  await insertTarget(db, { id })
+  await insertVote(db, { targetId: id, index: 0 })
+  await insertVote(db, { targetId: id, index: 1 })
+
+  const answer = asAnswer<{ items: unknown[] }>(
+    await body(await get(app, `/targets/${id}/attestations?limit=1&page=5`)),
+  )
+  expect(answer.data?.items).toEqual([])
+  expect(answer.meta?.page).toEqual({ total: 2, page: 5, limit: 1 })
+  await close()
+})
+
 test('filters by type and by an address that attested', async () => {
   const { db, close } = await createTestDb()
   const { app } = testApp(db)
@@ -181,12 +211,18 @@ test('tier candidates and finalizedBlock come from one snapshot even while the i
 
   // A database that refuses to answer outside a transaction. The candidates and the cursor can
   // only come from one snapshot when every read happens inside the same transaction.
-  const { app } = testApp(transactionOnly(db))
+  const recorded = recordingTransactionOnly(db)
+  const { app } = testApp(recorded.db)
 
   const answer = asAnswer<{ items: unknown[] }>(await body(await get(app, '/targets/tier-candidates')))
   expect(answer.success).toBe(true)
   expect(answer.data?.items).toHaveLength(1)
   expect(answer.meta?.finalizedBlock).toBe('100')
+
+  // The transaction has to raise the isolation level before the first read. Without it every
+  // statement sees its own snapshot and the guarantee is void.
+  expect(recorded.statements[0]).toMatch(/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/)
+  expect(recorded.isolation()).toBe('repeatable read')
   await close()
 })
 
@@ -277,10 +313,32 @@ test('a target whose source does not match its type is refused, not answered', a
   await close()
 })
 
-/** A database that only answers inside a transaction. */
-function transactionOnly(db: Db): Db {
+test('a vote that does not fit the read model is refused, not answered', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  const id = targetId(19)
+  await insertTarget(db, { id })
+  // A guardian that is not an address. The frozen read model refuses it.
+  await insertVote(db, { targetId: id, index: 0, guardian: 'not-an-address' })
+
+  const response = await get(app, `/targets/${id}/attestations`)
+  expect(response.status).toBe(500)
+  const answer = asAnswer(await body(response))
+  expect(answer.success).toBe(false)
+  expect(answer.error?.code).toBe('INTERNAL')
+  await close()
+})
+
+/** A database that only answers inside a transaction, and that records what it was asked. */
+function recordingTransactionOnly(db: Db): {
+  db: Db
+  statements: string[]
+  isolation: () => string | null
+} {
+  const statements: string[] = []
+  let isolation: string | null = null
   let depth = 0
-  return {
+  const wrapped: Db = {
     query: (text, params) => {
       if (depth === 0) throw new Error('a query ran outside the transaction')
       return db.query(text, params)
@@ -292,10 +350,27 @@ function transactionOnly(db: Db): Db {
     transaction: async (fn) => {
       depth += 1
       try {
-        return await db.transaction((tx) => fn(tx))
+        return await db.transaction((tx) =>
+          fn({
+            query: async <T,>(text: string, params?: readonly unknown[]): Promise<T[]> => {
+              statements.push(text)
+              const rows = await tx.query<T>(text, params)
+              if (/^\s*SET TRANSACTION/i.test(text)) {
+                const level = await tx.query<{ transaction_isolation: string }>('SHOW transaction_isolation')
+                isolation = level[0]?.transaction_isolation ?? null
+              }
+              return rows
+            },
+            exec: (text) => tx.exec(text),
+            transaction: async () => {
+              throw new Error('a transaction cannot start inside a transaction')
+            },
+          }),
+        )
       } finally {
         depth -= 1
       }
     },
   }
+  return { db: wrapped, statements, isolation: () => isolation }
 }
