@@ -1,14 +1,10 @@
 import { z } from 'zod'
-import {
-  ScanReport,
-  SandboxResult,
-  TargetDetail,
-  TargetSummary,
-  decodeSrc,
-  encodeSrc,
-} from '@sealflare/shared/schemas'
+import { TargetDetail, TargetSummary } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
 import { signalOfTallies, type SignalTally } from './signal'
+import { readSandbox, readScan, type SandboxVersion } from './caches'
+import { scannedSourcesOf, sourceOf } from './source'
+import { decimalString, isoDate } from './values'
 
 /**
  * The read model of the targets the indexer filled.
@@ -112,73 +108,6 @@ export class TooManyCandidatesError extends Error {
     super(`there are more than ${TIER_CANDIDATE_LIMIT} candidates, so the filters have to be narrower`)
     this.name = 'TooManyCandidatesError'
   }
-}
-
-/** A whole number as a decimal string, whatever the driver handed back. */
-export function decimalString(value: unknown): string {
-  if (typeof value === 'bigint') return value.toString()
-  if (typeof value === 'number') return BigInt(Math.trunc(value)).toString()
-  if (typeof value === 'string' && /^-?\d+$/.test(value)) return value
-  throw new Error(`the value ${String(value)} is not a whole number`)
-}
-
-/** A timestamp as an ISO string, whatever the driver handed back. */
-export function isoDate(value: Date | string | null): string | null {
-  if (value === null) return null
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) throw new Error('the timestamp cannot be read')
-  return date.toISOString()
-}
-
-/** Postgres and PGlite hand a jsonb column back as an object, but a driver may hand back text. */
-export function jsonColumn(value: unknown): unknown {
-  if (typeof value !== 'string') return value
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
-}
-
-/**
- * The source of a target.
- *
- * A contract's source is its address, and the indexer stored it. A skill's source is the pinned
- * GitHub reference of its cached scan, because the contract only knows the bundle hash. The
- * column of a skill is only used when it holds a reference that decodes, so a row that was
- * written with something else in it is answered with no source instead of breaking the list.
- */
-export function sourceOf(
-  targetType: string,
-  columnSrc: string | null,
-  scannedSrc: string | undefined,
-): string | null {
-  if (targetType !== 'AI_SKILL_BUNDLE') return columnSrc
-  if (columnSrc && decodeSrc(columnSrc)?.kind === 'skill') return columnSrc
-  return scannedSrc ?? null
-}
-
-/**
- * The pinned reference of every skill of a page, read from the cached scans in one query.
- *
- * The target ids are bound one by one, so a page cannot carry a statement of its own.
- */
-async function scannedSourcesOf(sql: Db, targetIds: readonly string[]): Promise<Map<string, string>> {
-  const sources = new Map<string, string>()
-  if (targetIds.length === 0) return sources
-  const placeholders = targetIds.map((_, index) => `$${index + 1}`).join(', ')
-  const rows = await sql.query<{ target_id: string; report: unknown }>(
-    `SELECT target_id, report FROM scan_cache WHERE target_id IN (${placeholders})`,
-    targetIds,
-  )
-  for (const row of rows) {
-    const report = ScanReport.safeParse(jsonColumn(row.report))
-    if (!report.success) throw new Error('the stored scan report cannot be read')
-    if (report.data.source.kind === 'skill') {
-      sources.set(row.target_id, encodeSrc(report.data.source))
-    }
-  }
-  return sources
 }
 
 /** The summary of one target row, before the tier is filled. */
@@ -287,11 +216,21 @@ export async function tierCandidates(sql: Db, filters: TargetFilters): Promise<S
     [filters.type ?? null, filters.address ?? null, TIER_CANDIDATE_LIMIT + 1],
   )
   if (rows.length > TIER_CANDIDATE_LIMIT) throw new TooManyCandidatesError()
-  return rows.map(summaryOf)
+  // The candidates carry the same source as the list, so a skill shows the same reference in
+  // both answers.
+  const sources = await scannedSourcesOf(sql, rows.map((row) => row.target_id))
+  return rows.map((row) => ({
+    ...summaryOf(row),
+    src: sourceOf(row.target_type, row.src, sources.get(row.target_id)),
+  }))
 }
 
 /** The detail of one target, or null when the database does not have it. */
-export async function targetDetail(sql: Db, targetId: string): Promise<unknown | null> {
+export async function targetDetail(
+  sql: Db,
+  targetId: string,
+  sandbox: SandboxVersion | null = null,
+): Promise<unknown | null> {
   const rows = await sql.query<TargetRow>(
     `SELECT ${TARGET_COLUMNS} FROM targets t WHERE t.target_id = $1`,
     [targetId],
@@ -304,13 +243,17 @@ export async function targetDetail(sql: Db, targetId: string): Promise<unknown |
     'SELECT count(*)::int AS count FROM attestations WHERE target_id = $1',
     [targetId],
   )
-  const scan = await readScan(sql, targetId)
-  const sandbox = await readSandbox(sql, row.bundle_hash)
-  const scannedSrc = scan && scan.source.kind === 'skill' ? encodeSrc(scan.source) : undefined
+  const cached = await readScan(sql, {
+    targetId: row.target_id,
+    targetType: row.target_type,
+    codehash: row.codehash,
+    bundleHash: row.bundle_hash,
+  })
+  const sandboxResult = await readSandbox(sql, row.bundle_hash, sandbox)
 
   return {
     ...summaryOf(row),
-    src: sourceOf(row.target_type, row.src, scannedSrc),
+    src: sourceOf(row.target_type, row.src, cached.src ?? undefined),
     publisher: row.publisher,
     // A skill has no codehash, and the read model asks for one. The zero hash is the empty one.
     pinnedCodehash: row.codehash ?? `0x${'0'.repeat(64)}`,
@@ -319,8 +262,8 @@ export async function targetDetail(sql: Db, targetId: string): Promise<unknown |
     signal,
     activeChallengeId: row.active_challenge_id,
     attestationCount: count[0]?.count ?? 0,
-    scan,
-    sandbox,
+    scan: cached.report,
+    sandbox: sandboxResult,
   }
 }
 
@@ -379,40 +322,4 @@ async function signalOfTarget(sql: Db, targetId: string): Promise<unknown> {
     [targetId],
   )
   return signalOfTallies(rows)
-}
-
-/** The last scan of a target, when there is one. */
-async function readScan(sql: Db, targetId: string): Promise<ScanReport | null> {
-  const rows = await sql.query<{ report: unknown }>('SELECT report FROM scan_cache WHERE target_id = $1', [
-    targetId,
-  ])
-  const row = rows[0]
-  if (!row) return null
-  const report = ScanReport.safeParse(jsonColumn(row.report))
-  if (!report.success) throw new Error('the stored scan report cannot be read')
-  return report.data
-}
-
-/**
- * The last sandbox result of a skill.
- *
- * A failed result is kept forever, so a fuzz failure is never hidden by a clean result that came
- * later. The failure comes first, and only then the newest result. A result that is still
- * `INCOMPLETE` is not a clean result, so the newest result of all is shown in that case.
- *
- * The cache holds one result per probe set version and per model. The newest of them is shown,
- * because the internal service does not know which probe set is the current one.
- */
-async function readSandbox(sql: Db, bundleHash: string | null): Promise<unknown | null> {
-  if (!bundleHash) return null
-  const rows = await sql.query<{ result: unknown }>(
-    `SELECT result FROM sandbox_cache WHERE bundle_hash = $1
-     ORDER BY (status = 'SANDBOX_FUZZ_FAILED') DESC NULLS LAST, created_at DESC LIMIT 1`,
-    [bundleHash],
-  )
-  const row = rows[0]
-  if (!row) return null
-  const result = SandboxResult.safeParse(jsonColumn(row.result))
-  if (!result.success) throw new Error('the stored sandbox result cannot be read')
-  return result.data
 }

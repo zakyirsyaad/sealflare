@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { Bytes32Schema, ScanReport, encodeSrc } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
 import { fail, ok } from '../respond'
+import { sameRepository } from '../readModel/source'
 import { readJson } from './json'
 
 const TargetIdParam = z.object({ targetId: Bytes32Schema })
@@ -39,6 +40,22 @@ export function scanRoutes(deps: ScanRouteDeps): Hono {
       return c.json(fail('BAD_REQUEST', 'The scan report belongs to another target.'), 400)
     }
 
+    // The target id of a skill binds the content and the publisher, not the repository, so a
+    // byte for byte copy of the folder in another repository is the same target. The source of
+    // a skill is pinned with the first scan, so a copy never takes the place of the publisher's
+    // repository in the header and the link. The scan itself is still answered, because the
+    // caller scanned it.
+    const src = encodeSrc(report.data.source)
+    const stored = await deps.sql.query<{ src: string | null }>(
+      'SELECT src FROM scan_cache WHERE target_id = $1',
+      [params.data.targetId],
+    )
+    const pinned = stored[0]?.src ?? null
+    if (pinned !== null && !sameRepository(pinned, src)) {
+      console.warn('a scan of another repository was not cached', { targetId: params.data.targetId })
+      return c.json(ok(report.data))
+    }
+
     // A scan that started earlier can arrive later than a newer one, so the row is only
     // replaced by a report that is at least as new as the one that is stored.
     await deps.sql.query(
@@ -46,7 +63,7 @@ export function scanRoutes(deps: ScanRouteDeps): Hono {
        ON CONFLICT (target_id) DO UPDATE
          SET src = EXCLUDED.src, report = EXCLUDED.report, scanned_at = EXCLUDED.scanned_at
        WHERE scan_cache.scanned_at <= EXCLUDED.scanned_at`,
-      [params.data.targetId, encodeSrc(report.data.source), JSON.stringify(report.data), report.data.scannedAt],
+      [params.data.targetId, src, JSON.stringify(report.data), report.data.scannedAt],
     )
     return c.json(ok(report.data))
   })

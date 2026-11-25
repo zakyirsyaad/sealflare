@@ -5,11 +5,23 @@ import { nonceRoutes } from './routes/nonce'
 import { rateRoutes } from './routes/rate'
 import { scanRoutes } from './routes/scans'
 import { targetRoutes } from './routes/targets'
+import type { SandboxVersion } from './readModel/caches'
 import { fail } from './respond'
 
 export interface AppDeps {
   sql: Db
-  env: { internalKey: string }
+  env: {
+    internalKey: string
+    /**
+     * The probe set and the model the sandbox runs now.
+     *
+     * A clean sandbox result expires when either of them changes, so the target detail needs to
+     * know which version is current. Without both of them no clean result is shown, because a
+     * result of an unknown version cannot be called current.
+     */
+    sandboxProbeSetVersion?: string
+    sandboxModelId?: string
+  }
   now?: () => Date
   /** Writes one line per request. It never receives a body or a key. */
   log?: (line: string) => void
@@ -17,6 +29,19 @@ export interface AppDeps {
 
 /** The only route that may be reached without the inter-service key. */
 const OPEN_PATH = '/health'
+
+/**
+ * The sandbox version the service runs now, or null when it is not known.
+ *
+ * Both halves are needed. One half alone cannot say that a clean result is current, so a
+ * service that knows only one of them shows no clean result.
+ */
+function sandboxVersion(env: AppDeps['env']): SandboxVersion | null {
+  const probeSetVersion = env.sandboxProbeSetVersion
+  const modelId = env.sandboxModelId
+  if (!probeSetVersion || !modelId) return null
+  return { probeSetVersion, modelId }
+}
 
 /**
  * The internal service. It is the only door to Postgres, so every route but the health check
@@ -44,7 +69,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route('/rate', rateRoutes({ sql: deps.sql, now }))
   app.route('/nonce', nonceRoutes({ sql: deps.sql, now }))
   app.route('/scans', scanRoutes({ sql: deps.sql }))
-  app.route('/targets', targetRoutes({ sql: deps.sql }))
+  app.route('/targets', targetRoutes({ sql: deps.sql, sandbox: sandboxVersion(deps.env) }))
 
   app.notFound((c) => c.json(fail('BAD_REQUEST', 'There is no such route.'), 404))
   app.onError((error, c) => {

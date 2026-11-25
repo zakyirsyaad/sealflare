@@ -15,6 +15,12 @@ pnpm --filter @sealflare/internal start
 
 The service listens on port 3040 by default. `PORT` changes it.
 
+`SANDBOX_PROBE_SET_VERSION` and `SANDBOX_MODEL_ID` name the probe set and the model the sandbox
+runs now. Both are optional, but a clean sandbox result is only shown when both are set and the
+stored result comes from that version. Without them no clean result is shown, because a result of
+an unknown version cannot be called current. A failed result is kept whatever version produced it,
+so a fuzz failure is never hidden.
+
 Every request except `GET /health` needs the key:
 
 ```bash
@@ -46,6 +52,11 @@ The answers that come from indexed data carry `meta.finalizedBlock`, the last fi
 indexer has read, and a list carries `meta.page` as well. The tier of a target is not one of
 them: the tier is read from `Core.tierOf` and never computed from the indexed rows, so the
 internal answers carry `tier: null` and the public API fills it.
+
+The query of a list is read with the same shared schema the public API uses, so the two cannot
+drift apart. A query the schema refuses is 400 `BAD_REQUEST`. The tier filter is refused the
+same way, with a message that says why: the tier is read from the chain, so the internal service
+cannot answer it and will not drop it silently either.
 
 Every answer is read in one snapshot, so the rows and the block they were read at cannot come
 from two different moments. The number of rows a list holds is counted on its own, so a page

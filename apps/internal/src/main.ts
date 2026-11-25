@@ -22,7 +22,11 @@ try {
 
 const app = createApp({
   sql: db,
-  env: { internalKey: env.INTERNAL_KEY },
+  env: {
+    internalKey: env.INTERNAL_KEY,
+    sandboxProbeSetVersion: env.SANDBOX_PROBE_SET_VERSION,
+    sandboxModelId: env.SANDBOX_MODEL_ID,
+  },
   log: (line) => console.log(line),
 })
 
