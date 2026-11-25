@@ -51,6 +51,12 @@ export interface ChainReader {
   target(targetId: Hex): Promise<CoreTarget | null>
   /** The tier always comes from Core, never from a cached row. */
   tier(targetId: Hex): Promise<TrustTier>
+  /** The tier at a fixed block, so every tier of one answer comes from the same moment. */
+  tierAt(targetId: Hex, blockNumber: bigint): Promise<TrustTier>
+  /** The head of the chain, read once so the tiers of one answer share a block. */
+  blockNumber(): Promise<bigint>
+  /** Whether the address holds an Agent ID, which every signed request needs. */
+  isAgentIdHolder(address: Address): Promise<boolean>
   attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
   /** The evidence of the event log, read from the block the target was created in. Rejects when the log cannot be read in full. */
   evidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]>
@@ -290,18 +296,36 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
   }
 }
 
+/**
+ * The tier of a target, read from Core. The block is optional: without it the tier is read at the
+ * head, and with it the tier is read at the moment the answer names.
+ */
+async function readTier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier> {
+  const value = await client().readContract({
+    address: coreAddress(),
+    abi: coreAbi,
+    functionName: 'tierOf',
+    args: [targetId],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
+  })
+  return pick(TRUST_TIERS, value, 'trust tier')
+}
+
 /** The reader used by the target page. Every call goes out over a public RPC. */
 export function getChainReader(): ChainReader {
   return {
     target: readTarget,
-    tier: async targetId => {
+    tier: targetId => readTier(targetId),
+    tierAt: (targetId, blockNumber) => readTier(targetId, blockNumber),
+    blockNumber: () => client().getBlockNumber(),
+    isAgentIdHolder: async address => {
       const value = await client().readContract({
         address: coreAddress(),
         abi: coreAbi,
-        functionName: 'tierOf',
-        args: [targetId],
+        functionName: 'isAgentIdHolder',
+        args: [address],
       })
-      return pick(TRUST_TIERS, value, 'trust tier')
+      return value
     },
     attestations: readAttestations,
     evidence: readEvidence,

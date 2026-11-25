@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, beforeEach, test, vi } from 'vitest'
 import { getAddress } from 'viem'
 import { ScanReport } from '@sealflare/shared/schemas'
 
@@ -21,6 +21,9 @@ function environmentOf() {
     now: () => new Date('2026-11-25T03:00:00.000Z'),
   }
 }
+
+const takeRateLimit = vi.hoisted(() => vi.fn())
+vi.mock('../server/rate', () => ({ takeRateLimit }))
 
 const { POST: postContract } = await import('../app/api/scan/contract/route')
 const { POST: postSkill } = await import('../app/api/scan/skill/route')
@@ -47,6 +50,11 @@ function request(body: unknown): Request {
 }
 
 describe('the scan API', () => {
+  beforeEach(() => {
+    takeRateLimit.mockReset()
+    takeRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 0 })
+  })
+
   test('a valid address returns a ScanReport in an envelope', async () => {
     scanContract.mockResolvedValue(REPORT)
     const response = await postContract(request({ address: ADDRESS }))
@@ -174,6 +182,23 @@ describe('the scan API', () => {
     const response = await postSkill(request({ url: ADDRESS }))
     expect(response.status).toBe(400)
     expect((await response.json()).error.code).toBe('INPUT_NOT_RECOGNIZED')
+  })
+
+  test('a scan over the limit is RATE_LIMITED and says when to try again', async () => {
+    takeRateLimit.mockResolvedValue({ allowed: false, retryAfterSeconds: 42 })
+    scanContract.mockResolvedValue(REPORT)
+    const response = await postContract(request({ address: ADDRESS }))
+    expect(response.status).toBe(429)
+    const body = await response.json()
+    expect(body.error.code).toBe('RATE_LIMITED')
+    expect(body.error.details.retryAfterSeconds).toBe(42)
+    expect(scanContract).not.toHaveBeenCalled()
+  })
+
+  test('a scan is counted per network', async () => {
+    scanContract.mockResolvedValue(REPORT)
+    await postContract(request({ address: ADDRESS }))
+    expect(takeRateLimit).toHaveBeenCalledWith('scan', 'unknown')
   })
 
   test('only server/scanner.ts reads SCANNER', () => {

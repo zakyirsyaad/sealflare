@@ -57,6 +57,9 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
   return {
     target: async () => coreTarget(),
     tier: async () => 'UNRATED',
+    tierAt: async () => 'UNRATED',
+    blockNumber: async () => 1n,
+    isAgentIdHolder: async () => true,
     attestations: async () => [attestation(), attestation({ verdict: 'DANGER', weight: 3, flags: FLAGS.HIDDEN_MINT, safeOrdinal: 0 })],
     evidence: async () => [
       { index: 0, shortProof: 'source verified', evidenceURI: 'https://example.org/1', txHash: `0x${'33'.repeat(32)}` },

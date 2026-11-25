@@ -3,6 +3,8 @@ import { ScanContractRequest, ScanError } from '@sealflare/shared/schemas'
 import { fail, failUnexpected, ok } from '../../../../server/respond'
 import { getScanEnvironment } from '../../../../server/scanner'
 import { putScan } from '../../../../server/scanStore'
+import { takeRateLimit } from '../../../../server/rate'
+import { callerOf } from '../../../../server/caller'
 
 const STATUS: Record<string, number> = {
   INPUT_NOT_RECOGNIZED: 400,
@@ -21,6 +23,12 @@ export async function POST(request: Request) {
   const parsed = ScanContractRequest.safeParse(body)
   if (!parsed.success) return fail('BAD_REQUEST', 'The request is not a valid contract scan.', 400)
   try {
+    // A scan is counted before it runs, so a caller that scans too often is stopped before the
+    // scanner is paid for it.
+    const limit = await takeRateLimit('scan', callerOf(request))
+    if (!limit.allowed) {
+      return fail('RATE_LIMITED', 'Too many scans from this network.', 429, { retryAfterSeconds: limit.retryAfterSeconds })
+    }
     // AddressSchema lowercases, which erases the EIP-55 checksum. Parse the text as sent, with the
     // same parser as the Scan screen, so a mistyped mixed-case address is refused on both paths.
     const reference = parseScanInput((body as { address: string }).address)
