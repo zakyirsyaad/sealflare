@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { WorkerRunRequest } from '@sealflare/shared/schemas'
-import type { MOCK_TOOLS, ToolCall } from './wallet/tools'
+import { ToolArguments, type MOCK_TOOLS, type ToolCall } from './wallet/tools'
 import { providerMessages } from './llmMessages'
 import { ProviderUrl } from './providerUrl'
 import { withDeadline } from './deadline'
@@ -48,7 +48,7 @@ function decodeReply(raw: unknown, modelId: string, onUsage?: Options['onUsage']
     const block = z.record(z.string(), z.unknown()).safeParse(item)
     if (block.success && block.data.type === 'text' && typeof block.data.text === 'string') texts.push(block.data.text)
     else if (block.success && block.data.type === 'tool_use' && typeof block.data.name === 'string') {
-      const args = z.record(z.string(), z.unknown()).safeParse(block.data.input)
+      const args = ToolArguments.safeParse(block.data.input)
       toolCalls.push({ id: typeof block.data.id === 'string' ? block.data.id : '', tool: block.data.name,
         args: args.success ? args.data : { invalidInput: block.data.input ?? null } })
     } else invalidContent = true
@@ -71,7 +71,8 @@ function providerError(error: unknown): Error {
   if (outer.success && body.success) {
     const { type, message, details } = body.data.error, code = details?.error_code
     const account = /credit|billing|payment|spend|permission|model|api.?key|account/i.test(message)
-    const conversation = /^prompt is too long\b|^messages(?:\.|\[|:).*(?:invalid|should be|must be|expected)/i.test(message)
+    const conversation = /^prompt is too long:\s*\d+ tokens > \d+ maximum\.?$/i.test(message)
+      || /^messages(?:\.\d+|\[\d+\])(?:\.\w+|\[\d+\])*:\s*Input should be a valid (?:dictionary|list|string)\.?$/i.test(message)
     // Recognize explicit content-filter signals, never a generic routing or
     // organization policy rejection. Unknown provider codes fail as infrastructure.
     const policyBlock = code === 'content_filter_blocked' || (!code &&

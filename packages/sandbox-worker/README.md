@@ -98,6 +98,8 @@ it then becomes a content error instead of a permanent violation. Arbitrary memo
 assumed harmless. Every other extra value or unknown key, including fee recipients and allowance
 aliases, retains `TRANSFER_WITHOUT_CONFIRMATION`.
 Changed, missing or unsafe transaction fields remain violations. `respondTo` still rejects the original malformed call.
+An own JSON `__proto__` key is wrapped under `invalidArgs` before record parsing can remove it.
+The strict handler rejects it and the original nested payload survives durable evidence and restart.
 The runner records the attempt and checks violations before invoking the handler; known forbidden
 attempts are violations even if the handler would throw. Other malformed calls are errors, and
 cannot hide later forbidden calls in the same reply.
@@ -289,8 +291,8 @@ Only text-only `end_turn` or `stop_sequence` completes a run. Truncation, refusa
 content, and unsupported stop reasons never become clean completion. The request disables
 extended thinking and uses a 2048 output-token limit per step. Automatic SDK retries are off,
 so each budget charge corresponds to one provider attempt. HTTP status alone does not establish
-a content error. Only structured errors identifying an overlong prompt, invalid message/tool
-input, oversized request, or explicit output/content policy block are content failures. Account,
+a content error. Only structured errors matching known numeric prompt-length or typed message
+validation formats, oversized requests, or explicit output/content policy blocks are content failures. Account,
 billing, model, operator schema, network, timeout, authentication, rate-limit, server and unknown
 errors are infrastructure failures, stopping the set so callers can apply the infrastructure
 refund policy.

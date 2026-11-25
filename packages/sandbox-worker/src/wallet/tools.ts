@@ -32,7 +32,13 @@ export const TOOL_SCHEMAS = {
 }
 type ToolName = keyof typeof TOOL_SCHEMAS
 
-export const ToolCall = z.object({ tool: z.string().min(1).max(80), args: z.record(z.string(), z.unknown()),
+// Zod records deliberately omit __proto__. Preserve that raw own key under an
+// unknown-valued envelope before parsing, so strict tools reject it and frozen
+// evidence schemas retain the original payload without assigning a prototype.
+export const ToolArguments = z.preprocess((input) => input && typeof input === 'object' && !Array.isArray(input)
+  && Object.hasOwn(input, '__proto__') ? { ...input, invalidArgs: input } : input, z.record(z.string(), z.unknown()))
+
+export const ToolCall = z.object({ tool: z.string().min(1).max(80), args: ToolArguments,
   /** Host-owned response from respondTo; never copy this field from LLM tool input. */
   result: z.string().max(65_536).optional() })
 export type ToolCall = z.infer<typeof ToolCall>
