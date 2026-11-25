@@ -1,5 +1,6 @@
 import 'server-only'
 import { createPublicClient, fallback, hexToString, http, type Address, type Hex } from 'viem'
+import { getBlockNumber } from 'viem/actions'
 import { bsc, bscTestnet, foundry } from 'viem/chains'
 import { z } from 'zod'
 import { coreAbi, vaultAbi } from '@sealflare/shared/abi'
@@ -94,11 +95,27 @@ function chainFor(chainId: number) {
   return foundry
 }
 
-function client() {
+/**
+ * The client is built once per chain and set of RPC urls. A page view reads the target, its tier
+ * and every attestation, and a new client for each of those reads would open a new connection
+ * for every call.
+ */
+let cachedClient: { key: string; client: ReturnType<typeof createPublicClient> } | null = null
+
+export function getRpcClient(): ReturnType<typeof createPublicClient> {
   const chain = chainFor(expectedChainId)
   const urls = rpcUrls()
+  const key = `${chain.id}|${urls.join(',')}`
+  if (cachedClient !== null && cachedClient.key === key) return cachedClient.client
   const transport = urls.length === 0 ? http() : fallback(urls.map(url => http(url)))
-  return createPublicClient({ chain, transport })
+  const client = createPublicClient({ chain, transport })
+  cachedClient = { key, client }
+  return client
+}
+
+/** The read of a test starts with no client, as a fresh process would. */
+export function clearRpcClient(): void {
+  cachedClient = null
 }
 
 function coreAddress(): Address {
@@ -125,7 +142,7 @@ function targetExists(target: CoreTarget): boolean {
 }
 
 async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
-  const raw = await client().readContract({
+  const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getTarget',
@@ -152,7 +169,7 @@ async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
 }
 
 async function readAttestation(targetId: Hex, index: number): Promise<CoreAttestation> {
-  const raw = await client().readContract({
+  const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getAttestation',
@@ -197,7 +214,7 @@ async function createdBlock(targetId: Hex, createdAt: number, head: bigint): Pro
   const known = createdBlocks.get(targetId.toLowerCase())
   if (known !== undefined) return known
   const block = await firstBlockAtOrAfter(createdAt, head, async number =>
-    Number((await client().getBlock({ blockNumber: number })).timestamp),
+    Number((await getRpcClient().getBlock({ blockNumber: number })).timestamp),
   )
   createdBlocks.set(targetId.toLowerCase(), block)
   return block
@@ -232,7 +249,8 @@ const CONFIRMATIONS = 12n
  * stays one row.
  */
 async function readEvidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]> {
-  const head = await client().getBlockNumber()
+  // The head is read without the cache of the client: the confirmed block below depends on it.
+  const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
   const key = targetId.toLowerCase()
   const cached = evidenceCache.get(key)
   const fromBlock = cached === undefined ? await createdBlock(targetId, createdAt, head) : cached.block + 1n
@@ -240,7 +258,7 @@ async function readEvidence(targetId: Hex, createdAt: number, count: number): Pr
   if (fromBlock > head) return completeRows(key, cached?.rows ?? [], count)
   const event = eventItem<AttestedEvent>('Attested')
   const logs = await collectLogs(
-    (from, to) => client().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
+    (from, to) => getRpcClient().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
     fromBlock,
     head,
   )
@@ -278,7 +296,7 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
   const vault = vaultAddress()
   if (vault === null) return null
   try {
-    const raw = await client().readContract({
+    const raw = await getRpcClient().readContract({
       address: vault,
       abi: vaultAbi,
       functionName: 'bondOf',
@@ -295,7 +313,7 @@ export function getChainReader(): ChainReader {
   return {
     target: readTarget,
     tier: async targetId => {
-      const value = await client().readContract({
+      const value = await getRpcClient().readContract({
         address: coreAddress(),
         abi: coreAbi,
         functionName: 'tierOf',
