@@ -28,3 +28,5 @@ function parse<T extends z.ZodType>(schema: T, input: Record<string, string | un
 }
 export const parsePublicEnv = (input: Record<string, string | undefined>) => parse(publicSchema, input)
 export const parseServerEnv = (input: Record<string, string | undefined>) => parse(serverSchema, input)
+// Exactly "mock" or "real". A missing or mistyped value must never pick a scanner by default.
+export const parseScannerMode = (input: Record<string, string | undefined>) => parse(serverSchema.pick({ SCANNER: true }), input).SCANNER

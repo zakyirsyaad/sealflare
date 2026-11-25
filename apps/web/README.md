@@ -80,7 +80,7 @@ invalid variables fail with variable names only. Required server configuration:
 | `BSCSCAN_KEY` | BscScan API key |
 | `GITHUB_TOKEN` | GitHub API token |
 | `PINATA_JWT` | Pinata JWT |
-| `SCANNER` | `mock` or `real` |
+| `SCANNER` | Exactly `mock` or `real`. Anything else, including a missing value or `Real`, makes the scan routes answer `INTERNAL` with no verdict. The mock serves a SAFE fixture for any input, so it is never a default |
 
 Supply real values through the founder's environment/secret manager. Never prefix server keys
 with `NEXT_PUBLIC_`. The startup requirement also applies to the shell before the services are
