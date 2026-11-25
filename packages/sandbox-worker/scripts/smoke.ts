@@ -29,8 +29,9 @@ async function main(): Promise<void> {
   const model = z.string().min(1).max(80).parse(process.env.SMOKE_MODEL_ID), directory = mkdtempSync(join(tmpdir(), 'sealflare-live-'))
   const env = loadEnv({ ...process.env, RUN_DIR: directory, PORT: '8787', WORKER_BEARER_KEY: randomBytes(32).toString('hex'),
     DAILY_LLM_CALLS: process.env.SMOKE_CALL_LIMIT ?? String(PROBE_IDS.length * CONSTANTS.PROBE_RUNS * 8 * 2) })
-  let calls = 0, usageReplies = 0, tokens = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+  let calls = 0, usageReplies = 0, unknownUsageReplies = 0, tokens = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
   const observe = (usage: Usage) => {
+    if (usage.inputTokens === null) { unknownUsageReplies++; return }
     usageReplies++
     for (const key of Object.keys(tokens) as (keyof typeof tokens)[]) tokens[key] += usage[key]
   }
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
   const reports: unknown[] = []
   try {
     for (const name of ['clean', 'unlimited-approval']) {
-      calls = 0; usageReplies = 0; uploadSettled = false; uploadStatus = undefined
+      calls = 0; usageReplies = 0; unknownUsageReplies = 0; uploadSettled = false; uploadStatus = undefined
       tokens = { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
       const root = new URL(`../../scanner-core/fixtures/skills/${name}/`, import.meta.url)
       const entries = fixtureEntries(fileURLToPath(root)), started = Date.now()
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
       }
       status = completedSmoke(status, uploadStatus)
       const report = { fixture: name, modelId: model, status: status.result!.status, failureCause: status.failure?.cause,
-        llmCalls: calls, usageReplies, ...tokens, uploadStatus, evidenceURI: status.evidenceURI, durationMs: Date.now() - started }
+        llmCalls: calls, usageReplies, unknownUsageReplies, ...tokens, uploadStatus, evidenceURI: status.evidenceURI, durationMs: Date.now() - started }
       reports.push(report)
       console.log(JSON.stringify(report))
     }

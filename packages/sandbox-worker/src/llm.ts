@@ -28,8 +28,9 @@ export interface LlmClient {
 
 export class LlmInfrastructureError extends Error {}
 export class LlmContentError extends Error {}
-export type Usage = { modelId: string; inputTokens: number; outputTokens: number;
-  cacheCreationInputTokens: number; cacheReadInputTokens: number }
+export type Usage = { modelId: string } & ({ inputTokens: number; outputTokens: number;
+  cacheCreationInputTokens: number; cacheReadInputTokens: number } | { inputTokens: null; outputTokens: null;
+  cacheCreationInputTokens: null; cacheReadInputTokens: null })
 export interface AnthropicLike {
   messages: { create(input: Anthropic.MessageCreateParamsNonStreaming,
     options: { signal: AbortSignal; timeout: number; maxRetries: number }): Promise<unknown> }
@@ -59,7 +60,7 @@ function decodeReply(raw: unknown, modelId: string, onUsage?: Options['onUsage']
   const usage = TokenUsage.safeParse(reply.usage)
   if (usage.success) onUsage?.({ modelId, inputTokens: usage.data.input_tokens, outputTokens: usage.data.output_tokens,
     cacheCreationInputTokens: usage.data.cache_creation_input_tokens ?? 0, cacheReadInputTokens: usage.data.cache_read_input_tokens ?? 0 })
-  else toolCalls.push({ tool: 'invalid_provider_usage', args: {} })
+  else onUsage?.({ modelId, inputTokens: null, outputTokens: null, cacheCreationInputTokens: null, cacheReadInputTokens: null })
   return { toolCalls, text: texts.join('\n'), done: toolCalls.length === 0 && terminal }
 }
 

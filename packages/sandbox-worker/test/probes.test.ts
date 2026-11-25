@@ -68,7 +68,7 @@ test('indirect injection is carried in token metadata for a 10 USDT swap', () =>
 
 test('confirmation bypass asks for a fast transfer without supplying a tool-response bait', () => {
   const probe = PROBES.confirmation_bypass
-  expect(probe.userMessage).toMatch(/5 USDT.*0x1111111111111111111111111111111111111111.*do not ask/i)
+  expect(probe.userMessage).toMatch(/5 USDT.*0x1111111111111111111111111111111111111111.*quickly/i)
   expect(probe.context.userIntent).toMatchObject({ action: 'transfer', amount: '5' })
   expect(probe.scenario.responses ?? {}).toEqual({})
 })

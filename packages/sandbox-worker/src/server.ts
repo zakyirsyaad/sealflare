@@ -3,10 +3,11 @@
 // https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptotimingsafeequala-b
 import crypto from 'node:crypto'
 import { Hono } from 'hono'
-import { WorkerRunResponse, WorkerRunStatus, type WorkerRunRequest } from '@sealflare/shared/schemas'
+import { CONSTANTS } from '@sealflare/shared/rules'
+import { PROBE_IDS, WorkerRunResponse, WorkerRunStatus, type WorkerRunRequest } from '@sealflare/shared/schemas'
 import type { Env } from './env'
 import type { LlmClient } from './llm'
-import type { Budget } from './budget'
+import { BudgetStorageError, type Budget } from './budget'
 import { RunId, type RunStore } from './store'
 import { requestDigest, type RecoveryInfo } from './runIdentity'
 import { interrupted, recoverStore } from './recovery'
@@ -16,13 +17,24 @@ import { readRunRequest, RequestError } from './httpBody'
 type Dependencies = { env: Env; llm: LlmClient; store: RunStore; budget: Budget; upload: (json: string) => Promise<string> }
 type State = { busy: boolean; faulted: boolean; started: boolean }
 const digest = (value: string) => crypto.createHash('sha256').update(value).digest()
+const refuse = (reason: 'BUSY' | 'DAILY_LIMIT' = 'BUSY') => Response.json(WorkerRunResponse.parse({ accepted: false, reason }), { status: 429 })
+
+function monitorBudget(budget: Budget, state: State): Budget {
+  const guard = <T>(operation: () => T): T => {
+    try { return operation() }
+    catch (error) { if (error instanceof BudgetStorageError) state.faulted = true; throw error }
+  }
+  return { canTake: (count) => guard(() => budget.canTake(count)), tryTake: (count) => guard(() => budget.tryTake(count)),
+    used: () => guard(() => budget.used()) }
+}
 
 async function performRun(request: WorkerRunRequest, deps: Dependencies, state: State): Promise<void> {
   let latest: WorkerRunStatus | undefined, metadata: RecoveryInfo | undefined
   const tracked: RunStore = { ...deps.store, save: (status, identity) => {
     latest = WorkerRunStatus.parse(status)
     if (identity) metadata = identity
-    deps.store.save(status, identity)
+    try { deps.store.save(status, identity) }
+    catch (error) { state.faulted = true; throw error }
     if (identity) state.started = true
   } }
   try {
@@ -32,31 +44,29 @@ async function performRun(request: WorkerRunRequest, deps: Dependencies, state: 
       uri = await deps.upload(JSON.stringify(completed.result))
       if (!/^ipfs:\/\/[A-Za-z0-9]+$/.test(uri) || uri.length > 2048) return
     } catch { return } // Keep the already durable result when evidence hosting is unavailable.
-    deps.store.save({ ...completed, evidenceURI: uri })
+    tracked.save({ ...completed, evidenceURI: uri })
   } catch {
-    state.faulted = true
     try {
       const progress = latest ?? deps.store.get(request.runId), identity = metadata ?? deps.store.recovery(request.runId)
       if (!progress || !identity) throw Error('Run state could not be recovered.')
-      if (progress.state === 'running') deps.store.save(interrupted(progress, identity), identity)
-    } catch { /* Leave the worker faulted; never replace caught evidence with older progress. */ }
+      if (progress.state === 'running') tracked.save(interrupted(progress, identity), identity)
+    } catch { /* Preserve the last snapshot and any storage fault; never erase evidence. */ }
   }
 }
 
 function admit(request: WorkerRunRequest, deps: Dependencies, state: State): Response {
-  if (state.faulted) return Response.json({ error: 'Worker storage is unavailable.' }, { status: 503 })
+  if (state.faulted) return refuse()
   const existing = deps.store.get(request.runId)
   if (existing) {
     const same = deps.store.recovery(request.runId)?.requestDigest === requestDigest(request)
-    return Response.json(same ? WorkerRunResponse.parse({ accepted: true }) : { error: 'Run ID is already bound.' }, { status: same ? 202 : 409 })
+    return same ? Response.json(WorkerRunResponse.parse({ accepted: true }), { status: 202 }) : refuse()
   }
-  if (state.busy) return Response.json(WorkerRunResponse.parse({ accepted: false, reason: 'BUSY' }), { status: 429 })
-  if (!deps.budget.canTake(1)) return Response.json(WorkerRunResponse.parse({ accepted: false, reason: 'DAILY_LIMIT' }), { status: 429 })
+  if (state.busy) return refuse()
+  if (!deps.budget.canTake(PROBE_IDS.length * CONSTANTS.PROBE_RUNS)) return refuse('DAILY_LIMIT')
   state.busy = true; state.started = false
   void performRun(request, deps, state).then(() => { state.busy = false }, () => { state.faulted = true; state.busy = false })
   if (!state.started) {
-    state.faulted = true
-    return Response.json({ error: 'Run could not be persisted.' }, { status: 503 })
+    return refuse()
   }
   return Response.json(WorkerRunResponse.parse({ accepted: true }), { status: 202 })
 }
@@ -64,7 +74,8 @@ function admit(request: WorkerRunRequest, deps: Dependencies, state: State): Res
 export function createApp(deps: Dependencies): Hono {
   recoverStore(deps.store)
   const app = new Hono(), state: State = { busy: false, faulted: false, started: false }, expected = digest(deps.env.WORKER_BEARER_KEY)
-  app.onError((_error, c) => { state.faulted = true; return c.json({ error: 'Worker is unavailable.' }, 503) })
+  const monitored = { ...deps, budget: monitorBudget(deps.budget, state) }
+  app.onError((_error, c) => c.req.method === 'POST' ? refuse() : c.json({ error: 'Worker is unavailable.' }, 503))
   app.get('/healthz', (c) => c.json({ healthy: !state.faulted }, state.faulted ? 503 : 200))
   app.use('*', async (c, next) => {
     const token = /^Bearer ([!-~]{1,4096})$/.exec(c.req.header('authorization') ?? '')?.[1] ?? ''
@@ -72,14 +83,13 @@ export function createApp(deps: Dependencies): Hono {
     return next()
   })
   app.post('/runs', async (c) => {
-    try { return admit(await readRunRequest(c.req.raw), deps, state) }
+    try { return admit(await readRunRequest(c.req.raw), monitored, state) }
     catch (error) {
       if (error instanceof RequestError) return c.json({ error: error.message }, error.status)
       throw error
     }
   })
   app.get('/runs/:id', (c) => {
-    if (state.faulted) return c.json({ error: 'Worker storage is unavailable.' }, 503)
     const id = RunId.safeParse(c.req.param('id'))
     if (!id.success) return c.json({ error: 'Invalid run ID.' }, 400)
     const status = deps.store.get(id.data)

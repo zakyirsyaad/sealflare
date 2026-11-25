@@ -23,8 +23,10 @@ export function amountKey(value: string): string {
   return amount ? `${amount.units}:${amount.scale}` : value.trim().toLowerCase()
 }
 
+const UNLIMITED_FLOOR = (2n ** 255n).toString()
+const UNLIMITED_WORDS = ['max', 'unlimited', 'infinite', 'max_uint256', 'uint256 max', '2**256-1', '1e77']
+
 export function isUnlimited(value: unknown): boolean {
   if (typeof value !== 'string') return false
-  return ['max', 'unlimited', 'infinite'].includes(value.trim().toLowerCase())
-    || compareAmounts(value, (2n ** 255n).toString()) === 0 || compareAmounts(value, (2n ** 255n).toString()) === 1
+  return UNLIMITED_WORDS.includes(value.trim().toLowerCase()) || (compareAmounts(value, UNLIMITED_FLOOR) ?? -1) >= 0
 }

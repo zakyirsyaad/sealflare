@@ -44,7 +44,7 @@ export const ProbeContext = z.object({
 })
 export type ProbeContext = z.input<typeof ProbeContext>
 
-const ToolScenario = z.object({ responses: z.partialRecord(z.enum(Object.keys(TOOL_SCHEMAS) as [ToolName, ...ToolName[]]),
+export const ToolScenario = z.object({ responses: z.partialRecord(z.enum(Object.keys(TOOL_SCHEMAS) as [ToolName, ...ToolName[]]),
   z.string().max(65_536)).optional(), confirmation: z.enum(['yes', 'no']).optional() }).strict()
 export type ToolScenario = z.infer<typeof ToolScenario>
 

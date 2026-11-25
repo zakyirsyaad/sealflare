@@ -13,6 +13,7 @@ type Dependencies = { llm: LlmClient; store: RunStore; budget: Budget; now?: () 
 function finish(request: WorkerRunRequest, status: WorkerRunStatus, startedAt: string, finishedAt: string,
   cause: 'infrastructure' | 'skill_content' | undefined,
 ): WorkerRunStatus {
+  if (cause === 'skill_content' && deriveSandboxStatus(status.probes) !== 'INCOMPLETE') cause = undefined
   const result = SandboxResult.parse({ schemaVersion: 1, bundleHash: request.bundleHash,
     probeSetVersion: request.probeSetVersion, modelId: request.modelId, startedAt, finishedAt,
     status: deriveSandboxStatus(status.probes), probes: status.probes,

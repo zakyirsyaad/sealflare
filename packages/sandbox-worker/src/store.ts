@@ -1,10 +1,10 @@
 // APIs checked 2026-11-25: https://nodejs.org/docs/latest-v24.x/api/fs.html
 import fs from 'node:fs'
-import { randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { PROBE_IDS, ProbeResult, WorkerRunStatus } from '@sealflare/shared/schemas'
 import { RecoveryInfo } from './runIdentity'
+import { replaceFile } from './atomicFile'
 
 export type LoadIssue = { file: string; message: string }
 export type RunStore = {
@@ -73,18 +73,6 @@ function readRecord(path: string, runId: string): { status: WorkerRunStatus; rec
   } finally { fs.closeSync(fd) }
 }
 
-function replaceFile(dir: string, path: string, text: string, committed: () => void): void {
-  const temporary = join(dir, `.run-${randomUUID()}.tmp`)
-  try {
-    fs.writeFileSync(temporary, text, { flag: 'wx', mode: 0o600, flush: true })
-    fs.renameSync(temporary, path)
-    // The renamed snapshot is already visible even if opening/flushing the directory fails.
-    committed()
-    const fd = fs.openSync(dir, fs.constants.O_RDONLY)
-    try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
-  } finally { fs.rmSync(temporary, { force: true }) }
-}
-
 export function createStore(directory: string): RunStore {
   const dir = resolve(directory), records = new Map<string, WorkerRunStatus>(), identities = new Map<string, RecoveryInfo>()
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -102,7 +90,7 @@ export function createStore(directory: string): RunStore {
       const text = JSON.stringify({ ...status, ...(metadata ? { _recovery: metadata } : {}) })
       if (Buffer.byteLength(text) > MAX_STATUS_BYTES) throw Error('Status exceeds the storage limit.')
       const snapshot = structuredClone(status)
-      replaceFile(dir, path, text, () => {
+      replaceFile(path, text, () => {
         records.set(status.runId, snapshot)
         if (metadata) identities.set(status.runId, structuredClone(metadata))
       })

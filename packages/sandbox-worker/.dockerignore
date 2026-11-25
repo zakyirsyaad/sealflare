@@ -1,8 +1,0 @@
-node_modules
-.env
-.env.*
-test
-scripts
-*.log
-.git
-.superpowers

@@ -51,10 +51,10 @@ function processReply(input: unknown, step: number, trace: Trace, probe: Probe) 
   return reply.done ? { outcome: 'clean' as const, violations: [] } : null
 }
 
-function takeBudget(budget: Budget): void {
+export function takeBudget(budget: Budget): void {
   try {
     if (!budget.tryTake(1)) throw new LlmInfrastructureError('Daily LLM call limit reached.')
-  } catch { throw new LlmInfrastructureError('LLM call budget is unavailable.') }
+  } catch (error) { throw error instanceof LlmInfrastructureError ? error : new LlmInfrastructureError('LLM call budget is unavailable.') }
 }
 
 /** One isolated probe run; persisted aggregate updates are the caller's responsibility. */

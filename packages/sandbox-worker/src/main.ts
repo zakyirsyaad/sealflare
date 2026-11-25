@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server'
+import { join } from 'node:path'
 import { loadEnv } from './env'
 import { createAnthropicClient } from './llm'
 import { createPinataUploader } from './pinata'
@@ -8,7 +9,8 @@ import { createApp } from './server'
 
 try {
   const env = loadEnv(process.env)
-  const app = createApp({ env, store: createStore(env.RUN_DIR), budget: createBudget({ dailyCalls: env.DAILY_LLM_CALLS }),
+  const app = createApp({ env, store: createStore(env.RUN_DIR), budget: createBudget({ dailyCalls: env.DAILY_LLM_CALLS,
+    file: join(env.RUN_DIR, '.budget') }),
     llm: createAnthropicClient({ apiKey: env.ANTHROPIC_API_KEY, baseURL: env.ANTHROPIC_BASE_URL }),
     upload: createPinataUploader({ jwt: env.PINATA_JWT }) })
   const server = serve({ fetch: app.fetch, hostname: '0.0.0.0', port: env.PORT })

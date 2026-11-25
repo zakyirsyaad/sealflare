@@ -102,7 +102,7 @@ test('reposting the same run is idempotent; a different request cannot reuse its
   expect((await post(app)).status).toBe(202)
   await vi.waitFor(() => expect(dependencies.store.get(request.runId)?.evidenceURI).toBe(fixtureCid))
   expect((await post(app)).status).toBe(202)
-  expect((await post(app, { ...request, skillMd: '# Different' })).status).toBe(409)
+  expect((await post(app, { ...request, skillMd: '# Different' })).status).toBe(429)
   expect(dependencies.llm.step).toHaveBeenCalledTimes(18)
   expect(dependencies.budget.used()).toBe(18)
   const restarted = createApp({ ...dependencies, store: createStore(dependencies.env.RUN_DIR) })
@@ -155,10 +155,12 @@ test('a running status with all clean probes cannot become a clean result during
   expect(WorkerRunStatus.parse((await statusOf(app)).body).result?.status).toBe('INCOMPLETE')
 })
 
-test('legacy interrupted progress without identity metadata stops startup rather than fabricating a result', () => {
+test('legacy interrupted progress without identity metadata is reported without fabricating a result', () => {
   const dependencies = httpDeps()
   dependencies.store.save(refused)
-  expect(() => createApp({ ...dependencies, store: createStore(dependencies.env.RUN_DIR) })).toThrow(/recovery metadata/i)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(() => createApp({ ...dependencies, store: createStore(dependencies.env.RUN_DIR) })).not.toThrow()
+  expect(warn).toHaveBeenCalledWith('Skipped interrupted run without recovery metadata:', request.runId)
 })
 
 test('a corrupted persisted file is reported without its contents while valid entries remain available', async () => {
@@ -182,10 +184,10 @@ test('a completed infrastructure failure remains a valid result and the worker a
   await vi.waitFor(() => expect(dependencies.store.get('run-2')?.evidenceURI).toBe(fixtureCid))
 })
 
-test('an initial persistence failure returns 503 and never spends a model call', async () => {
+test('an initial persistence failure returns BUSY and never spends a model call', async () => {
   const dependencies = httpDeps(), store = { ...dependencies.store, save: () => { throw Error(credentials.PINATA_JWT) } }
   const app = createApp({ ...dependencies, store }), response = await post(app)
-  expect(response.status).toBe(503)
+  expect(response.status).toBe(429)
   expect(await response.text()).not.toContain(credentials.PINATA_JWT)
   expect((await app.request('/healthz')).status).toBe(503)
   expect(dependencies.llm.step).not.toHaveBeenCalled()
@@ -213,7 +215,7 @@ test('a transient violation-save failure recovers the attempted evidence rather 
   expect(dependencies.llm.step).toHaveBeenCalledTimes(1)
 })
 
-test('persistent progress-write failure stops admission and never exposes an older partial verdict', async () => {
+test('persistent progress-write failure stops admission while the last durable progress remains nonfinal', async () => {
   const dependencies = httpDeps(), base = dependencies.store
   const store = { ...base, save: ((status, metadata) => {
     if (status.probes.some(({ runs }) => runs.length > 0)) throw Error('Persistent disk failure')
@@ -222,8 +224,11 @@ test('persistent progress-write failure stops admission and never exposes an old
   const app = createApp({ ...dependencies, store })
   expect((await post(app)).status).toBe(202)
   await vi.waitFor(async () => expect((await app.request('/healthz')).status).toBe(503))
-  expect((await statusOf(app)).response.status).toBe(503)
-  expect((await post(app, { ...request, runId: 'run-2' })).status).toBe(503)
+  const status = await statusOf(app)
+  expect(status.response.status).toBe(200)
+  expect(WorkerRunStatus.parse(status.body).state).toBe('running')
+  expect(WorkerRunStatus.parse(status.body).result).toBeUndefined()
+  expect((await post(app, { ...request, runId: 'run-2' })).status).toBe(429)
   expect(dependencies.llm.step).toHaveBeenCalledTimes(1)
 })
 
@@ -246,7 +251,7 @@ test('an understated Content-Length cannot bypass the actual body limit', async 
   expect(dependencies.llm.step).not.toHaveBeenCalled()
 })
 
-test('an initial post-rename flush failure returns 503 rather than acknowledging durable admission', async () => {
+test('an initial post-rename flush failure returns BUSY rather than acknowledging durable admission', async () => {
   const dependencies = httpDeps(), app = createApp(dependencies), original = fs.fsyncSync
   let failed = false
   const sync = vi.spyOn(fs, 'fsyncSync').mockImplementation((fd) => {
@@ -255,7 +260,7 @@ test('an initial post-rename flush failure returns 503 rather than acknowledging
   })
   const response = await post(app)
   sync.mockRestore()
-  expect(response.status).toBe(503)
+  expect(response.status).toBe(429)
   expect((await app.request('/healthz')).status).toBe(503)
   expect(dependencies.llm.step).not.toHaveBeenCalled()
   expect(dependencies.budget.used()).toBe(0)
@@ -269,7 +274,7 @@ test('recovery from a first-write failure retains identity so an identical retry
     base.save(status, metadata)
   }) as typeof base.save }
   const app = createApp({ ...dependencies, store })
-  expect((await post(app)).status).toBe(503)
+  expect((await post(app)).status).toBe(429)
   await vi.waitFor(() => expect(base.get(request.runId)?.state).toBe('done'))
   expect(base.recovery(request.runId)).toBeDefined()
   const restarted = createApp({ ...dependencies, store: createStore(dependencies.env.RUN_DIR) })

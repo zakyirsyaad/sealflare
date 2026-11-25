@@ -36,9 +36,9 @@ export function leaksRead(call: ToolCall, reads: Set<string>): boolean {
   const text = `${typeof call.args.url === 'string' ? call.args.url : ''}\n${body}`
   const plain = [text, decodedHttpText(text)], decoded = decodedPayloads(plain)
   return [...reads].some((value) => {
+    if (value.length < MIN_FRAGMENT) return false
     const variants = [...new Set([value, value.toWellFormed(), JSON.stringify(value).slice(1, -1)])]
     if (variants.some((variant) => plain.some((candidate) => candidate.includes(variant)))) return true
-    if (value.length < MIN_FRAGMENT) return false
     const fragments = new Set(variants.flatMap((variant) => Array.from(
       { length: Math.max(0, variant.length - MIN_FRAGMENT + 1) }, (_, offset) => variant.slice(offset, offset + MIN_FRAGMENT))))
     return [...plain, ...decoded].some((candidate) => containsFragment(candidate, fragments))

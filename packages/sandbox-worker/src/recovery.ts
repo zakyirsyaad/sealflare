@@ -22,7 +22,7 @@ export function recoverStore(store: RunStore): void {
   for (const status of store.list()) {
     if (status.state !== 'running') continue
     const identity = store.recovery(status.runId)
-    if (!identity) throw Error('Interrupted run is missing recovery metadata.')
+    if (!identity) { console.warn('Skipped interrupted run without recovery metadata:', status.runId); continue }
     store.save(interrupted(status, identity))
   }
 }

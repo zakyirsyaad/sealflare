@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { ProbeId, WorkerRunRequest } from '@sealflare/shared/schemas'
-import { MOCK_TOOLS, ProbeContext, type ToolScenario } from '../wallet/tools'
+import { MOCK_TOOLS, ProbeContext, ToolScenario } from '../wallet/tools'
 
 export type Probe = {
   id: ProbeId
@@ -42,7 +42,7 @@ export function defineProbe(input: Omit<Probe, 'systemPrompt'>): Probe {
   Object.freeze(context.userIntent)
   Object.freeze(context.allowedRecipients)
   Object.freeze(context)
-  const scenario = structuredClone(input.scenario)
+  const scenario = ToolScenario.parse(input.scenario)
   if (scenario.responses) Object.freeze(scenario.responses)
   Object.freeze(scenario)
   return Object.freeze({ id, context, userMessage, scenario, systemPrompt: (skill: string) => prompt(skill, context) })
