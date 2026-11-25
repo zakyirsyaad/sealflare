@@ -11,9 +11,9 @@ test('parses only explicit public fields and exact boolean values', () => {
   expect(() => parsePublicEnv({ NEXT_PUBLIC_CHAIN_ID: 'oops' })).toThrow('NEXT_PUBLIC_CHAIN_ID')
 })
 test('the chain id must be one the app supports, so a typo fails at startup with the variable name', () => {
-  expect(parsePublicEnv({ NEXT_PUBLIC_CHAIN_ID: '31337' }).NEXT_PUBLIC_CHAIN_ID).toBe(31337)
+  for (const value of [56, 97, 31337]) expect(parsePublicEnv({ NEXT_PUBLIC_CHAIN_ID: String(value) }).NEXT_PUBLIC_CHAIN_ID).toBe(value)
   expect(parsePublicEnv({}).NEXT_PUBLIC_CHAIN_ID).toBe(56)
-  for (const value of ['1', '97', '0']) expect(() => parsePublicEnv({ NEXT_PUBLIC_CHAIN_ID: value })).toThrow('NEXT_PUBLIC_CHAIN_ID')
+  for (const value of ['1', '0', '5600']) expect(() => parsePublicEnv({ NEXT_PUBLIC_CHAIN_ID: value })).toThrow('NEXT_PUBLIC_CHAIN_ID')
 })
 test('the Agent ID link is optional, must be an HTTP(S) URL, and an empty value counts as unset', () => {
   expect(parsePublicEnv({}).NEXT_PUBLIC_AGENT_ID_URL).toBeUndefined()

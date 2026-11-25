@@ -19,6 +19,7 @@ function readAddresses(name: string): string | undefined {
 }
 const local = readAddresses('addresses.local.json')
 const bsc = readAddresses('addresses.bsc.json')
+const bscTestnet = readAddresses('addresses.bsc-testnet.json')
 
 const config: NextConfig = {
   poweredByHeader: false,
@@ -26,6 +27,7 @@ const config: NextConfig = {
   env: {
     ...(local ? { NEXT_PUBLIC_ADDRESSES_LOCAL: local } : {}),
     ...(bsc ? { NEXT_PUBLIC_ADDRESSES_BSC: bsc } : {}),
+    ...(bscTestnet ? { NEXT_PUBLIC_ADDRESSES_BSC_TESTNET: bscTestnet } : {}),
   },
 }
 export default config

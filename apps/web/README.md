@@ -63,7 +63,7 @@ variables at build time. Public values are fixed at build time; rebuild when the
 
 | Public variable | Value |
 | --- | --- |
-| `NEXT_PUBLIC_CHAIN_ID` | `56` (default) or `31337`; anything else fails at startup naming the variable |
+| `NEXT_PUBLIC_CHAIN_ID` | `56` (default), `97` (BNB testnet, what Vercel uses until the mainnet release) or `31337` (local Anvil); anything else fails at startup naming the variable |
 | `NEXT_PUBLIC_MODULES_LIVE` | `true` or `false` (default `false`) |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Optional. Without it the connect prompt offers only the browser wallet and no QR option |
 | `NEXT_PUBLIC_AGENT_ID_URL` | Optional HTTP(S) link for "Get an Agent ID". Unset shows plain text and a note |
@@ -142,9 +142,10 @@ inertness. Tabs support ArrowLeft, ArrowRight, Home and End.
 Files: `lib/chain/{addresses,config,errors,modules,userState}.ts` and `components/wallet/*`.
 `Web3Provider` wraps only `app/app/layout.tsx`, so the landing page and docs stay wallet free.
 
-- **Addresses.** `shared/abi/addresses.local.json` is gitignored and `addresses.bsc.json` does not
-  exist until the Core release, so they cannot be imported statically. `next.config.ts` reads
-  whichever exists and inlines it as `NEXT_PUBLIC_ADDRESSES_LOCAL` and `NEXT_PUBLIC_ADDRESSES_BSC`.
+- **Addresses.** `shared/abi/addresses.local.json` is gitignored and `addresses.bsc.json` and
+  `addresses.bsc-testnet.json` do not exist until the founder deploys, so they cannot be imported
+  statically. `next.config.ts` reads whichever exists and inlines only the known fields as
+  `NEXT_PUBLIC_ADDRESSES_LOCAL`, `NEXT_PUBLIC_ADDRESSES_BSC` and `NEXT_PUBLIC_ADDRESSES_BSC_TESTNET`.
   Run `pnpm chain` first and restart `next dev` after the file changes. `addresses(chainId)` throws
   a message that says what to run when the file is missing. A zero `court` or `vault` becomes `null`.
 - **User states.** `useUserState()` reads `Core.isAgentIdHolder` and `Core.attestationsLeftToday`
