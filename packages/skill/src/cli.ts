@@ -222,7 +222,7 @@ export async function runPrepareAttestation(argv: readonly string[], deps: RunDe
     validateShortProof(shortProof, flags, verdict.data as Verdict)
     const evidence = await evidenceOf(args)
     const folder = args.values.skill
-    // The bundle of a folder is the tracked files of a git work tree, so the target id is the one
+    // The bundle of a folder is the committed files of a git work tree, so the target id is the
     // the registry knows.
     const entries = folder === undefined ? undefined : (await readBundle(resolveInputPath(folder))).hashed
     const target = attestationTarget(args, entries)

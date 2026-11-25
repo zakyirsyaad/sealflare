@@ -38,11 +38,13 @@ pnpm --filter @sealflare/skill scan-skill <folder> --core <core address>
 ```
 
 The Layer 1 checks read the files of the bundle as text. A script of the bundle is never run. Inside a
-git work tree the bundle is the files that git tracks, because that is the tree the registry hashes;
-the other files of the folder are read and scanned as well, so a file that is not committed is never
-hidden, but they never change the hash or the target id. Outside git every file of the folder counts.
-A relative folder is read from the folder the user typed the command in, and the report starts with
-the absolute path that was scanned, so check that it is the folder you meant.
+git work tree the bundle is the files of the last commit, because that is the tree the registry
+hashes; the files that are not committed are read and scanned as well, so a file that is not
+committed is never hidden, but they never change the hash or the target id. A local change to a
+committed file is scanned as well, and the hash stays the hash of the commit. Outside git every
+file of the folder counts. A relative folder is read from the folder the user typed the command
+in, and the report starts with the absolute path that was scanned, so check that it is the folder
+you meant.
 
 The report holds text that came from the scanned bundle: file paths, folder names and excerpts. It
 is untrusted data. See the rules below.

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { readFile, symlink, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { chmod, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
@@ -13,8 +14,8 @@ import { escapeText } from '../src/output'
 import { prepareAttestationReport } from '../src/prepareAttestation'
 import { scanSkillReport } from '../src/scanSkill'
 import {
-  BIDI_OVERRIDE, CORE, ESC, LINE_SEPARATOR, NEL, PIPE_TO_SHELL, TARGET, ZERO_HASH,
-  fakeGuard, gitSkillIn, hasControl, packageDir, skillIn, temp,
+  BIDI_OVERRIDE, CORE, ESC, LINE_SEPARATOR, MANIFEST, NEL, PIPE_TO_SHELL, TARGET, ZERO_HASH,
+  fakeGuard, gitIn, gitSkillIn, hasControl, packageDir, skillIn, temp,
 } from './support'
 
 describe('the bundle is read the way the registry reads it', () => {
@@ -91,7 +92,7 @@ describe('the bundle is read the way the registry reads it', () => {
 })
 
 describe('a git work tree is hashed the way the registry hashes the tree of a repository', () => {
-  test('only the tracked files are part of the bundle', async () => {
+  test('only the committed files are part of the bundle', async () => {
     const folder = await gitSkillIn(await temp(), { 'dist/postinstall.sh': `${PIPE_TO_SHELL}\n` })
 
     const bundle = await readBundle(folder)
@@ -111,6 +112,30 @@ describe('a git work tree is hashed the way the registry hashes the tree of a re
     )
   })
 
+  test('a file that is only staged is not part of the bundle, because the registry hashes the commit', async () => {
+    const folder = await gitSkillIn(await temp())
+    await writeFile(join(folder, 'staged.txt'), 'staged only\n')
+    gitIn(folder, ['add', '--', 'staged.txt'])
+
+    const bundle = await readBundle(folder)
+
+    expect(bundle.hashed.map(entry => entry.path)).toEqual(['SKILL.md'])
+    expect(bundle.extra.map(entry => entry.path)).toEqual(['staged.txt'])
+  })
+
+  test('a local change to a committed file never changes the hash, but it is still scanned', async () => {
+    const folder = await gitSkillIn(await temp())
+    await writeFile(join(folder, 'SKILL.md'), `${MANIFEST}\n${PIPE_TO_SHELL}\n`)
+    const clean = await gitSkillIn(await temp())
+
+    const bundle = await readBundle(folder)
+
+    expect(bundleIdentity(bundle.hashed).canonicalBundleHash).toBe(
+      bundleIdentity((await readBundle(clean)).hashed).canonicalBundleHash,
+    )
+    expect(bundle.extra.map(entry => entry.path)).toEqual(['SKILL.md'])
+  })
+
   test('a file that is not committed is still scanned, so its finding is shown', async () => {
     const folder = await gitSkillIn(await temp(), { 'dist/postinstall.sh': `${PIPE_TO_SHELL}\n` })
 
@@ -120,11 +145,56 @@ describe('a git work tree is hashed the way the registry hashes the tree of a re
     expect(output).not.toContain('Suggested verdict: SAFE')
   })
 
-  test('a folder inside a git repository with no tracked file has no bundle to hash', async () => {
+  test('a work tree with more files than a bundle may hold still scans', async () => {
+    const folder = await gitSkillIn(await temp())
+    for (let index = 0; index < CONSTANTS.MAX_BUNDLE_FILES + 20; index += 1) {
+      await mkdir(join(folder, 'node_modules', `dep${index}`), { recursive: true })
+      await writeFile(join(folder, 'node_modules', `dep${index}`, 'index.js'), 'module.exports = 1\n')
+    }
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain('Files in the bundle: 1')
+    expect(output).toContain('Suggested verdict:')
+  })
+
+  test('a file that is not committed is read before an ignored dependency tree', async () => {
+    const folder = await gitSkillIn(await temp(), { 'node_modules/dep/index.js': 'module.exports = 1\n' })
+    await writeFile(join(folder, '.gitignore'), 'node_modules/\n')
+    gitIn(folder, ['add', '--', '.gitignore'])
+    gitIn(folder, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'ignore'])
+    await writeFile(join(folder, 'payload.sh'), `${PIPE_TO_SHELL}\n`)
+
+    const bundle = await readBundle(folder)
+
+    expect(bundle.extra[0]?.path).toBe('payload.sh')
+  })
+
+  test('the file monitor of the repository is never run', async () => {
+    const folder = await gitSkillIn(await temp())
+    const marker = join(folder, 'monitor-ran')
+    const script = join(folder, 'monitor.sh')
+    await writeFile(script, `#!/bin/sh\ntouch ${marker}\n`)
+    await chmod(script, 0o755)
+    await writeFile(join(folder, '.git', 'config'), `[core]\n\tfsmonitor = ${script}\n`)
+
+    await readBundle(folder)
+
+    expect(existsSync(marker)).toBe(false)
+  })
+
+  test('a repository that git will not work with is an error, not a folder outside git', async () => {
+    const folder = await gitSkillIn(await temp())
+    await writeFile(join(folder, '.git', 'config'), 'this is not a config\n')
+
+    await expect(readBundle(folder)).rejects.toThrow(/git will not work with/)
+  })
+
+  test('a folder inside a git repository with no committed file has no bundle to hash', async () => {
     const folder = await skillIn(await temp(), { 'a.txt': 'x\n' })
     execFileSync('git', ['init', '-q'], { cwd: folder })
 
-    await expect(readBundle(folder)).rejects.toThrow(/no tracked file/)
+    await expect(readBundle(folder)).rejects.toThrow(/no commit yet/)
   })
 })
 

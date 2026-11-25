@@ -30,13 +30,23 @@ default such as the mainnet.
 ### The folder of a bundle
 
 `scan-skill` hashes the bundle the way the registry hashes the tree of a repository. Inside a git
-work tree the bundle is the files that git tracks, so a folder with `node_modules` installed or a
-local build holds the same bundle as the repository does. The files that are not tracked are read
-and scanned as well, so a finding in a file that is not committed is never hidden, but those files
-never change the hash or the target id. Outside git every file of the folder is part of the bundle.
-Only `.git` is left out, because a git tree can never hold one. `publisher.sig` is read and then
-left out of the hash by the shared rules, and it does not count towards the limit either. A bundle
-with more than 200 files, or more than 2 MiB, fails instead of being cut short.
+work tree the bundle is the files of the last commit, so a folder with `node_modules` installed or
+a local build holds the same bundle as the repository does. The files that are not committed are
+read and scanned as well, so a finding in a file that is not committed is never hidden, but those
+files never change the hash or the target id. A local change to a committed file is scanned as
+well, and the hash stays the hash of the commit. Outside git every file of the folder is part of
+the bundle. Only `.git` is left out, because a git tree can never hold one. `publisher.sig` is
+read and then left out of the hash by the shared rules, and it does not count towards the limit
+either. A bundle with more than 200 files, or more than 2 MiB, fails instead of being cut short.
+
+The files outside the bundle are scanned in parts, because a scan applies the limits of a bundle to
+the files it gets. A part holds at most 199 files, and the files that are not ignored come first,
+so a dependency tree never fills the limit before a file of the skill itself is read. The files
+that were left out are counted in the report.
+
+Git is run with the file monitor of the repository switched off, so a bundle that ships a
+repository of its own cannot make git run a command. A repository that git will not work with, for
+example one with a doubtful owner, is an error and not a folder outside git.
 
 pnpm runs a script inside the folder of this package, so a relative path would land there. The
 scripts resolve `<folder>`, `--skill` and `--evidence-file` against `INIT_CWD`, the folder you typed

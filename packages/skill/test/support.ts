@@ -61,15 +61,22 @@ export async function skillIn(folder: string, files: Record<string, string> = {}
 }
 
 /**
- * A skill folder inside a git work tree, with the given files tracked by git.
+ * A skill folder inside a git work tree, with the given files committed by git.
  *
- * The files that are not tracked stay in the folder, the way an uncommitted or an ignored file does.
+ * The files that are not committed stay in the folder, the way an uncommitted or an ignored file
+ * does.
  */
 export async function gitSkillIn(folder: string, files: Record<string, string> = {}, tracked: readonly string[] = ['SKILL.md']): Promise<string> {
   const skill = await skillIn(folder, files)
-  execFileSync('git', ['init', '-q'], { cwd: skill })
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: skill })
   execFileSync('git', ['add', '--', ...tracked], { cwd: skill })
+  execFileSync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'first'], { cwd: skill })
   return skill
+}
+
+/** A command that runs inside a git repository, without touching the network. */
+export function gitIn(folder: string, args: readonly string[]): void {
+  execFileSync('git', args, { cwd: folder })
 }
 
 export const emptyGroup = { votes: { safe: 0, caution: 0, danger: 0 }, weight: { safe: 0, caution: 0, danger: 0 }, flags: 0 }
