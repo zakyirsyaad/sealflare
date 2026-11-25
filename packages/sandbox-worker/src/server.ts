@@ -15,7 +15,7 @@ import { runProbeSet } from './runner'
 import { readRunRequest, RequestError } from './httpBody'
 
 type Dependencies = { env: Env; llm: LlmClient; store: RunStore; budget: Budget; upload: (json: string) => Promise<string> }
-type State = { busy: boolean; faulted: boolean; recoveryBlocked: boolean; started: boolean }
+type State = { busy: boolean; faulted: boolean; started: boolean }
 const digest = (value: string) => crypto.createHash('sha256').update(value).digest()
 const refuse = (reason: 'BUSY' | 'DAILY_LIMIT' = 'BUSY') => Response.json(WorkerRunResponse.parse({ accepted: false, reason }), { status: 429 })
 
@@ -73,13 +73,12 @@ function admit(request: WorkerRunRequest, deps: Dependencies, state: State): Res
 
 export function createApp(deps: Dependencies): Hono {
   const recovery = recoverStore(deps.store)
-  const app = new Hono(), state: State = { busy: false, faulted: false,
-    recoveryBlocked: recovery.blockedLegacyRuns > 0, started: false }, expected = digest(deps.env.WORKER_BEARER_KEY)
+  const app = new Hono(), state: State = { busy: false, faulted: false, started: false }, expected = digest(deps.env.WORKER_BEARER_KEY)
   const monitored = { ...deps, budget: monitorBudget(deps.budget, state) }
   app.onError((_error, c) => c.req.method === 'POST' ? refuse() : c.json({ error: 'Worker is unavailable.' }, 503))
   app.get('/healthz', (c) => {
-    const healthy = !state.faulted && !state.recoveryBlocked
-    return c.json({ healthy }, healthy ? 200 : 503)
+    const healthy = !state.faulted
+    return c.json({ healthy, ...(recovery.blockedLegacyRuns ? { blockedLegacyRuns: recovery.blockedLegacyRuns } : {}) }, healthy ? 200 : 503)
   })
   app.use('*', async (c, next) => {
     const token = /^Bearer ([!-~]{1,4096})$/.exec(c.req.header('authorization') ?? '')?.[1] ?? ''

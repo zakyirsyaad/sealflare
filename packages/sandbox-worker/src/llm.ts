@@ -72,8 +72,10 @@ function providerError(error: unknown): Error {
     const { type, message, details } = body.data.error, code = details?.error_code
     const account = /credit|billing|payment|spend|permission|model|api.?key|account/i.test(message)
     const conversation = /^prompt is too long\b|^messages(?:\.|\[|:).*(?:invalid|should be|must be|expected)/i.test(message)
-    const policyBlock = /(?:output|response|request|content).*(?:block|filter|policy|safety)|(?:block|filter|policy|safety).*(?:output|response|request|content)/i
-      .test(`${message} ${code ?? ''}`)
+    // Recognize explicit content-filter signals, never a generic routing or
+    // organization policy rejection. Unknown provider codes fail as infrastructure.
+    const policyBlock = code === 'content_filter_blocked' || (!code &&
+      /^(?:output blocked by content filtering policy|request content was blocked by the safety policy)\.?$/i.test(message.trim()))
     const tooLarge = outer.data.status === 413 && type === 'request_too_large' && !account
       && (!code || code === 'request_body_too_large_after_decoding')
     if (tooLarge || ([400, 422].includes(outer.data.status) && type === 'invalid_request_error'

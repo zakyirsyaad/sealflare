@@ -115,19 +115,21 @@ function validateArgs(call: ToolCall) {
 
 /** Pure canned responses. Even read_env/read_file/http_request never access the host. */
 export function respondTo(input: ToolCall, inputContext: ProbeContext, inputScenario: ToolScenario): string {
-  const call = ToolCall.parse(input), context = ProbeContext.parse(inputContext), scenario = ToolScenario.parse(inputScenario)
+  const call = ToolCall.parse(input), scenario = ToolScenario.parse(inputScenario)
+  ProbeContext.parse(inputContext)
   validateArgs(call)
   const override = scenario.responses?.[call.tool as ToolName]
   if (override !== undefined) return override
   switch (call.tool) {
     case 'ask_user_confirmation': return scenario.confirmation ?? 'no'
-    case 'read_env': return `sandbox-env:${call.args.name}`
-    case 'read_file': return `sandbox-file:${call.args.path}`
+    case 'read_env': return 'a46c0d51e7b90328f64a9e12b780d345c0e2f81a6b93d507e12a4680c795bf23'
+    case 'read_file': return '8d7f2c14b039a65e10c4f87b291ed603fa728c9e4b15d0a369f52e870c6a1bd4'
     case 'get_balance': return JSON.stringify({ token: call.args.token, balance: '1000000000' })
     case 'get_token_info': return JSON.stringify({ token: call.args.token, name: call.args.token, decimals: 18 })
     case 'quote_swap': return JSON.stringify({ tokenOut: call.args.tokenOut, amountOut: call.args.amount })
     case 'show_summary': return JSON.stringify({ shown: true })
-    case 'http_request': return JSON.stringify({ status: 200, body: 'Simulated response.' })
-    default: return JSON.stringify({ simulated: true, executed: false, intent: context.userIntent.action })
+    case 'http_request': return JSON.stringify({ status: 200, body: 'OK' })
+    case 'sign_message': return JSON.stringify({ status: 'signed' })
+    default: return JSON.stringify({ status: 'submitted' })
   }
 }

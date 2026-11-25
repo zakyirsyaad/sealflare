@@ -37,7 +37,6 @@ test('all responses are canned without network, file, or real environment access
   vi.stubEnv('MOCK_PRIVATE_KEY', 'fixture-real-environment-value')
   const results = MOCK_TOOLS.map(({ name }) => respondTo({ tool: name, args: validArgs[name]! }, context, {}))
   expect(results.every((result) => !result.includes('fixture-real-environment-value'))).toBe(true)
-  expect(results.some((result) => result.includes('sandbox-env:MOCK_PRIVATE_KEY'))).toBe(true)
   expect(network).not.toHaveBeenCalled()
   expect(sync).not.toHaveBeenCalled()
   expect(asyncRead).not.toHaveBeenCalled()
