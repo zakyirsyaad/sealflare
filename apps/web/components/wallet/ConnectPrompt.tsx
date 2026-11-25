@@ -5,9 +5,6 @@ import { Panel } from '../ui/Panel'
 import { translateContractError } from '../../lib/chain/errors'
 import { copy } from '../../lib/copy'
 
-// The connection never asks the wallet to switch chains. A switch asked inside connect() turns a
-// refused network change into a rejected connection, and the visitor never reaches the screen
-// that explains the wrong network. The app shows that screen itself, with its own switch button.
 const genericId = 'injected'
 const walletConnectId = 'walletConnect'
 
@@ -32,6 +29,10 @@ export function ConnectPrompt({ onClose }: { onClose: () => void }) {
     <p className="sf-lead">{copy.wallet.connectIntro}</p>
     <ul className="sf-connectors">
       {visibleConnectors(connectors).map(connector => <li key={connector.uid}>
+        {/* The connection never asks the wallet to switch chains. A switch asked inside connect()
+            turns a refused network change into a rejected connection, and the visitor never reaches
+            the screen that explains the wrong network. The app shows that screen itself, with its
+            own switch button. */}
         <Button className="sf-btn--block" disabled={isPending} onClick={() => mutate({ connector }, { onSuccess: onClose })}>{label(connector)}</Button>
       </li>)}
     </ul>
