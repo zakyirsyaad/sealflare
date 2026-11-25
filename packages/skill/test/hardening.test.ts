@@ -196,6 +196,25 @@ describe('a git work tree is hashed the way the registry hashes the tree of a re
 
     await expect(readBundle(folder)).rejects.toThrow(/no commit yet/)
   })
+
+  test('the target page of a bundle in a GitHub work tree carries the source of the bundle', async () => {
+    const folder = await gitSkillIn(await temp())
+    gitIn(folder, ['remote', 'add', 'origin', 'git@github.com:sealflare/guard.git'])
+    const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: folder }).toString('utf8').trim()
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain(`?src=${encodeURIComponent(`gh:sealflare/guard@${commit}:`)}`)
+  })
+
+  test('a work tree without a GitHub remote has no source, and the link stays without one', async () => {
+    const folder = await gitSkillIn(await temp())
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain('Target page: /app/t/')
+    expect(output).not.toContain('?src=')
+  })
 })
 
 describe('what a bundle prints cannot touch the terminal', () => {

@@ -24,7 +24,12 @@ export type LocalBundle = {
   extra: BundleEntry[]
   /** The files outside the bundle that were not read, because there were more of them than the limit. */
   unread: number
+  /** Where the bundle sits on GitHub, when the folder is a work tree with a GitHub remote. */
+  source: BundleSource | null
 }
+
+/** The repository, the commit and the folder in it, as the application names a skill. */
+export type BundleSource = { repo: string; commit: string; path: string }
 
 function toPosix(path: string): string {
   return path.split(sep).join('/')
@@ -225,6 +230,25 @@ function assertWithinBytes(entries: readonly BundleEntry[]): void {
 }
 
 /**
+ * Where the bundle sits on GitHub, when the work tree has a GitHub remote.
+ *
+ * The link of the target page needs it, so the page can be rebuilt from the repository when the
+ * cache of the application is gone. A work tree without a remote, or with a remote that is not on
+ * GitHub, has no source and the link stays without one.
+ */
+function sourceOf(repository: Repository): BundleSource | null {
+  const remote = git(repository.root, ['remote', 'get-url', 'origin'])
+  if (!remote.ok) return null
+  const match = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?$/.exec(remote.out.toString('utf8').trim())
+  if (!match) return null
+  const commit = git(repository.root, ['rev-parse', 'HEAD'])
+  if (!commit.ok) return null
+  const sha = commit.out.toString('utf8').trim()
+  if (!/^[0-9a-f]{40}$/.test(sha)) return null
+  return { repo: `${match[1]}/${match[2]}`, commit: sha, path: repository.prefix }
+}
+
+/**
  * The bundle of a local folder, the way the registry reads it.
  *
  * Inside a git work tree the registry hashes the committed tree, so only the committed files are
@@ -240,7 +264,7 @@ export async function readBundle(folder: string): Promise<LocalBundle> {
     assertFileCount(all)
     const hashed = await readBundleFiles(folder, all)
     assertWithinBytes(hashed)
-    return { hashed, extra: [], unread: 0 }
+    return { hashed, extra: [], unread: 0, source: null }
   }
   const files = committedFiles(repository)
   const hashed = bundleOf(repository, files)
@@ -250,7 +274,7 @@ export async function readBundle(folder: string): Promise<LocalBundle> {
   assertFileCount(hashed.map(entry => entry.path))
   assertWithinBytes(hashed)
   const { entries, unread } = await extraFiles(folder, repository, hashed)
-  return { hashed, extra: entries, unread }
+  return { hashed, extra: entries, unread, source: sourceOf(repository) }
 }
 
 /**

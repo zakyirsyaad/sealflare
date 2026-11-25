@@ -20,8 +20,11 @@ pnpm --filter @sealflare/skill prepare-attestation <address> --verdict <SAFE|CAU
 
 `scan-contract` prints the tier, the flags and the community signal, and a link to the target page
 that carries the address as `?src=`. `scan-skill` prints the canonical bundle hash and the findings
-of the Layer 1 checks, which read the files of the bundle as text and never run a script of it.
-`prepare-attestation` prints the parameters of `attest()` and a summary, then stops.
+of the Layer 1 checks, which read the files of the bundle as text and never run a script of it. Its
+link carries `?src=gh:<owner>/<repo>@<commit>:<folder>` when the folder is a git work tree with a
+GitHub remote, so the target page can be rebuilt from the repository when the cache of the
+application is gone. `prepare-attestation` prints the parameters of `attest()` and a summary, then
+stops.
 
 Each command takes only the options listed in its usage. An option it does not know, such as
 `--chainid`, and an argument beyond the expected number are errors, so a typo never falls back to a

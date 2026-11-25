@@ -1,7 +1,7 @@
 import { createScanner, suggestVerdict } from '@sealflare/scanner-core'
 import type { Guard } from '@sealflare/guard'
 import { bundleIdentity, CONSTANTS, type BundleEntry } from '@sealflare/shared/rules'
-import { SKILL_CHECK_IDS, type Check, type Finding, type RepoFetcher } from '@sealflare/shared/schemas'
+import { SKILL_CHECK_IDS, encodeSrc, type Check, type Finding, type RepoFetcher } from '@sealflare/shared/schemas'
 import { readBundle } from './bundle'
 import { bullet, escapeText, field, join, section, targetLink } from './output'
 
@@ -106,6 +106,9 @@ export async function scanSkillReport(input: { folder: string; guard: Guard }): 
   })
   const findings = [...report.findings, ...extra.findings]
   const verdict = await input.guard.checkSkill(bundle.hashed)
+  // The link of the target page carries the source when the bundle sits in a GitHub work tree, so
+  // the page can be rebuilt from the repository when the cache of the application is gone.
+  const src = bundle.source === null ? undefined : encodeSrc({ ...report.source, ...bundle.source })
   const lines = [
     `Sealflare check for the skill bundle in ${escapeText(input.folder)}`,
     field('Canonical bundle hash', identity.canonicalBundleHash),
@@ -121,7 +124,7 @@ export async function scanSkillReport(input: { folder: string; guard: Guard }): 
     section('Layer 1 checks', checks.map(check => bullet(`${check.id}: ${check.status}`))),
     field('Suggested verdict', suggestVerdict(checks, findings, SKILL_CHECK_IDS)),
     section('Reasons', verdict.reasons.map(bullet)),
-    field('Target page', targetLink(identity.targetId)),
+    field('Target page', targetLink(identity.targetId, src)),
   ]
   return join(lines)
 }
