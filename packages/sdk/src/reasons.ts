@@ -47,10 +47,10 @@ export function contractReasons(input: ContractReasonInput): string[] {
     reasons.push('The address is an upgradeable proxy, so its code can change without a new attestation.')
   }
   if (input.implementationChanged === true) {
-    // Core pins the code hash of the target itself and cannot read the implementation slot, so
-    // the guard cannot prove that an implementation is unchanged. It reports the difference it
-    // can see, and a proxy is never safe in any case.
-    reasons.push('The code behind this proxy differs from the code that the registry pinned for it.')
+    reasons.push('The code behind this proxy differs from the code it had at the last scan.')
+  }
+  if (input.isUpgradeableProxy && input.implementationChanged === null) {
+    reasons.push('The address can change its own code, so the guard cannot prove that the code behind it is unchanged.')
   }
   for (const flag of input.flags) reasons.push(`The target carries the ${flag} flag.`)
   reasons.push(bondReason(input.warrantyBond))
@@ -68,7 +68,11 @@ export type SkillReasonInput = {
 /** Every reason is one plain English sentence. */
 export function skillReasons(input: SkillReasonInput): string[] {
   const reasons = [tierReason(input.tier)]
-  reasons.push(input.publisher === null ? 'The bundle does not declare a publisher.' : 'The bundle declares a publisher address.')
+  reasons.push(
+    input.publisher === null
+      ? 'The registry has no verified publisher for this bundle.'
+      : 'The registry has a verified publisher for this bundle.',
+  )
   for (const flag of input.flags) reasons.push(`The bundle carries the ${flag} flag.`)
   reasons.push(bondReason(input.warrantyBond))
   return reasons

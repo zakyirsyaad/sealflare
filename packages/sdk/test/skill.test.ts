@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import { bundleIdentity, TRUST_TIERS, type BundleEntry } from '@sealflare/shared/rules'
 import { createGuard } from '../src/index'
-import { CORE, fakeChain, VAULT } from './support'
+import { CORE, fakeChain, PUBLISHER, ZERO_ADDRESS } from './support'
 
-const PUBLISHER = '0x5555555555555555555555555555555555555555'
+/** The address the registry verified, which is not the one the bundle declares. */
+const VERIFIED = '0x6666666666666666666666666666666666666666'
 
 const manifest = (publisher: string) => new TextEncoder().encode(
   `---\nmetadata:\n  sealflare-publisher: "${publisher}"\n---\n\n# Skill\n`,
@@ -27,26 +28,29 @@ describe('checkSkill', () => {
 
     expect(verdict.canonicalBundleHash).toBe(after.canonicalBundleHash)
     expect(verdict.canonicalBundleHash).not.toBe(before.canonicalBundleHash)
-    const read = chain.reads.find((item) => item.functionName === 'tierOf')
-    expect(read?.args?.[0]).toBe(after.targetId)
+    const read = chain.reads.find((item) => item.functionName === 'verifySkillBundle')
+    expect(read?.args?.[0]).toBe(after.canonicalBundleHash)
   })
 
-  test('the publisher comes from the manifest of the bundle', async () => {
-    const chain = fakeChain({ tier: TRUST_TIERS.indexOf('COMMUNITY_SAFE') })
+  test('the publisher is the one the registry verified, not the one the bundle declares', async () => {
+    const chain = fakeChain({ tier: TRUST_TIERS.indexOf('COMMUNITY_SAFE'), skillPublisher: VERIFIED })
     const guard = createGuard({ client: chain.client, core: CORE })
 
     const verdict = await guard.checkSkill(entries('echo one\n'))
 
-    expect(verdict.publisher).toBe(PUBLISHER)
+    expect(verdict.publisher).toBe(VERIFIED)
+    expect(verdict.publisher).not.toBe(PUBLISHER)
+    expect(verdict.reasons).toContain('The registry has a verified publisher for this bundle.')
   })
 
-  test('a bundle without a publisher has no publisher', async () => {
-    const chain = fakeChain({ tier: TRUST_TIERS.indexOf('COMMUNITY_SAFE') })
+  test('a bundle the registry did not verify has no publisher', async () => {
+    const chain = fakeChain({ tier: TRUST_TIERS.indexOf('COMMUNITY_SAFE'), skillPublisher: ZERO_ADDRESS })
     const guard = createGuard({ client: chain.client, core: CORE })
 
-    const verdict = await guard.checkSkill(entries('echo one\n', null))
+    const verdict = await guard.checkSkill(entries('echo one\n'))
 
     expect(verdict.publisher).toBeNull()
+    expect(verdict.reasons).toContain('The registry has no verified publisher for this bundle.')
   })
 
   test('a safe tier with no flags is safe', async () => {
@@ -88,19 +92,30 @@ describe('checkSkill', () => {
     expect(verdict.flags).toEqual(['PROMPT_BYPASS_CONFIRMATION'])
   })
 
-  test('the warranty bond is read from the vault when one is configured', async () => {
-    const chain = fakeChain({ bond: 7n })
-    const guard = createGuard({ client: chain.client, core: CORE, vault: VAULT })
+  test('the warranty bond is the bond of the verified publisher, as the firewall reports it', async () => {
+    const chain = fakeChain({ skillBond: 7n })
+    const guard = createGuard({ client: chain.client, core: CORE })
 
     const verdict = await guard.checkSkill(entries('echo one\n'))
 
     expect(verdict.warrantyBond).toBe(7n)
+    expect(verdict.reasons).toContain('The warranty bond of the publisher holds 7 wei.')
+  })
+
+  test('a bundle without a verified publisher has no warranty bond', async () => {
+    const chain = fakeChain({ skillBond: 0n, skillPublisher: ZERO_ADDRESS })
+    const guard = createGuard({ client: chain.client, core: CORE })
+
+    const verdict = await guard.checkSkill(entries('echo one\n'))
+
+    expect(verdict.warrantyBond).toBe(0n)
+    expect(verdict.reasons).toContain('No warranty bond is recorded for this target.')
   })
 
   test('an RPC failure throws; it never resolves to safe', async () => {
-    for (const fail of ['tierOf', 'getTarget', 'activeBond']) {
+    for (const fail of ['verifySkillBundle']) {
       const chain = fakeChain({ tier: TRUST_TIERS.indexOf('COMMUNITY_SAFE'), fail })
-      const guard = createGuard({ client: chain.client, core: CORE, vault: VAULT })
+      const guard = createGuard({ client: chain.client, core: CORE })
 
       await expect(guard.checkSkill(entries('echo one\n'))).rejects.toThrow()
     }

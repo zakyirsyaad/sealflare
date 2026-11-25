@@ -1,8 +1,8 @@
 import type { Address, Hex } from 'viem'
 import { z } from 'zod'
-import { coreAbi, firewallAbi, vaultAbi } from '@sealflare/shared/abi'
-import { TRUST_TIERS, type TrustTier } from '@sealflare/shared/rules'
-import type { RpcAdapter } from '@sealflare/shared/schemas'
+import { coreAbi, firewallAbi } from '@sealflare/shared/abi'
+import { TRUST_TIERS, VERDICTS, type TrustTier } from '@sealflare/shared/rules'
+import { AddressSchema, Bytes32Schema, type RpcAdapter } from '@sealflare/shared/schemas'
 
 /** One read only contract call. The guard never writes and never signs anything. */
 export type ContractCall = {
@@ -12,29 +12,29 @@ export type ContractCall = {
   args?: readonly unknown[]
 }
 
-/** The part of a viem PublicClient that the guard needs. */
+/**
+ * The part of a viem PublicClient that the guard needs.
+ *
+ * An account without code has no bytecode, and viem answers `undefined` for it. The guard reads
+ * that as empty code, never as a failure and never as code it did not see.
+ */
 export type GuardClient = {
   readContract(call: ContractCall): Promise<unknown>
-  getCode(parameters: { address: Address }): Promise<Hex>
-  getStorageAt(parameters: { address: Address; slot: Hex }): Promise<Hex>
-  call(parameters: { to: Address; data: Hex }): Promise<{ data: Hex }>
+  getCode(parameters: { address: Address }): Promise<Hex | undefined>
+  getStorageAt(parameters: { address: Address; slot: Hex }): Promise<Hex | undefined>
+  call(parameters: { to: Address; data: Hex }): Promise<{ data: Hex | undefined }>
   getBlockNumber(): Promise<bigint>
 }
 
-/** Where the guard reads from. The vault is optional, without it the bond is zero. */
+/** Where the guard reads from. Every value comes from the Core contract, which is the firewall. */
 export type GuardDeps = {
   client: GuardClient
   core: Address
-  vault?: Address
 }
-
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-
-const Bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/)
 
 /** The three fields of a target that the guard reads. Everything else on the target is ignored. */
 const TargetView = z.object({
-  pinnedCodehash: Bytes32,
+  pinnedCodehash: Bytes32Schema,
   activeFlags: z.number().int().min(0).max(0xffffffff),
   attestationCount: z.number().int().min(0),
 })
@@ -43,14 +43,22 @@ const TargetView = z.object({
 const FirewallView = z.tuple([
   z.number().int().min(0).max(TRUST_TIERS.length - 1),
   z.boolean(),
-  Bytes32,
+  Bytes32Schema,
+  z.number().int().min(0).max(0xffffffff),
+  z.bigint(),
+])
+
+/** The view of a skill bundle through IFirewall. */
+const SkillBundleView = z.tuple([
+  z.number().int().min(0).max(TRUST_TIERS.length - 1),
+  AddressSchema,
   z.number().int().min(0).max(0xffffffff),
   z.bigint(),
 ])
 
 /** The three fields of a vote that the guard reads. */
 const AttestationView = z.object({
-  verdict: z.number().int().min(0).max(2),
+  verdict: z.number().int().min(0).max(VERDICTS.length - 1),
   flags: z.number().int().min(0).max(0xffffffff),
   weight: z.number().int().min(0).max(5),
 })
@@ -63,6 +71,13 @@ export type OnChainFirewall = {
   tier: TrustTier
   isUpgradeableProxy: boolean
   pinnedCodehash: Hex
+  activeFlags: number
+  warrantyBond: bigint
+}
+
+export type OnChainSkillBundle = {
+  tier: TrustTier
+  publisher: Address
   activeFlags: number
   warrantyBond: bigint
 }
@@ -99,7 +114,7 @@ export async function readAttestation(
 ): Promise<OnChainAttestation> {
   const raw = await client.readContract({ address: core, abi: coreAbi, functionName: 'getAttestation', args: [targetId, index] })
   const view = AttestationView.parse(raw)
-  const verdict = (['SAFE', 'CAUTION', 'DANGER'] as const)[view.verdict]
+  const verdict = VERDICTS[view.verdict]
   if (!verdict) throw new Error('The registry returned a verdict that does not exist.')
   return { verdict, flags: view.flags, weight: view.weight }
 }
@@ -133,23 +148,41 @@ export async function readFirewall(client: GuardClient, core: Address, address: 
   }
 }
 
-export async function readBond(client: GuardClient, vault: Address, targetId: Hex): Promise<bigint> {
-  const raw = await client.readContract({ address: vault, abi: vaultAbi, functionName: 'activeBond', args: [targetId] })
-  return z.bigint().parse(raw)
+/**
+ * The bundle through the firewall.
+ *
+ * The publisher is the verified one. The zero address means the bundle has no verified publisher,
+ * or only a third party sponsor.
+ */
+export async function readSkillBundle(
+  client: GuardClient,
+  core: Address,
+  canonicalBundleHash: Hex,
+): Promise<OnChainSkillBundle> {
+  const raw = await client.readContract({
+    address: core,
+    abi: firewallAbi,
+    functionName: 'verifySkillBundle',
+    args: [canonicalBundleHash],
+  })
+  const view = SkillBundleView.parse(raw)
+  return {
+    tier: tierName(view[0]),
+    publisher: view[1],
+    activeFlags: view[2],
+    warrantyBond: view[3],
+  }
 }
 
-/** The bond of the publisher, or zero when no vault is configured. */
-export async function readBondOf(deps: GuardDeps, targetId: Hex): Promise<bigint> {
-  if (deps.vault === undefined || deps.vault.toLowerCase() === ZERO_ADDRESS) return 0n
-  return readBond(deps.client, deps.vault, targetId)
-}
+/** A storage slot that holds nothing reads as zero, the way the EVM reads it. */
+const EMPTY_SLOT: Hex = `0x${'0'.repeat(64)}`
 
 /** The scanner reads over RPC. This is the same seam, filled from the injected client. */
 export function toRpcAdapter(client: GuardClient): RpcAdapter {
   return {
-    getCode: (address) => client.getCode({ address }),
-    getStorageAt: (address, slot) => client.getStorageAt({ address, slot }),
-    call: async (tx) => (await client.call({ to: tx.to, data: tx.data })).data,
+    getCode: async (address) => (await client.getCode({ address })) ?? '0x',
+    getStorageAt: async (address, slot) => (await client.getStorageAt({ address, slot })) ?? EMPTY_SLOT,
+    call: async (tx) => (await client.call({ to: tx.to, data: tx.data })).data ?? '0x',
     getBlockNumber: () => client.getBlockNumber(),
   }
 }

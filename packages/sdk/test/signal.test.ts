@@ -26,6 +26,24 @@ describe('the community signal', () => {
     expect(signal.guardians.flags).toBe(FLAGS.HIDDEN_MINT)
   })
 
+  test('a vote that carries no weight is not a new Agent ID', async () => {
+    const chain = fakeChain({
+      attestations: [
+        { verdict: 2, weight: 0 },
+        { verdict: 0, weight: 1 },
+      ],
+    })
+    const guard = createGuard({ client: chain.client, core: CORE })
+
+    const signal = await guard.signal(targetId)
+
+    expect(signal.newIds.votes.danger).toBe(0)
+    expect(signal.newIds.votes.safe).toBe(1)
+    expect(signal.newIds.weight.danger).toBe(0)
+    expect(signal.guardians.votes.danger).toBe(1)
+    expect(signal.guardians.weight.danger).toBe(0)
+  })
+
   test('a target without votes has an empty signal', async () => {
     const chain = fakeChain({ attestations: [] })
     const guard = createGuard({ client: chain.client, core: CORE })
@@ -41,5 +59,13 @@ describe('the community signal', () => {
     const guard = createGuard({ client: chain.client, core: CORE })
 
     await expect(guard.signal(targetId)).rejects.toThrow()
+  })
+
+  test('a malformed target id is refused before any read', async () => {
+    const chain = fakeChain({ attestations: [] })
+    const guard = createGuard({ client: chain.client, core: CORE })
+
+    await expect(guard.signal('0x123' as `0x${string}`)).rejects.toThrow()
+    expect(chain.calls).toEqual([])
   })
 })

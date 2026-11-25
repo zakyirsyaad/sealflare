@@ -1,9 +1,10 @@
 import type { Address, Hex, PublicClient } from 'viem'
 
 export const CORE = '0x1111111111111111111111111111111111111111' as Address
-export const VAULT = '0x2222222222222222222222222222222222222222' as Address
 export const TARGET = '0x3333333333333333333333333333333333333333' as Address
 export const IMPLEMENTATION = '0x4444444444444444444444444444444444444444' as Address
+export const PUBLISHER = '0x5555555555555555555555555555555555555555' as Address
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address
 export const ZERO_WORD = `0x${'0'.repeat(64)}` as Hex
 
 /** The EIP-1967 implementation slot, the same slot the scanner reads. */
@@ -19,8 +20,16 @@ export type FakeState = {
   firewallTier?: number
   firewallProxy?: boolean
   firewallFlags?: number
-  bond?: bigint
+  /** The bond of the verified publisher, as the firewall reports it. */
+  firewallBond?: bigint
+  skillTier?: number
+  /** The verified publisher of the bundle, as the firewall reports it. */
+  skillPublisher?: Address
+  skillFlags?: number
+  skillBond?: bigint
   code?: Hex
+  /** The node answers that the account has no code, the way viem does for an empty account. */
+  noCode?: boolean
   codeByAddress?: Record<string, Hex>
   storage?: Record<string, Hex>
   /** The votes of the target, in the order the registry keeps them. */
@@ -72,15 +81,23 @@ export function fakeChain(state: FakeState = {}): FakeChain {
           state.firewallProxy ?? false,
           state.pinnedCodehash ?? ZERO_WORD,
           state.firewallFlags ?? state.flags ?? 0,
-          0n,
+          state.firewallBond ?? 0n,
         ]
       }
-      if (functionName === 'activeBond') return state.bond ?? 0n
+      if (functionName === 'verifySkillBundle') {
+        return [
+          state.skillTier ?? state.tier ?? 0,
+          state.skillPublisher ?? ZERO_ADDRESS,
+          state.skillFlags ?? state.flags ?? 0,
+          state.skillBond ?? state.firewallBond ?? 0n,
+        ]
+      }
       throw new Error(`Unexpected read: ${functionName}`)
     },
-    async getCode({ address }: { address: Address }): Promise<Hex> {
+    async getCode({ address }: { address: Address }): Promise<Hex | undefined> {
       calls.push(`getCode@${address}`)
       if (state.fail === 'getCode') return refuse('getCode')
+      if (state.noCode) return undefined
       return state.codeByAddress?.[address] ?? state.code ?? '0x'
     },
     async getStorageAt({ address, slot }: { address: Address; slot: Hex }): Promise<Hex> {
@@ -88,7 +105,7 @@ export function fakeChain(state: FakeState = {}): FakeChain {
       if (state.fail === 'getStorageAt') return refuse('getStorageAt')
       return state.storage?.[slot] ?? ZERO_WORD
     },
-    async call({ to }: { to: Address; data: Hex }): Promise<{ data: Hex }> {
+    async call({ to }: { to: Address; data: Hex }): Promise<{ data: Hex | undefined }> {
       calls.push(`call@${to}`)
       if (state.fail === 'call') return refuse('call')
       return { data: '0x' as Hex }

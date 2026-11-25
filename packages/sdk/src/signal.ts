@@ -17,10 +17,21 @@ export function splitSignal(attestations: readonly OnChainAttestation[]): Signal
   const newIds = emptyGroup()
   const guardians = emptyGroup()
   for (const attestation of attestations) {
-    const group = attestation.weight <= 1 ? newIds : guardians
+    const group = groupOf(attestation.weight, newIds, guardians)
     group.votes[attestation.verdict.toLowerCase() as 'safe' | 'caution' | 'danger'] += 1
     group.weight[attestation.verdict.toLowerCase() as 'safe' | 'caution' | 'danger'] += attestation.weight
     group.flags |= attestation.flags
   }
   return { newIds: SignalGroup.parse(newIds), guardians: SignalGroup.parse(guardians) }
+}
+
+/**
+ * The group of one vote.
+ *
+ * A weight of 1 is a new Agent ID, a weight of 2 or more is an experienced Guardian. A weight of 0
+ * is a Guardian whose score went negative, so it belongs with the Guardians and never with the new
+ * Agent IDs: it adds no weight, but its verdict and its flags stay visible.
+ */
+function groupOf(weight: number, newIds: SignalGroup, guardians: SignalGroup): SignalGroup {
+  return weight === 1 ? newIds : guardians
 }
