@@ -4,3 +4,4 @@ packages:
   - apps/*
 allowBuilds:
   esbuild: false
+  '@reown/appkit': false

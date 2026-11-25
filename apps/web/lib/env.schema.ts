@@ -3,9 +3,10 @@ import { z } from 'zod'
 const httpUrl = z.url().refine(value => /^https?:\/\//.test(value), 'Use an HTTP or HTTPS URL')
 const required = z.string().trim().min(1)
 const publicSchema = z.object({
-  NEXT_PUBLIC_CHAIN_ID: z.coerce.number().int().positive().default(56),
+  NEXT_PUBLIC_CHAIN_ID: z.coerce.number().pipe(z.union([z.literal(56), z.literal(97), z.literal(31337)])).default(56),
   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: required.optional(),
   NEXT_PUBLIC_MODULES_LIVE: z.enum(['true', 'false']).default('false').transform(value => value === 'true'),
+  NEXT_PUBLIC_AGENT_ID_URL: z.preprocess(value => (value === '' ? undefined : value), httpUrl.optional()),
 })
 const serverSchema = z.object({
   INTERNAL_URL: httpUrl,
