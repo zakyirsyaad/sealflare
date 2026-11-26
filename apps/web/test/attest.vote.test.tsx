@@ -288,3 +288,49 @@ test('closing the dialog before anything was sent abandons the attempt', async (
   // The attempt was abandoned, so the vote may be started again.
   expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
 })
+
+test('a signature that answers after the attempt was abandoned never asks for the transaction', async () => {
+  // The wallet holds the signature and answers it after the Guardian started over.
+  let sign: (signature: string) => void = () => {}
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(resolve => (sign = resolve)))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByRole('button', { name: copy.attest.pending })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.startAgain }))
+
+  // The held signature answers now. The attempt is not the one on the screen any more.
+  await act(async () => {
+    sign(`0x${'11'.repeat(65)}`)
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
+  // Nothing is uploaded and no transaction is asked for, so no vote lands untracked.
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
+})
+
+test('a signature that answers after the dialog was closed never asks for the transaction', async () => {
+  let sign: (signature: string) => void = () => {}
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(resolve => (sign = resolve)))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByRole('button', { name: copy.attest.pending })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: copy.common.close }))
+
+  await act(async () => {
+    sign(`0x${'11'.repeat(65)}`)
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})

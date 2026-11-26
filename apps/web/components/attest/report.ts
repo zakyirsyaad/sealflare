@@ -263,10 +263,15 @@ async function runAttestation(params: {
   sign: SignTypedDataAsync
   write: WriteContractAsync
   progress: (state: AttestState) => void
+  /** Whether this attempt is still the one the panel shows. */
+  isCurrent: () => boolean
 }): Promise<Step<Hex>> {
   params.progress('signing-evidence')
   const signed = await approveEvidence(params.sign, params.prepared, params.target.address as Address)
   if (!signed.ok) return signed
+  // The attempt was abandoned while the wallet was asking. Nothing is uploaded and no transaction
+  // is asked for, because a vote the panel no longer shows can never be registered.
+  if (!params.isCurrent()) return { ok: false, state: 'idle' }
 
   params.progress('uploading')
   const uploaded = await approveEvidenceUpload(
@@ -280,6 +285,9 @@ async function runAttestation(params: {
     params.prepared.evidenceHash,
   )
   if (!uploaded.ok) return uploaded
+  // The attempt was abandoned while the report was uploaded. The evidence is on the server, but
+  // no transaction is asked for, because the vote it belongs to is not the one on the screen.
+  if (!params.isCurrent()) return { ok: false, state: 'idle' }
 
   params.progress('signing-tx')
   return approveTransaction(params.write, {
@@ -297,7 +305,18 @@ async function runAttestation(params: {
 
 export type Outcome = { state: 'idle' } | { state: 'failed'; message: string } | { state: 'pending'; hash: Hex }
 
-export type Wallet = { sign: SignTypedDataAsync; write: WriteContractAsync; progress: (state: AttestState) => void }
+export type Wallet = {
+  sign: SignTypedDataAsync
+  write: WriteContractAsync
+  progress: (state: AttestState) => void
+  /**
+   * Whether this attempt is still the one the panel shows.
+   *
+   * An attempt that was abandoned never uploads its report and never asks for the transaction, so
+   * a wallet prompt that answers late cannot cast a vote that is not registered.
+   */
+  isCurrent: () => boolean
+}
 
 /** Runs one attempt, from the checks to the transaction, and says where it ended. */
 export async function attempt(target: AttestTarget, input: AttestInput, wallet: Wallet): Promise<Outcome> {

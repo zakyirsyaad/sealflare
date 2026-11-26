@@ -54,6 +54,9 @@ export function useAttest(target: AttestTarget) {
       progress: next => {
         if (run.current === id) setState(next)
       },
+      // An attempt that was abandoned stops here: it uploads nothing and asks the wallet for no
+      // transaction, so a prompt that answers late cannot cast a vote the panel no longer shows.
+      isCurrent: () => run.current === id,
     })
     // The attempt was abandoned while the wallet was asking, so its answer is dropped.
     if (run.current !== id) return
