@@ -8,8 +8,6 @@ import { copy } from '../../lib/copy'
 import { formatUtc, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
 import { attestAvailability } from '../attest/availability'
-import { expectedChainId } from '../../lib/chain/config'
-import { chainName } from '../../lib/chain/chains'
 
 export type ActionColumnProps = {
   tier: TrustTier
@@ -40,15 +38,6 @@ function previousVote(
   if (address === undefined) return null
   const row = attestations.find(item => item.guardian.toLowerCase() === address.toLowerCase())
   return row === undefined ? null : { verdict: row.verdict, txHash: row.txHash }
-/** Why the attest button is closed, in one sentence. */
-function blockedReason(kind: string, attestationsLeft: number | null, codeChanged: boolean): string | null {
-  if (codeChanged) return copy.errors.CodeChangedSincePin
-  if (kind === 'no-wallet') return copy.target.attestHint
-  // The name of the chain is filled in, so the page never shows a placeholder.
-  if (kind === 'wrong-network') return copy.wallet.switchNetwork.replace('{chain}', chainName(expectedChainId))
-  if (kind === 'no-agent-id') return copy.wallet.agentRequired
-  if (kind === 'holder' && attestationsLeft === 0) return copy.wallet.quotaExhausted
-  return null
 }
 
 /**
