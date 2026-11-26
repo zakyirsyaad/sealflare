@@ -8,6 +8,8 @@ export type JuryBoxProps = {
   phase: ChallengePhase | null
   commits: number
   reveals: number
+  /** What the viewer can do as a juror: join, or reveal. */
+  children?: React.ReactNode
 }
 
 /**
@@ -16,7 +18,7 @@ export type JuryBoxProps = {
  * While jurors are committing the box shows how many there are and nothing else. A direction of
  * a vote is never part of this box.
  */
-export function JuryBox({ phase, commits, reveals }: JuryBoxProps) {
+export function JuryBox({ phase, commits, reveals, children }: JuryBoxProps) {
   const committing = phase === 'COMMIT'
   return (
     <aside className="sf-frame sf-jury" aria-label={copy.dispute.jury}>
@@ -28,6 +30,7 @@ export function JuryBox({ phase, commits, reveals }: JuryBoxProps) {
         <p className="sf-jury__count">{copy.dispute.committed.replace('{count}', String(commits))}</p>
         {!committing && <p className="sf-lead">{copy.dispute.revealed.replace('{count}', String(reveals))}</p>}
         <p className="sf-lead">{copy.dispute.needsReveals.replace('{min}', String(CONSTANTS.MIN_REVEALS))}</p>
+        {children}
       </div>
     </aside>
   )

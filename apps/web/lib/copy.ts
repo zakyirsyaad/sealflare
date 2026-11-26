@@ -1,5 +1,6 @@
 // Exact UI strings from docs/ux.md, grouped by screen. Shared wording lives in common.
 import { dispute } from './copy.dispute'
+import { jury } from './copy.jury'
 
 export const copy = {
   "common": {
@@ -336,13 +337,7 @@ export const copy = {
     }
   },
   "dispute": dispute,
-  "jury": {
-    "join": "Join the jury",
-    "reveal": "Reveal my vote",
-    "pasteCode": "Paste your reveal code",
-    "uphold": "Uphold",
-    "reject": "Reject"
-  },
+  "jury": jury,
   "publish": {
     "title": "Publish",
     "heading": "Bind your work.",
