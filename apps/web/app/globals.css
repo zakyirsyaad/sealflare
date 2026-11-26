@@ -316,3 +316,26 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-rows__row { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
 .sf-rows__name { color: var(--muted-foreground); }
 .sf-rows__value { text-align: right; }
+
+/* The list pages: Explore, the Guardians and the profile of a Guardian */
+.sf-list-page { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+.sf-list-page__head { display: flex; align-items: flex-end; gap: var(--space-4) var(--space-6); flex-wrap: wrap; }
+.sf-list-page__title { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sf-list-page h1 { margin: 0; font-size: 38px; line-height: 42px; font-weight: 600; letter-spacing: -.04em; }
+.sf-seg { display: inline-flex; border: var(--hairline) solid var(--border); }
+.sf-seg__option { display: inline-flex; align-items: center; height: var(--control); padding: 0 14px; color: var(--muted-foreground); font-size: 14px; text-decoration: none; white-space: nowrap; }
+.sf-seg__option + .sf-seg__option { border-left: var(--hairline) solid var(--border); }
+.sf-seg__option:hover { color: var(--foreground); }
+.sf-seg__option[aria-current='true'] { background: var(--foreground); color: var(--background); font-weight: 600; }
+.sf-list__footer { display: flex; gap: 12px var(--space-4); flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 12px 24px; border-top: var(--hairline) solid var(--border); }
+.sf-list__pages { display: flex; gap: 8px; align-items: center; }
+.sf-list__pages .sf-btn[aria-disabled='true'] { cursor: not-allowed; filter: none; background: var(--muted); color: var(--muted-foreground); }
+.sf-list__name { color: var(--foreground); text-decoration: none; overflow-wrap: anywhere; }
+.sf-list__name:hover { text-decoration: underline; }
+.sf-list__kind { display: block; color: var(--muted-foreground); font-size: 12px; }
+.sf-list__verdict { display: inline-flex; gap: 10px; align-items: center; font-weight: 600; }
+.sf-list__muted { color: var(--muted-foreground); }
+.sf-guardian__facts { display: flex; gap: var(--space-6); flex-wrap: wrap; padding: var(--space-6); }
+.sf-guardian__fact { display: flex; flex-direction: column; gap: 4px; }
+.sf-guardian__label { color: var(--muted-foreground); font-size: 12px; }
+.sf-guardian__value { font-size: 18px; }

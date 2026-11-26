@@ -131,6 +131,35 @@ describe('the public target API', () => {
     expect(blocks.size).toBe(1)
   })
 
+  test('a verdict filter holds every tier of that verdict', async () => {
+    internalGet.mockResolvedValue({
+      data: { items: [summary({ targetId: FIRST }), summary({ targetId: SECOND }), summary({ targetId: THIRD })] },
+      meta: { finalizedBlock: '12345' },
+    })
+    reader.tierAt.mockImplementation(async (id: string) => {
+      if (id === FIRST) return 'COMMUNITY_SAFE'
+      if (id === SECOND) return 'WARRANTY_BACKED_SAFE'
+      return 'CAUTION_FLAGGED'
+    })
+    const response = await listRoute(request('/api/targets?verdict=SAFE'))
+    const body = await answer(response)
+    expect(body.data.items.map((item: { targetId: string }) => item.targetId)).toEqual([FIRST, SECOND])
+    expect(body.meta.page.total).toBe(2)
+  })
+
+  test('a verdict that is not a verdict is BAD_REQUEST', async () => {
+    const response = await listRoute(request('/api/targets?verdict=MAYBE'))
+    expect(response.status).toBe(400)
+    expect((await answer(response)).error.code).toBe('BAD_REQUEST')
+    expect(internalGet).not.toHaveBeenCalled()
+  })
+
+  test('a query that names a tier and a verdict is refused', async () => {
+    const response = await listRoute(request('/api/targets?tier=COMMUNITY_SAFE&verdict=SAFE'))
+    expect(response.status).toBe(400)
+    expect(internalGet).not.toHaveBeenCalled()
+  })
+
   test('a tier filter reads the candidates of the internal service, not one page of the list', async () => {
     internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
     await listRoute(request('/api/targets?tier=COMMUNITY_SAFE'))
