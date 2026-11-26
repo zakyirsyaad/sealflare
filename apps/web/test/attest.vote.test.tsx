@@ -131,3 +131,20 @@ test('no vote, no refresh', () => {
   render(page(signal(0)))
   expect(refresh).not.toHaveBeenCalled()
 })
+
+test('the summary cannot be left while the wallet or the chain is still working', async () => {
+  wagmi.writeContractAsync.mockReturnValue(new Promise(() => {}))
+  render(page(signal(0)))
+  await vote()
+  expect(screen.getByRole('button', { name: copy.attest.back })).toBeDisabled()
+})
+
+test('the vote shown is the vote that was sent, even when the choice changes afterwards', async () => {
+  render(page(signal(0)))
+  await vote()
+  await screen.findByRole('row', { name: /Your vote: Caution/ })
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.back }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Danger/ }))
+  expect(screen.queryByRole('row', { name: /Your vote: Danger/ })).toBeNull()
+  expect(screen.getByRole('row', { name: /Your vote: Caution/ })).toBeInTheDocument()
+})
