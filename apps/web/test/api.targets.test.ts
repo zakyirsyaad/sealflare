@@ -9,7 +9,7 @@ vi.mock('../server/internal', async importOriginal => {
 
 const reader = vi.hoisted(() => ({
   tierAt: vi.fn(),
-  blockNumber: vi.fn(),
+  tierBlockNumber: vi.fn(),
   isAgentIdHolder: vi.fn(),
   tier: vi.fn(),
   target: vi.fn(),
@@ -87,8 +87,8 @@ describe('the public target API', () => {
     internalGet.mockReset()
     internalPost.mockReset()
     reader.tierAt.mockReset()
-    reader.blockNumber.mockReset()
-    reader.blockNumber.mockResolvedValue(99n)
+    reader.tierBlockNumber.mockReset()
+    reader.tierBlockNumber.mockResolvedValue(99n)
     reader.tierAt.mockResolvedValue('COMMUNITY_SAFE')
   })
 

@@ -61,6 +61,30 @@ describe('the client of the internal service', () => {
     await expect(internalGet('/targets')).rejects.toMatchObject({ code: 'INTERNAL' })
   })
 
+  test('a read without a meta block is an error, because the block it was read at is unknown', async () => {
+    vi.stubEnv('INTERNAL_URL', 'https://internal.example.com')
+    vi.stubEnv('INTERNAL_KEY', 'test-only-key')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer({ success: true, data: { items: [] } })))
+    await expect(internalGet('/targets')).rejects.toBeInstanceOf(InternalServiceError)
+    await expect(internalGet('/targets')).rejects.toMatchObject({ code: 'INTERNAL' })
+  })
+
+  test('a meta block of the wrong shape is an error, and never a page of its own', async () => {
+    vi.stubEnv('INTERNAL_URL', 'https://internal.example.com')
+    vi.stubEnv('INTERNAL_KEY', 'test-only-key')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer({ success: true, data: { items: [] }, meta: { page: { total: 'many' } } })))
+    await expect(internalGet('/targets')).rejects.toMatchObject({ code: 'INTERNAL' })
+  })
+
+  test('a write of the nonce has no block to name, so it needs no meta block', async () => {
+    vi.stubEnv('INTERNAL_URL', 'https://internal.example.com')
+    vi.stubEnv('INTERNAL_KEY', 'test-only-key')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer({ success: true, data: { fresh: true } })))
+    const result = await internalPost<{ fresh: boolean }>('/nonce/use', { address: '0x1', nonce: '2' })
+    expect(result.data.fresh).toBe(true)
+    expect(result.meta).toEqual({})
+  })
+
   test('a missing internal url is a configuration error and never a request', async () => {
     vi.stubEnv('INTERNAL_URL', '')
     vi.stubEnv('INTERNAL_KEY', 'test-only-key')

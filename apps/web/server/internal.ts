@@ -1,6 +1,6 @@
 import 'server-only'
 import { z } from 'zod'
-import { TargetDetail, TargetSummary } from '@sealflare/shared/schemas'
+import { ResponseMeta, TargetDetail, TargetSummary } from '@sealflare/shared/schemas'
 import { parseInternalEnv } from '../lib/env.schema'
 
 /**
@@ -18,11 +18,14 @@ export class InternalServiceError extends Error {
   }
 }
 
-/** What the internal service says about the freshness of the rows it read. */
-export interface InternalMeta {
-  finalizedBlock?: string
-  page?: { total: number; page: number; limit: number }
-}
+/**
+ * What the internal service says about the freshness of the rows it read.
+ *
+ * The shape is the frozen `ResponseMeta` of the public API, so the two cannot drift apart. An
+ * answer without a meta block is refused, because a list that hides the block it was read at
+ * cannot be told apart from a list that was read a moment ago.
+ */
+export type InternalMeta = z.infer<typeof ResponseMeta>
 
 export interface InternalAnswer<T> {
   data: T
@@ -64,7 +67,15 @@ function pathOf(path: string): string {
   return path.startsWith('/') ? path : `/${path}`
 }
 
-async function request<T>(path: string, init: RequestInit): Promise<InternalAnswer<T>> {
+/**
+ * A request to the internal service.
+ *
+ * The meta of the answer is read with the frozen `ResponseMeta`, so the block a list was read at
+ * and the page of that list are known to be of the shape the public API answers with. A read of
+ * indexed data without a meta block is refused: an answer that does not name the block it was
+ * read at cannot be told apart from an answer that was read a moment ago.
+ */
+async function request<T>(path: string, init: RequestInit, needsMeta: boolean): Promise<InternalAnswer<T>> {
   const { INTERNAL_URL, INTERNAL_KEY } = parseInternalEnv(process.env)
   const headers = new Headers(init.headers)
   headers.set('authorization', `Bearer ${INTERNAL_KEY}`)
@@ -92,23 +103,40 @@ async function request<T>(path: string, init: RequestInit): Promise<InternalAnsw
   if (!response.ok || body.data === undefined || body.data === null) {
     throw new InternalServiceError('INTERNAL', 'The internal service did not answer with data.')
   }
-  const meta = (body.meta ?? {}) as InternalMeta
-  return { data: body.data as T, meta }
+  if (body.meta === undefined && !needsMeta) return { data: body.data as T, meta: {} }
+  const meta = ResponseMeta.safeParse(body.meta)
+  if (!meta.success) {
+    throw new InternalServiceError('INTERNAL', 'The internal service did not answer with a meta block.')
+  }
+  return { data: body.data as T, meta: meta.data }
 }
 
-/** Reads from the internal service. A path without a leading slash still reaches the right route. */
+/**
+ * Reads from the internal service. A path without a leading slash still reaches the right route.
+ *
+ * A read of indexed data always names the block it was read at, so the meta block is required.
+ */
 export async function internalGet<T = unknown>(
   path: string,
   query?: Record<string, string | number | undefined>,
 ): Promise<InternalAnswer<T>> {
-  return request<T>(`${path}${queryString(query)}`, { method: 'GET' })
+  return request<T>(`${path}${queryString(query)}`, { method: 'GET' }, true)
 }
 
-/** Writes to the internal service. The public API never writes to the chain. */
+/**
+ * Writes to the internal service. The public API never writes to the chain.
+ *
+ * A write of the nonce or of the rate limit is not read from indexed data, so it has no block to
+ * name and no meta block is required.
+ */
 export async function internalPost<T = unknown>(path: string, body: unknown): Promise<InternalAnswer<T>> {
-  return request<T>(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  return request<T>(
+    path,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    false,
+  )
 }
