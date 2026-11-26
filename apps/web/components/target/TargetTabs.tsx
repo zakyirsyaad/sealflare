@@ -3,24 +3,20 @@ import { Tabs } from '../ui/Tabs'
 import { AttestationsTab } from './AttestationsTab'
 import { FindingsTab } from './FindingsTab'
 import { HistoryTab } from './HistoryTab'
+import { PublisherTab } from './PublisherTab'
 import { copy } from '../../lib/copy'
+import type { Binding } from '../../lib/publish/binding'
+import type { PublisherBond } from '../../lib/publish/bond'
 
 export type TargetTabsProps = {
   detail: TargetDetail
   rows: readonly AttestationRow[]
   scan: ScanReport | null
   evidenceFailed?: boolean
-}
-
-function publisherContent(detail: TargetDetail) {
-  if (detail.publisherRole === 'NONE') return <p className="sf-tab__empty">{copy.target.noPublisher}</p>
-  const role = detail.publisherRole === 'VERIFIED_PUBLISHER' ? copy.publish.verifiedPublisher : copy.publish.sponsor
-  return (
-    <div className="sf-tab__facts">
-      <p>{role}</p>
-      <p className="sf-mono">{detail.bond} wei</p>
-    </div>
-  )
+  /** How the target was bound, read from the event log of Core. */
+  binding?: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond?: PublisherBond | null
 }
 
 function disputeContent(detail: TargetDetail) {
@@ -29,7 +25,7 @@ function disputeContent(detail: TargetDetail) {
 }
 
 /** The details of a target. The findings open first. */
-export function TargetTabs({ detail, rows, scan, evidenceFailed = false }: TargetTabsProps) {
+export function TargetTabs({ detail, rows, scan, evidenceFailed = false, binding = null, publisherBond = null }: TargetTabsProps) {
   const items = [
     { id: 'findings', label: copy.target.findings, content: <FindingsTab scan={scan} /> },
     {
@@ -37,7 +33,19 @@ export function TargetTabs({ detail, rows, scan, evidenceFailed = false }: Targe
       label: copy.target.attestationCount.replace('{count}', String(rows.length)),
       content: <AttestationsTab rows={rows} evidenceUnavailable={evidenceFailed} />,
     },
-    { id: 'publisher', label: copy.target.publisher, content: publisherContent(detail) },
+    {
+      id: 'publisher',
+      label: copy.target.publisher,
+      content: (
+        <PublisherTab
+          targetId={detail.targetId}
+          role={detail.publisherRole}
+          publisher={detail.publisher}
+          method={binding?.method ?? null}
+          bond={publisherBond}
+        />
+      ),
+    },
     { id: 'dispute', label: copy.target.dispute, content: disputeContent(detail) },
     { id: 'bounty', label: copy.target.bounty, content: <p className="sf-tab__empty">{copy.target.noBounty}</p> },
     { id: 'history', label: copy.target.history, content: <HistoryTab rows={rows} /> },
