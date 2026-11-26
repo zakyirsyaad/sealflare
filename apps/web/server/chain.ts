@@ -59,8 +59,12 @@ export interface ChainReader {
   /** The evidence of the event log above a block, for the votes that are not final yet. */
   evidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]>
   bond(targetId: Hex, publisher: Address): Promise<BondState | null>
-  /** How the target was bound, read from the event log. Null when the log does not say. */
-  binding(targetId: Hex, createdAt: number): Promise<Binding | null>
+  /**
+   * How the target was bound, read from the event log. Null when the log does not say. The
+   * publisher the target reports now is passed in, so a cached binding of a publisher that has
+   * since been replaced is never served.
+   */
+  binding(targetId: Hex, createdAt: number, current: CurrentPublisher): Promise<Binding | null>
 }
 
 /** How many attestation reads run at the same time. */
@@ -353,16 +357,32 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
 type PublisherBoundEvent = Extract<AbiEventItem, { name: 'PublisherBound' }>
 
 /**
- * How the target was bound, read from the event log of Core. The last PublisherBound event wins,
- * because a target can be bound only once. A log that cannot be read leaves the method unknown:
- * the page then says so instead of guessing.
+ * A confirmed binding, kept for the life of the process. A target can be bound again: a sponsor
+ * gives way to the verified publisher, and a verified publisher can be replaced by a fresh proof of
+ * the current `owner()`. So an entry only stands while the target still reports the same publisher
+ * and role, and it is dropped as soon as it does not.
  */
-/** Core refuses a second bind of a target, so a binding that is confirmed is read once per process. */
 const bindings = new Map<string, Binding>()
 
-async function readBinding(targetId: Hex, createdAt: number): Promise<Binding | null> {
-  const known = bindings.get(targetId.toLowerCase())
-  if (known !== undefined) return known
+/** What `getTarget` says about the publisher now. */
+export type CurrentPublisher = { publisher: Address; role: PublisherRole }
+
+function stillBinds(known: Binding, current: CurrentPublisher): boolean {
+  return known.publisher.toLowerCase() === current.publisher.toLowerCase() && known.role === current.role
+}
+
+/**
+ * How the target was bound, read from the event log of Core. The last PublisherBound event wins,
+ * because every new bind replaces the one before it. A log that cannot be read leaves the method
+ * unknown: the page then says so instead of guessing.
+ */
+async function readBinding(targetId: Hex, createdAt: number, current: CurrentPublisher): Promise<Binding | null> {
+  const key = targetId.toLowerCase()
+  const known = bindings.get(key)
+  if (known !== undefined) {
+    if (stillBinds(known, current)) return known
+    bindings.delete(key)
+  }
   try {
     const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
     const from = await createdBlock(targetId, createdAt, head)
@@ -379,7 +399,8 @@ async function readBinding(targetId: Hex, createdAt: number): Promise<Binding | 
     const { publisher, role, method } = last.args
     if (publisher === undefined || role === undefined || method === undefined) return null
     const binding = { publisher, role: publisherRoleOf(role), method: bindMethodOf(method) }
-    if (last.blockNumber !== null && last.blockNumber <= head - CONFIRMATIONS) {
+    // Only a binding that is still the current one and is confirmed is kept.
+    if (stillBinds(binding, current) && last.blockNumber !== null && last.blockNumber <= head - CONFIRMATIONS) {
       bindings.set(targetId.toLowerCase(), binding)
     }
     return binding

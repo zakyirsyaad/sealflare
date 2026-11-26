@@ -4,6 +4,7 @@ import { useConnection, useReadContract } from 'wagmi'
 import { zeroAddress, type Address } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
 import { Button } from '../../../../../components/ui/Button'
+import { WrongNetwork } from '../../../../../components/wallet/WrongNetwork'
 import { addresses } from '../../../../../lib/chain/addresses'
 import { expectedChainId } from '../../../../../lib/chain/config'
 import { copy } from '../../../../../lib/copy'
@@ -35,7 +36,9 @@ export function refusalReason(
   currentOwner: string | null = null,
 ): string | null {
   if (request === null) return copy.publish.requestInvalid
-  if (chainId !== expectedChainId || request.chainId !== expectedChainId) return copy.publish.requestWrongChain
+  // The chain of the link is checked first: it needs no wallet, and a visitor without one must be
+  // asked to connect and not told that the link is broken.
+  if (request.chainId !== expectedChainId) return copy.publish.requestWrongChain
   if (core === null || request.core.toLowerCase() !== core) return copy.publish.requestWrongCore
   if (BigInt(request.deadline) * 1000n <= BigInt(now)) return copy.publish.requestExpired
   if (currentNonce !== null && currentNonce !== request.bindNonce) return copy.publish.requestStale
@@ -47,6 +50,7 @@ export function refusalReason(
     return copy.publish.requestStale
   }
   if (connected === null) return copy.wallet.connectTitle
+  if (chainId !== expectedChainId) return copy.publish.walletWrongChain
   if (connected.toLowerCase() !== signerOf(request).toLowerCase()) return copy.publish.requestWrongSigner
   return null
 }
@@ -114,6 +118,7 @@ export default function SignRequestPage() {
         </div>
       )}
       {reason !== null && <p role="alert">{reason}</p>}
+      {reason === copy.publish.walletWrongChain && <WrongNetwork />}
       {reason === null && request !== null && (
         <div className="sf-stack">
           {checking && <p role="status">{copy.publish.requestChecking}</p>}

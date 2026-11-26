@@ -33,7 +33,8 @@ export function useContractOwner(address: Address | null): OwnerState {
           setState({ status: 'none', owner: null })
           return
         }
-        const data = await client.call({ to: address, data: OWNER_SELECTOR })
+        // `call` answers with an object that holds the data, not with the data itself.
+        const { data } = await client.call({ to: address, data: OWNER_SELECTOR })
         if (cancelled) return
         const owner = decodeOwner(data)
         setState({ status: owner === null ? 'none' : 'owner', owner })

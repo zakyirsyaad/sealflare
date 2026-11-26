@@ -473,6 +473,33 @@ test('the sign page refuses a request made for another chain than the one of the
   window.location.hash = ''
 })
 
+test('a visitor without a wallet is asked to connect, not told that the link is broken', async () => {
+  mocks.connection = { address: undefined as never, isConnected: false, chainId: undefined as never }
+  window.location.hash = `#${encodeRequest(requestForSigning)}`
+  render(<SignRequestPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.wallet.connectTitle)
+  expect(screen.queryByText(copy.publish.requestWrongChain)).toBeNull()
+  window.location.hash = ''
+})
+
+test('a wallet on another network is told so and can switch', async () => {
+  mocks.connection = { address: me, isConnected: true, chainId: 97 }
+  window.location.hash = `#${encodeRequest(requestForSigning)}`
+  render(<SignRequestPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.publish.walletWrongChain)
+  expect(screen.getByRole('button', { name: /^Switch to / })).toBeEnabled()
+  expect(screen.queryByRole('button', { name: copy.publish.requestSign })).toBeNull()
+  window.location.hash = ''
+})
+
+test('a link for another chain is refused even before a wallet is connected', async () => {
+  mocks.connection = { address: undefined as never, isConnected: false, chainId: undefined as never }
+  window.location.hash = `#${encodeRequest({ ...requestForSigning, chainId: 97 })}`
+  render(<SignRequestPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.publish.requestWrongChain)
+  window.location.hash = ''
+})
+
 test('a request is refused when the Core address of the app is unknown', () => {
   expect(refusalReason(requestForSigning, me, 56, null, 0)).toBe(copy.publish.requestWrongCore)
 })

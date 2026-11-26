@@ -344,6 +344,7 @@ export const copy = {
     "requestExpiry": "This request expires at {time}.",
     "requestExpired": "This request has expired.",
     "requestWrongChain": "This request is for another chain.",
+    "walletWrongChain": "Your wallet is on another network. Switch to the network of this request to sign it.",
     "requestWrongCore": "This request was made for another contract.",
     "requestWrongSigner": "Connect the wallet that owns this contract to sign it.",
     "requestStale": "This request no longer matches the target. Ask for a new link.",
