@@ -13,6 +13,8 @@ export type ChallengeReviewProps = {
   /** The share of the stake forfeited if the dispute expires, in basis points. Null while unknown. */
   forfeitBps: number | null
   forfeitFailed: boolean
+  /** There is no Court to challenge, so nothing can be signed. */
+  noCourt: boolean
   state: AttestState
   error: string | null
   txHash: string | null
@@ -68,7 +70,7 @@ function Endings({ forfeitBps }: { forfeitBps: number | null }) {
 }
 
 /** What may be lost and what follows an expiry: the forfeited share for this target and the cooldown. */
-function Notes({ forfeitBps, forfeitFailed }: Pick<ChallengeReviewProps, 'forfeitBps' | 'forfeitFailed'>) {
+function Notes({ forfeitBps, forfeitFailed, noCourt }: Pick<ChallengeReviewProps, 'forfeitBps' | 'forfeitFailed' | 'noCourt'>) {
   const days = String(CONSTANTS.CHALLENGE_COOLDOWN / 86400)
   return (
     <section className="sf-stack">
@@ -80,8 +82,9 @@ function Notes({ forfeitBps, forfeitFailed }: Pick<ChallengeReviewProps, 'forfei
         </p>
       )}
       {forfeitBps === null && (
-        <p className="sf-lead" role={forfeitFailed ? 'alert' : 'status'}>
-          {forfeitFailed ? copy.dispute.forfeitUnknown : copy.dispute.forfeitPending}
+        <p className="sf-lead" role={forfeitFailed || noCourt ? 'alert' : 'status'}>
+          {/* Without a Court there is nothing to sign to, and that is the reason the share is unknown. */}
+          {noCourt ? copy.dispute.noCourt : forfeitFailed ? copy.dispute.forfeitUnknown : copy.dispute.forfeitPending}
         </p>
       )}
       <p className="sf-lead">{copy.dispute.cooldownNote.replace('{days}', days)}</p>
@@ -98,7 +101,7 @@ export function ChallengeReview(props: ChallengeReviewProps) {
     <>
       <OnChain label={props.label} flags={props.flags} />
       <Endings forfeitBps={props.forfeitBps} />
-      <Notes forfeitBps={props.forfeitBps} forfeitFailed={props.forfeitFailed} />
+      <Notes forfeitBps={props.forfeitBps} forfeitFailed={props.forfeitFailed} noCourt={props.noCourt} />
       <footer className="sf-panel__footer">
         <p className="sf-lead">{copy.attest.twoApprovals}</p>
         <div className="sf-rows">

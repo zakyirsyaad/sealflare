@@ -5,10 +5,18 @@ import { CORE, COURT, ME, NOW, txHash } from './dispute.fixtures'
 /** The wallet, the chain reads and the evidence upload that every dispute test stands on. */
 export const wagmi = {
   signTypedDataAsync: vi.fn(),
+  signMessageAsync: vi.fn(),
   writeContractAsync: vi.fn(),
   reads: { current: {} as Record<string, unknown> },
   readErrors: { current: {} as Record<string, boolean> },
-  readCalls: [] as { functionName: string; args?: readonly unknown[]; refetchInterval?: number }[],
+  readCalls: [] as {
+    functionName: string
+    args?: readonly unknown[]
+    query?: Record<string, unknown>
+    refetchInterval?: number
+  }[],
+  /** Reads again and answers with what the chain holds now, as `refetch` of a read does. */
+  refetch: vi.fn(async (name: string) => ({ data: wagmi.reads.current[name], isError: wagmi.readErrors.current[name] === true })),
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } as Record<string, unknown> },
   receiptParams: [] as {
     hash?: string
@@ -24,6 +32,7 @@ export const uploadEvidence = vi.fn()
 
 export const wagmiModule = {
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
+  useSignMessage: () => ({ signMessageAsync: wagmi.signMessageAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
   useWaitForTransactionReceipt: (params: {
     hash?: string
@@ -37,13 +46,19 @@ export const wagmiModule = {
     wagmi.blockCalls.push({ chainId: params?.chainId, refetchInterval: params?.query?.refetchInterval })
     return { data: wagmi.block.current }
   },
-  useReadContract: (params: { functionName: string; args?: readonly unknown[]; query?: { refetchInterval?: number } }) => {
-    wagmi.readCalls.push({ functionName: params.functionName, args: params.args, refetchInterval: params.query?.refetchInterval })
+  useReadContract: (params: { functionName: string; args?: readonly unknown[]; query?: Record<string, unknown> }) => {
+    wagmi.readCalls.push({
+      functionName: params.functionName,
+      args: params.args,
+      query: params.query,
+      refetchInterval: params.query?.refetchInterval as number | undefined,
+    })
     return {
-      data: wagmi.reads.current[params.functionName],
+      // A read that is turned off answers nothing, as a read of a contract that is not there does.
+      data: params.query?.enabled === false ? undefined : wagmi.reads.current[params.functionName],
       isLoading: false,
       isError: wagmi.readErrors.current[params.functionName] === true,
-      refetch: vi.fn(),
+      refetch: () => wagmi.refetch(params.functionName),
     }
   },
   useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
@@ -92,14 +107,36 @@ export function resetDispute() {
     nextExpireForfeitBps: 2000,
     cooldownEndsAt: 0n,
     activeChallengeOf: 0n,
+    jurorStatus: 0,
+    getJuror: { committed: false, revealed: false, uphold: false, weight: 0, commitHash: `0x${'00'.repeat(32)}` },
     pendingPenalties: 0,
     getTarget: { attestationCount: 5 },
   }
   wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
+  // Every test starts with the plain read of the chain, so a test that changes the read cannot
+  // reach the next one.
+  wagmi.refetch.mockImplementation(async (name: string) => ({
+    data: wagmi.reads.current[name],
+    isError: wagmi.readErrors.current[name] === true,
+  }))
   wagmi.signTypedDataAsync.mockResolvedValue(`0x${'11'.repeat(65)}`)
   wagmi.writeContractAsync.mockResolvedValue(txHash)
   uploadEvidence.mockImplementation(async (body: { reportJson: string }) => ({
     evidenceURI: 'ipfs://bafycid',
     evidenceHash: evidenceHashOf(new TextEncoder().encode(body.reportJson)),
   }))
+}
+
+/**
+ * The chain takes what the wallet sends: after a commit the Court holds it for the juror, and after
+ * a reveal the vote is open. A test that does not call this leaves the chain unchanged, which is
+ * what a cancelled or replaced transaction looks like.
+ */
+export function chainTakes(kind: 'commit' | 'reveal') {
+  wagmi.writeContractAsync.mockImplementation(async (call: { args: readonly unknown[] }) => {
+    const current = wagmi.reads.current.getJuror as Record<string, unknown>
+    wagmi.reads.current.getJuror =
+      kind === 'commit' ? { ...current, committed: true, commitHash: call.args[1] } : { ...current, revealed: true, uphold: call.args[1] }
+    return txHash
+  })
 }

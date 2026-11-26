@@ -86,6 +86,7 @@ function Body({ step, onStep, props, draft, forfeit, challenge, submit }: BodyPr
       flags={flagsOf(draft.choice)}
       forfeitBps={forfeit.bps}
       forfeitFailed={forfeit.failed}
+      noCourt={courtAddress() === null}
       state={challenge.state}
       error={challenge.error}
       txHash={challenge.txHash}
