@@ -124,7 +124,13 @@ test('success asks the server for the page again, once', async () => {
   render(page(signal(0)))
   await vote()
   await screen.findByRole('row', { name: /Your vote: Caution/ })
+  // The page is asked for in an effect, so the row can be on the screen before the ask is made.
   await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 5_000 })
+  // The wait stops at the first ask, so another tick has to pass before the count can be trusted.
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  expect(refresh).toHaveBeenCalledTimes(1)
 })
 
 test('after the vote the button names the verdict and links to the transaction', async () => {

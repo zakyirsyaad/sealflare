@@ -6,10 +6,10 @@ import { CONSTANTS } from '@sealflare/shared/rules'
 import { expectedChainId } from '../../lib/chain/config'
 import { coreAddress, courtAddress, type ChallengeOutcome, type ChallengePhase } from '../../lib/chain/court'
 import { useUserState } from '../../lib/chain/userState'
-import { useWriteTx, type TxRequest, type TxState } from '../../lib/chain/useWriteTx'
+import { useWriteTx, type TxRequest } from '../../lib/chain/useWriteTx'
 import { copy } from '../../lib/copy'
 import { AttestButton } from '../attest/AttestButton'
-import type { AttestState } from '../attest/useAttest'
+import { buttonStateOf } from './txButtonState'
 
 export type SettleActionsProps = {
   challengeId: string
@@ -18,15 +18,6 @@ export type SettleActionsProps = {
   outcome: ChallengeOutcome | null
   /** The reveals the Court counted. Null while the chain has not answered. */
   reveals: number | null
-}
-
-/** The states of a transaction as the button of an attestation names them. */
-const BUTTON_STATE: Record<TxState, AttestState> = {
-  idle: 'idle',
-  signing: 'signing-tx',
-  pending: 'pending',
-  failed: 'failed',
-  done: 'done',
 }
 
 type ActionProps = { label: string; why: string; account: Address | null; request: Omit<TxRequest, 'account'> | null }
@@ -41,7 +32,7 @@ function Action({ label, why, account, request }: ActionProps) {
     <section className="sf-stack">
       <p className="sf-lead">{why}</p>
       <AttestButton
-        state={BUTTON_STATE[tx.state]}
+        state={buttonStateOf(tx.state)}
         error={tx.error}
         txHash={tx.txHash}
         label={label}
