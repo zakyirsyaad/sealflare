@@ -10,6 +10,15 @@ import { VERDICT_TIERS, VerdictSchema, type Verdict } from '../../../lib/verdict
 /** The default size of a page. */
 const DEFAULT_LIMIT = 20
 
+/**
+ * What a reader is told when a filter covers more targets than one request can read.
+ *
+ * The tier is read from the chain, so a filter has to read the tier of every candidate. A
+ * filter that covers too many of them cannot be answered in one request, and the reader is
+ * told to narrow it instead of being shown a failure without a reason.
+ */
+const NARROW_MESSAGE = 'The registry holds more targets than one filter can read. Narrow the filter by kind.'
+
 /** The query of the target list: the frozen one, plus the verdict a reader filters by. */
 type TargetQuery = z.infer<typeof ListQuery> & { verdict?: Verdict }
 
@@ -64,15 +73,22 @@ export async function GET(request: Request): Promise<Response> {
       // so the answer is an error and never an empty list that looks like a registry without
       // targets. A request that cannot be read in one go is named, so the reader is asked for a
       // narrower filter instead of a page that cannot be filled.
-      if (error.code === 'BAD_REQUEST') {
-        return fail('BAD_REQUEST', 'The registry holds more targets than one filter can read. Narrow the filter by kind.', 400)
-      }
+      if (error.code === 'BAD_REQUEST') return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
       return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
     }
     // The deadline of the request passed, or the chain could not be read. There is no list.
+    // A filter that has to read the tier of every candidate is the one that runs out of time.
+    if (Date.now() >= deadlineAt && hasTierFilter(query.value)) {
+      return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
+    }
     console.error('The target list could not be read.', error instanceof Error ? error.name : 'unknown')
     return fail('INTERNAL', 'The target list could not be read.', 503)
   }
+}
+
+/** Whether the query asks for the tier of a target, directly or through a verdict. */
+function hasTierFilter(query: TargetQuery): boolean {
+  return query.tier !== undefined || query.verdict !== undefined
 }
 
 /**
@@ -138,7 +154,12 @@ async function answerFiltered(
   const items = InternalTargetSummary.array().safeParse(answer.data.items)
   if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
   const filled = await withTiers(items.data, deadlineAt)
-  if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
+  if (filled === null) {
+    // A filter that runs out of time covers more targets than one request can read, so the
+    // reader is asked for a narrower filter instead of a failure without a reason.
+    if (Date.now() >= deadlineAt) return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
+    return fail('INTERNAL', 'The trust tier cannot be read.', 503)
+  }
   // The order of the internal service is kept, so the page of a filter is the page of the
   // unfiltered list with the rows that do not match taken out.
   const matching = filled.filter(item => filters.tiers.includes(item.tier))

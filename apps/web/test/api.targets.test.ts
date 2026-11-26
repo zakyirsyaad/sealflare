@@ -220,6 +220,26 @@ describe('the public target API', () => {
     expect(body.data).toBeUndefined()
   })
 
+  test('a filter that runs out of time asks for a narrower filter', async () => {
+    vi.useFakeTimers()
+    try {
+      internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
+      // The tier never arrives, so the request runs out of time.
+      reader.tierAt.mockImplementation(() => new Promise(() => {}))
+      const pending = listRoute(request('/api/targets?verdict=SAFE'))
+      await vi.advanceTimersByTimeAsync(9000)
+      const response = await pending
+      expect(response.status).toBe(400)
+      const body = await answer(response)
+      expect(body.success).toBe(false)
+      expect(body.error.code).toBe('BAD_REQUEST')
+      expect(body.error.message).toContain('Narrow the filter')
+      expect(body.data).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('a failed tier read is a 503 without partial data', async () => {
     internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
     reader.tierAt.mockRejectedValue(new Error('rpc down'))
@@ -248,7 +268,10 @@ describe('the public target API', () => {
       const response = await pending
       await vi.advanceTimersByTimeAsync(20_000)
 
-      expect(response.status).toBe(503)
+      // A filter that runs out of time covers more targets than one request can read, so the
+      // reader is asked for a narrower filter.
+      expect(response.status).toBe(400)
+      expect((await answer(response)).error.code).toBe('BAD_REQUEST')
       // The batches that started before the deadline were two. The third never started.
       expect(reader.tierAt).toHaveBeenCalledTimes(200)
     } finally {

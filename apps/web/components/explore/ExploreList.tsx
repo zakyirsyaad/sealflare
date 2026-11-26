@@ -102,7 +102,10 @@ function rowOf(item: TargetSummary, now: Date): TableRow {
       ),
       verdict: (
         <span className="sf-list__verdict">
-          <SealMark tier={item.tier} size={24} showLabel={false} />
+          {/* The word beside the mark says the same thing, so the mark is only a picture here. */}
+          <span aria-hidden="true">
+            <SealMark tier={item.tier} size={24} showLabel={false} />
+          </span>
           <span>{tierLabel(item.tier)}</span>
         </span>
       ),
@@ -189,7 +192,7 @@ export function ExploreList({ kind, verdict, page }: ExploreListProps) {
   return (
     <div className="sf-list-page">
       <ListHead state={state} />
-      {query.isPending && <Skeleton label={copy.common.loading} />}
+      {query.isPending && <Skeleton label={copy.common.loading} rows={5} />}
       {failed && <ErrorState what={tooMany ? copy.explore.tooMany : copy.explore.failed} onChainSafe onRetry={() => void query.refetch()} />}
       {!query.isPending && !failed && items.length === 0 && (
         <EmptyState

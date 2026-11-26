@@ -26,6 +26,7 @@ export const guardians = {
   "history": "History",
   "historyCaption": "History",
   "historyCount": "{count} entries",
+  "historyCountOne": "{count} entry",
   "historyColumns": {
     "what": "What",
     "target": "Target",
@@ -42,5 +43,5 @@ export const guardians = {
   },
   "notFound": "There is no such Guardian.",
   "failedProfile": "This Guardian could not be loaded.",
-  "pending": "pending"
+  "noXp": "No XP"
 }

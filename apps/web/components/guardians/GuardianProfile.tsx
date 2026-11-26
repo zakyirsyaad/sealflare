@@ -46,9 +46,9 @@ function resultOf(item: ActivityItem): string {
   return verdictLabel(item.result)
 }
 
-/** The reputation a row earned. A row that earned nothing yet says so. */
+/** The reputation a row earned. A row that earns no XP at all says so. */
 function reputationOf(item: ActivityItem): string {
-  if (item.xp === null) return copy.guardians.pending
+  if (item.xp === null) return copy.guardians.noXp
   return item.xp > 0 ? `+${item.xp}` : String(item.xp)
 }
 
@@ -133,7 +133,7 @@ export function GuardianProfile({ address }: GuardianProfileProps) {
   if (query.isPending) {
     return (
       <div className="sf-list-page" aria-busy="true">
-        <Skeleton label={copy.common.loading} />
+        <Skeleton label={copy.common.loading} rows={5} />
       </div>
     )
   }
@@ -160,9 +160,19 @@ export function GuardianProfile({ address }: GuardianProfileProps) {
         columns={COLUMNS}
         rows={guardian.history.map((item, index) => rowOf(item, index, now))}
         footer={
-          <span className="sf-mono">
-            {copy.guardians.historyCount.replace('{count}', String(guardian.history.length))}
-          </span>
+          <>
+            <span className="sf-mono">
+              {(guardian.history.length === 1 ? copy.guardians.historyCountOne : copy.guardians.historyCount).replace(
+                '{count}',
+                String(guardian.history.length),
+              )}
+            </span>
+            {query.data.finalizedBlock !== null && (
+              <span className="sf-mono sf-list__muted">
+                {copy.guardians.indexedTo.replace('{block}', query.data.finalizedBlock)}
+              </span>
+            )}
+          </>
         }
       />
     </div>

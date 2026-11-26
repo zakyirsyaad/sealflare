@@ -97,7 +97,9 @@ describe('the explore list', () => {
     const rows = within(table).getAllByRole('row')
     // The newest vote comes first, even when the answer hands the rows over in another order.
     expect(within(rows[1]!).getByText('swap-helper')).toBeVisible()
-    expect(within(rows[1]!).getByRole('img', { name: 'Community safe' })).toBeVisible()
+    // The seal is a picture beside the word, so the word is what a reader of the screen hears.
+    expect(rows[1]!.querySelector('.sf-seal')).not.toBeNull()
+    expect(within(rows[1]!).getByText('Community safe')).toBeVisible()
     expect(within(rows[1]!).getByText('9')).toBeVisible()
     // The caution and the danger counts are both zero, so both cells are there.
     expect(within(rows[1]!).getAllByText('0')).toHaveLength(2)
@@ -211,6 +213,31 @@ describe('the guardian profile', () => {
     expect(within(rows[1]!).getByText('Attestation')).toBeVisible()
     expect(within(rows[1]!).getByText('A target')).toBeVisible()
     expect(within(rows[1]!).getByText('+2')).toBeVisible()
+  })
+
+  test('a profile names the block it was read at and what a row that earns no XP says', async () => {
+    loadGuardian.mockResolvedValue({
+      item: GuardianDetail.parse({
+        ...guardian(),
+        createdAtBlock: '42',
+        history: [
+          {
+            kind: 'attestation',
+            targetId: TARGET_ID,
+            label: 'A target',
+            result: 'SAFE',
+            xp: null,
+            at: '2026-11-25T10:00:00.000Z',
+          },
+        ],
+      }),
+      finalizedBlock: '12345',
+    })
+    renderList(<GuardianProfile address={ADDRESS} />)
+    // A row that earns no XP says so, and it does not borrow the word of a pending penalty.
+    expect(await screen.findByText(copy.guardians.noXp)).toBeVisible()
+    expect(screen.getByText(copy.guardians.indexedTo.replace('{block}', '12345'))).toBeVisible()
+    expect(screen.getByText(copy.guardians.historyCountOne.replace('{count}', '1'))).toBeVisible()
   })
 })
 

@@ -88,7 +88,7 @@ export function GuardiansList({ page }: GuardiansListProps) {
           <p className="sf-lead">{copy.guardians.intro}</p>
         </div>
       </header>
-      {query.isPending && <Skeleton label={copy.common.loading} />}
+      {query.isPending && <Skeleton label={copy.common.loading} rows={5} />}
       {failed && <ErrorState what={copy.guardians.failed} onChainSafe onRetry={() => void query.refetch()} />}
       {!query.isPending && !failed && items.length === 0 && (
         <EmptyState
