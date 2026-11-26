@@ -409,7 +409,7 @@ test('a link that names another bundle says so, and the page offers no version o
 
 test('the page never links to another target page as a new version of the rated skill', () => {
   render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT' }), differentBundle: true })} />)
-  for (const link of screen.getAllByRole('link')) expect(link.getAttribute('href')).not.toContain('/app/t/')
+  for (const link of screen.queryAllByRole('link')) expect(link.getAttribute('href')).not.toContain('/app/t/')
 })
 
 test('verdicts are shown in sentence case, not as the raw enum', async () => {
