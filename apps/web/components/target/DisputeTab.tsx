@@ -50,7 +50,9 @@ export function DisputeTab({ challenges, activeChallengeId }: DisputeTabProps) {
               </a>
             </td>
             <td data-label={copy.dispute.colPhase}>{phaseWord(item.phase, item.outcome)}</td>
-            <td data-label={copy.dispute.colTime}>{windowLeft(item.phase, item, now) ?? copy.target.none}</td>
+            <td data-label={copy.dispute.colTime}>
+              <span suppressHydrationWarning>{windowLeft(item.phase, item, now) ?? copy.target.none}</span>
+            </td>
           </tr>
         ))}
       </tbody>

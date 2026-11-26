@@ -1,6 +1,6 @@
 import type { ChallengeSummary } from '@sealflare/shared/schemas'
 import { copy } from '../../lib/copy'
-import { timeLeft } from '../../lib/format'
+import { shortAddress, timeLeft } from '../../lib/format'
 
 type Outcome = ChallengeSummary['outcome']
 type Phase = ChallengeSummary['phase'] | 'NONE'
@@ -19,6 +19,11 @@ const VERDICT_TEXT: Record<Outcome, string> = {
   REJECTED: copy.dispute.verdictRejected,
   TIED: copy.dispute.verdictTied,
   EXPIRED: copy.dispute.verdictExpired,
+}
+
+/** An address is shortened, the name of a repository is not. */
+export function targetLabel(label: string): string {
+  return /^0x[0-9a-fA-F]{40}$/.test(label) ? shortAddress(label) : label
 }
 
 export const outcomeWord = (outcome: Outcome): string => OUTCOME_WORD[outcome]

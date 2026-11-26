@@ -52,31 +52,36 @@ export function isTxWorking(state: TxState): boolean {
   return state === 'signing' || state === 'pending'
 }
 
+/** Follows the receipt of a sent transaction. A mined transaction that reverted is a failure. */
+function useReceiptOutcome(
+  state: TxState,
+  txHash: Hex | null,
+  settle: (state: 'done' | 'failed', error: string | null) => void,
+) {
+  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
+  useEffect(() => {
+    if (state !== 'pending') return
+    if (receipt.isSuccess) {
+      // A transaction that was mined and reverted still resolves the wait, so its status is read.
+      if (receipt.data?.status === 'reverted') settle('failed', copy.errors.unknown)
+      else settle('done', null)
+      return
+    }
+    if (receipt.isError) settle('failed', translateContractError(receipt.error)?.message ?? copy.errors.unknown)
+  }, [state, receipt.isSuccess, receipt.data?.status, receipt.isError, receipt.error, settle])
+}
+
 /** One transaction from the user's wallet, with the four states of ux.md Section 5. */
 export function useWriteTx() {
   const { writeContractAsync } = useWriteContract()
   const [state, setState] = useState<TxState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<Hex | null>(null)
-  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
-
-  useEffect(() => {
-    if (state !== 'pending') return
-    if (receipt.isSuccess) {
-      // A transaction that was mined and reverted still resolves the wait, so its status is read.
-      if (receipt.data?.status === 'reverted') {
-        setState('failed')
-        setError(copy.errors.unknown)
-      } else {
-        setState('done')
-      }
-      return
-    }
-    if (receipt.isError) {
-      setState('failed')
-      setError(translateContractError(receipt.error)?.message ?? copy.errors.unknown)
-    }
-  }, [state, receipt.isSuccess, receipt.data?.status, receipt.isError, receipt.error])
+  const settle = useCallback((next: 'done' | 'failed', message: string | null) => {
+    setState(next)
+    setError(message)
+  }, [])
+  useReceiptOutcome(state, txHash, settle)
 
   const send = useCallback(
     async (request: TxRequest) => {
@@ -89,11 +94,10 @@ export function useWriteTx() {
       } else if (step.rejected) {
         setState('idle')
       } else {
-        setState('failed')
-        setError(step.message)
+        settle('failed', step.message)
       }
     },
-    [writeContractAsync],
+    [writeContractAsync, settle],
   )
 
   const reset = useCallback(() => {

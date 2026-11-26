@@ -5,8 +5,7 @@ import { ErrorState } from '../ui/ErrorState'
 import { Table, type TableRow } from '../ui/Table'
 import { modulesLive } from '../../lib/chain/config'
 import { copy } from '../../lib/copy'
-import { shortAddress } from '../../lib/format'
-import { phaseWord, windowLeft } from './labels'
+import { phaseWord, targetLabel, windowLeft } from './labels'
 import { useNow } from './useNow'
 
 export type DisputesScreenProps = {
@@ -23,7 +22,6 @@ const COLUMNS = [
 ] as const
 
 function rowOf(item: ChallengeSummary, now: Date): TableRow {
-  const label = /^0x[0-9a-fA-F]{40}$/.test(item.label) ? shortAddress(item.label) : item.label
   return {
     id: item.id,
     cells: {
@@ -32,9 +30,10 @@ function rowOf(item: ChallengeSummary, now: Date): TableRow {
           #{item.id}
         </a>
       ),
-      target: <span className="sf-mono">{label}</span>,
+      target: <span className="sf-mono">{targetLabel(item.label)}</span>,
       phase: phaseWord(item.phase, item.outcome),
-      time: windowLeft(item.phase, item, now) ?? copy.target.none,
+      // The countdown is counted again in the browser, so its text may differ from the server's.
+      time: <span suppressHydrationWarning>{windowLeft(item.phase, item, now) ?? copy.target.none}</span>,
       jury: copy.dispute.juryCount.replace('{commits}', String(item.commits)).replace('{reveals}', String(item.reveals)),
     },
   }

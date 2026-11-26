@@ -149,6 +149,27 @@ function PrimaryAction({ availability, reason, busy, props, linkKnown, onOpen }:
   )
 }
 
+/** The two secondary actions: the challenge, and the bounty that opens with the Vault. */
+function SecondaryActions(props: ActionColumnProps) {
+  return (
+    <>
+      <ChallengeAction
+        targetId={props.targetId}
+        targetType={props.targetType}
+        label={props.label}
+        scan={props.scan}
+        tier={props.tier}
+        activeChallengeId={props.activeChallengeId ?? null}
+      />
+      <Button variant="secondary" className="sf-btn--block" disabled>
+        {copy.target.fundBounty}
+      </Button>
+      {/* The challenge action says it itself, unless a confirmed danger leaves it without a button. */}
+      {!modulesLive && props.tier === 'CONFIRMED_DANGER' && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
+    </>
+  )
+}
+
 /**
  * The actions of the target page. The attest button follows the state of the wallet: it is
  * closed with a reason when the user cannot attest yet, and it opens the attest panel when the
@@ -181,19 +202,7 @@ export function ActionColumn(props: ActionColumnProps) {
         linkKnown={onChain === null || !props.evidenceFailed}
         onOpen={() => setOpen(true)}
       />
-      <ChallengeAction
-        targetId={props.targetId}
-        targetType={props.targetType}
-        label={props.label}
-        scan={props.scan}
-        tier={props.tier}
-        activeChallengeId={props.activeChallengeId ?? null}
-      />
-      <Button variant="secondary" className="sf-btn--block" disabled>
-        {copy.target.fundBounty}
-      </Button>
-      {/* The challenge action says it itself, unless a confirmed danger leaves it without a button. */}
-      {!modulesLive && props.tier === 'CONFIRMED_DANGER' && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
+      <SecondaryActions {...props} />
       <Notes
         quota={limitText(left === null ? copy.target.quotaDefault : copy.target.quotaLeft, left)}
         reason={reason}

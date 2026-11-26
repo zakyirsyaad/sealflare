@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useDisconnect, useReadContract } from 'wagmi'
 import { courtAbi } from '@sealflare/shared/abi'
-import { FLAGS, type FlagName, type TargetType } from '@sealflare/shared/rules'
+import type { TargetType } from '@sealflare/shared/rules'
 import type { ScanReport } from '@sealflare/shared/schemas'
 import { Panel } from '../ui/Panel'
 import { useUserState } from '../../lib/chain/userState'
@@ -10,22 +10,12 @@ import { expectedChainId } from '../../lib/chain/config'
 import { courtAddress } from '../../lib/chain/court'
 import { copy } from '../../lib/copy'
 import { walletGate } from '../attest/AttestPanel'
-import {
-  addFlag,
-  chooseVerdict,
-  flagsOf,
-  missingQuotes,
-  provedFlags,
-  removeFlag,
-  setQuote,
-  shortProofOf,
-  travellingScan,
-  type Choice,
-} from '../attest/choice'
+import { flagsOf } from '../attest/choice'
 import { isWorking } from '../attest/useAttest'
 import { ChallengeReview } from './ChallengeReview'
 import { EvidenceStep, FlagsStep } from './ChallengeSteps'
 import { useChallenge } from './useChallenge'
+import { useChallengeDraft } from './useChallengeDraft'
 
 export type ChallengePanelProps = {
   targetId: string
@@ -60,6 +50,55 @@ function useForfeit(targetId: string) {
   return { bps: typeof read.data === 'number' ? read.data : null, failed: read.isError === true || court === null }
 }
 
+type BodyProps = {
+  step: Step
+  onStep: (step: Step) => void
+  props: Omit<ChallengePanelProps, 'scan'>
+  draft: ReturnType<typeof useChallengeDraft>
+  forfeit: ReturnType<typeof useForfeit>
+  challenge: ReturnType<typeof useChallenge>
+  submit: () => void
+}
+
+/** The step that is shown: the flags, the evidence or the review. */
+function Body({ step, onStep, props, draft, forfeit, challenge, submit }: BodyProps) {
+  if (step === 'flags') {
+    return <FlagsStep targetType={props.targetType} choice={draft.choice} onToggle={draft.toggle} onContinue={() => onStep('evidence')} />
+  }
+  if (step === 'evidence') {
+    return (
+      <EvidenceStep
+        choice={draft.choice}
+        provedFlags={draft.proved}
+        statement={draft.statement}
+        preview={draft.preview}
+        canContinue={draft.canContinue}
+        onQuote={draft.quote}
+        onStatement={draft.setStatement}
+        onBack={() => onStep('flags')}
+        onContinue={() => onStep('review')}
+      />
+    )
+  }
+  return (
+    <ChallengeReview
+      label={props.label}
+      flags={flagsOf(draft.choice)}
+      forfeitBps={forfeit.bps}
+      forfeitFailed={forfeit.failed}
+      state={challenge.state}
+      error={challenge.error}
+      txHash={challenge.txHash}
+      onSubmit={submit}
+      onBack={() => onStep('evidence')}
+      onRetry={() => {
+        challenge.reset()
+        submit()
+      }}
+    />
+  )
+}
+
 /**
  * The challenge panel.
  *
@@ -73,56 +112,16 @@ export function ChallengePanel({ scan: offered, ...props }: ChallengePanelProps)
   const user = useUserState()
   const { mutate: disconnect } = useDisconnect()
   const [step, setStep] = useState<Step>('flags')
-  const [choice, setChoice] = useState<Choice>(() => chooseVerdict('DANGER', scan?.flags ?? 0))
-  const [statement, setStatement] = useState('')
+  const draft = useChallengeDraft(scan, props.targetId)
   const forfeit = useForfeit(props.targetId)
   const challenge = useChallenge({
-    targetId: props.targetId,
     targetType: props.targetType,
+    targetId: props.targetId,
     scan,
     address: 'address' in user ? user.address : null,
   })
-
-  const proved = provedFlags(choice, scan, props.targetId)
-  const complete = missingQuotes(choice, proved).length === 0
-  const preview = complete ? shortProofOf(choice.flags, choice.quotes, travellingScan(choice, scan, props.targetId)) : ''
-  const toggle = (flag: FlagName) =>
-    setChoice(current => ((current.flags & FLAGS[flag]) === 0 ? addFlag(current, flag) : removeFlag(current, flag)))
-  const submit = () => void challenge.submit({ flags: choice.flags, quotes: choice.quotes, statement })
-
-  const body =
-    step === 'flags' ? (
-      <FlagsStep targetType={props.targetType} choice={choice} onToggle={toggle} onContinue={() => setStep('evidence')} />
-    ) : step === 'evidence' ? (
-      <EvidenceStep
-        choice={choice}
-        provedFlags={proved}
-        statement={statement}
-        preview={preview}
-        canContinue={complete && statement.trim() !== ''}
-        onQuote={(flag, quote) => setChoice(current => setQuote(current, flag, quote))}
-        onStatement={setStatement}
-        onBack={() => setStep('flags')}
-        onContinue={() => setStep('review')}
-      />
-    ) : (
-      <ChallengeReview
-        label={props.label}
-        flags={flagsOf(choice)}
-        forfeitBps={forfeit.bps}
-        forfeitFailed={forfeit.failed}
-        state={challenge.state}
-        error={challenge.error}
-        txHash={challenge.txHash}
-        onSubmit={submit}
-        onBack={() => setStep('evidence')}
-        onRetry={() => {
-          challenge.reset()
-          submit()
-        }}
-      />
-    )
-
+  const submit = () =>
+    void challenge.submit({ flags: draft.choice.flags, quotes: draft.choice.quotes, statement: draft.statement })
   return (
     <Panel
       title={TITLE[step]}
@@ -130,7 +129,9 @@ export function ChallengePanel({ scan: offered, ...props }: ChallengePanelProps)
       onClose={props.onClose}
       closeDisabled={isWorking(challenge.state)}
     >
-      {walletGate(user, () => disconnect()) ?? body}
+      {walletGate(user, () => disconnect()) ?? (
+        <Body step={step} onStep={setStep} props={props} draft={draft} forfeit={forfeit} challenge={challenge} submit={submit} />
+      )}
     </Panel>
   )
 }

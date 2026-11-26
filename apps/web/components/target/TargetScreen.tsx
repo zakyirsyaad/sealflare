@@ -40,6 +40,17 @@ function ForeignNotice() {
   )
 }
 
+/** What the tabs of the target page show. */
+function tabsOf(props: TargetScreenProps, detail: TargetDetail) {
+  return {
+    detail,
+    rows: props.attestations,
+    scan: props.scan,
+    evidenceFailed: props.evidenceFailed,
+    challenges: props.challenges,
+  }
+}
+
 /** The target page: the identity, the warnings, the status, the actions and the details. */
 export function TargetScreen(props: TargetScreenProps) {
   const { detail } = props
@@ -81,13 +92,7 @@ export function TargetScreen(props: TargetScreenProps) {
         </div>
       </PendingVoteProvider>
       <section className="sf-frame sf-target__tabs">
-        <TargetTabs
-          detail={detail}
-          rows={props.attestations}
-          scan={props.scan}
-          evidenceFailed={props.evidenceFailed}
-          challenges={props.challenges}
-        />
+        <TargetTabs {...tabsOf(props, detail)} />
       </section>
     </div>
   )

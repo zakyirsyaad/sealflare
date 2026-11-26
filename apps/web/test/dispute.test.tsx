@@ -1,74 +1,19 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { CONSTANTS, FLAGS } from '@sealflare/shared/rules'
-import { evidenceHashOf } from '@sealflare/shared/schemas'
 
-const wagmi = vi.hoisted(() => ({
-  signTypedDataAsync: vi.fn(),
-  writeContractAsync: vi.fn(),
-  reads: { current: {} as Record<string, unknown> },
-  readCalls: [] as { functionName: string; args?: readonly unknown[] }[],
-  receipt: { current: { isSuccess: false, isError: false, error: null as unknown } },
-}))
-vi.mock('wagmi', () => ({
-  useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
-  useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
-  useWaitForTransactionReceipt: () => wagmi.receipt.current,
-  useReadContract: (params: { functionName: string; args?: readonly unknown[] }) => {
-    wagmi.readCalls.push({ functionName: params.functionName, args: params.args })
-    return { data: wagmi.reads.current[params.functionName], isLoading: false, isError: false, refetch: vi.fn() }
-  },
-  useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-  useConnectors: () => [{ uid: '1', id: 'injected', name: 'Browser wallet' }],
-  useDisconnect: () => ({ mutate: vi.fn() }),
-  useSwitchChain: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-}))
-
+vi.mock('wagmi', async () => (await import('./dispute.mocks')).wagmiModule)
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }), usePathname: () => '/app' }))
+vi.mock('../lib/chain/userState', async () => (await import('./dispute.mocks')).userStateModule)
+vi.mock('../lib/chain/config', async () => (await import('./dispute.mocks')).configModule)
+vi.mock('../lib/api/client', async () => (await import('./dispute.mocks')).clientModule())
 
-const state = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
-vi.mock('../lib/chain/userState', () => ({ useUserState: () => state.value }))
-
-const config = vi.hoisted(() => ({ modulesLive: true }))
-vi.mock('../lib/chain/config', () => ({
-  get expectedChainId() {
-    return 56
-  },
-  get modulesLive() {
-    return config.modulesLive
-  },
-  agentIdUrl: 'https://agent-id.example/get',
-}))
-
-const uploadEvidence = vi.hoisted(() => vi.fn())
-vi.mock('../lib/api/client', async () => {
-  const actual = await vi.importActual<typeof import('../lib/api/client')>('../lib/api/client')
-  return { ...actual, api: { uploadEvidence } }
-})
-
-import { ChallengeAction } from '../components/dispute/ChallengeAction'
-import { ChallengePanel } from '../components/dispute/ChallengePanel'
 import { DisputeScreen } from '../components/dispute/DisputeScreen'
 import { DisputesScreen } from '../components/dispute/DisputesScreen'
 import { DisputeTab } from '../components/target/DisputeTab'
 import { copy } from '../lib/copy'
-import {
-  CHALLENGER,
-  COURT,
-  CORE,
-  JUROR_ONE,
-  ME,
-  NOW,
-  address,
-  closedUpheld,
-  detail,
-  iso,
-  scan,
-  summary,
-  targetId,
-  txHash,
-} from './dispute.fixtures'
+import { config, resetDispute, state, wagmi } from './dispute.mocks'
+import { CHALLENGER, COURT, CORE, JUROR_ONE, ME, NOW, closedUpheld, detail, iso, summary, targetId } from './dispute.fixtures'
 
 type ScreenProps = Parameters<typeof DisputeScreen>[0]
 
@@ -80,212 +25,10 @@ function dispute(overrides: Partial<ScreenProps> = {}) {
   return render(<DisputeScreen {...screenProps(overrides)} />)
 }
 
-function panel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = {}) {
-  return render(
-    <ChallengePanel targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} onClose={() => {}} {...overrides} />,
-  )
-}
-
-const unixOf = (date: Date) => BigInt(Math.floor(date.getTime() / 1000))
-
-beforeEach(() => {
-  vi.clearAllMocks()
-  wagmi.readCalls.length = 0
-  config.modulesLive = true
-  process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({
-    chainId: 56,
-    agentId: '0x3000000000000000000000000000000000000003',
-    core: CORE,
-    court: COURT,
-    vault: '0x4000000000000000000000000000000000000004',
-  })
-  state.value = { kind: 'holder', address: ME, isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 5 }
-  wagmi.reads.current = {
-    phaseOf: 1,
-    getChallenge: { commits: 2, reveals: 0, outcome: 0 },
-    nextExpireForfeitBps: 2000,
-    cooldownEndsAt: 0n,
-    pendingPenalties: 0,
-    getTarget: { attestationCount: 5 },
-  }
-  wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
-  wagmi.signTypedDataAsync.mockResolvedValue(`0x${'11'.repeat(65)}`)
-  wagmi.writeContractAsync.mockResolvedValue(txHash)
-  uploadEvidence.mockImplementation(async (body: { reportJson: string }) => ({
-    evidenceURI: 'ipfs://bafycid',
-    evidenceHash: evidenceHashOf(new TextEncoder().encode(body.reportJson)),
-  }))
-})
+beforeEach(resetDispute)
 
 afterEach(() => {
   vi.useRealTimers()
-})
-
-// ---- the challenge panel -------------------------------------------------------------------
-
-test('the panel has three steps: flags, evidence, review', async () => {
-  panel()
-  expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: copy.dispute.action })).toBeInTheDocument()
-  expect(screen.getByRole('group', { name: copy.dispute.flagsTitle })).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: copy.dispute.continue }))
-  expect(screen.getByText(copy.dispute.step[1])).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: copy.dispute.evidenceTitle })).toBeInTheDocument()
-  await userEvent.type(screen.getByLabelText(copy.dispute.statementLabel), 'The owner can mint without a cap.')
-  await userEvent.click(screen.getByRole('button', { name: copy.dispute.continue }))
-  expect(screen.getByText(copy.dispute.step[2])).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: copy.dispute.review })).toBeInTheDocument()
-})
-
-test('the flags of the scan are already ticked, and at least one flag is needed', async () => {
-  panel()
-  const unverified = screen.getByRole('checkbox', { name: 'Unverified source' })
-  expect(unverified).toBeChecked()
-  expect(screen.getByRole('checkbox', { name: 'Hidden mint' })).not.toBeChecked()
-  await userEvent.click(unverified)
-  expect(screen.getByText(copy.dispute.needFlag)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: copy.dispute.continue })).toBeDisabled()
-})
-
-async function toReview(statement = 'The owner can mint without a cap.') {
-  await userEvent.click(screen.getByRole('button', { name: copy.dispute.continue }))
-  await userEvent.type(screen.getByLabelText(copy.dispute.statementLabel), statement)
-  await userEvent.click(screen.getByRole('button', { name: copy.dispute.continue }))
-}
-
-test('the review step names the 0.01 BNB stake and all four endings with the money returned in each', async () => {
-  panel()
-  await toReview()
-  expect(screen.getByText('0.01 BNB, held until the dispute ends')).toBeInTheDocument()
-  expect(screen.getByText('Upheld: your 0.01 BNB comes back, plus half of the pool.')).toBeInTheDocument()
-  expect(screen.getByText('Rejected: no BNB comes back, and you lose 5 XP.')).toBeInTheDocument()
-  expect(screen.getByText('Tie: your 0.01 BNB comes back.')).toBeInTheDocument()
-  expect(screen.getByText('Expired: 0.008 BNB of your 0.01 BNB comes back.')).toBeInTheDocument()
-  expect(screen.getByText(copy.dispute.cooldownNote.replace('{days}', '7'))).toBeInTheDocument()
-  expect(screen.getByText(copy.attest.twoApprovals)).toBeInTheDocument()
-})
-
-test.each([
-  [2000, '20', '0.008'],
-  [5000, '50', '0.005'],
-  [10000, '100', '0'],
-])('the review step states the forfeit share for this target: %s basis points is %s%%', async (bps, percent, back) => {
-  wagmi.reads.current.nextExpireForfeitBps = bps
-  panel()
-  await toReview()
-  expect(
-    screen.getByText(copy.dispute.expireNote.replace('{min}', '3').replace('{percent}', percent)),
-  ).toBeInTheDocument()
-  expect(screen.getByText(`Expired: ${back} BNB of your 0.01 BNB comes back.`)).toBeInTheDocument()
-  expect(wagmi.readCalls.some(call => call.functionName === 'nextExpireForfeitBps' && call.args?.[0] === targetId)).toBe(true)
-})
-
-test('without the forfeit share nothing can be signed', async () => {
-  wagmi.reads.current.nextExpireForfeitBps = undefined
-  panel()
-  await toReview()
-  expect(screen.getByText(copy.dispute.forfeitPending)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: copy.dispute.submit })).toBeDisabled()
-})
-
-test('the stake sent equals CHALLENGE_STAKE exactly', async () => {
-  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
-  panel()
-  await toReview()
-  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submit }))
-  const written = wagmi.writeContractAsync.mock.calls[0]?.[0] as {
-    functionName: string
-    value: bigint
-    address: string
-    chainId: number
-    account: string
-    args: readonly unknown[]
-  }
-  expect(written.functionName).toBe('openChallenge')
-  expect(written.value).toBe(CONSTANTS.CHALLENGE_STAKE)
-  expect(written.address).toBe(COURT)
-  expect(written.chainId).toBe(56)
-  expect(written.account).toBe(ME)
-  expect(written.args[0]).toBe(targetId)
-  expect(written.args[1]).toBe(FLAGS.UNVERIFIED_SOURCE)
-  const sent = uploadEvidence.mock.calls[0]?.[0] as { reportJson: string }
-  expect(written.args[2]).toBe(evidenceHashOf(new TextEncoder().encode(sent.reportJson)))
-  expect(written.args[4]).toBe('ipfs://bafycid')
-  expect(await screen.findByText(copy.common.waitingFinality)).toBeInTheDocument()
-})
-
-// ---- the button on the target page ---------------------------------------------------------
-
-type ActionProps = Parameters<typeof ChallengeAction>[0]
-
-function action(overrides: Partial<ActionProps> = {}) {
-  return render(
-    <ChallengeAction
-      targetId={targetId}
-      targetType="SMART_CONTRACT"
-      label={address}
-      scan={scan()}
-      tier="CAUTION_FLAGGED"
-      activeChallengeId={null}
-      {...overrides}
-    />,
-  )
-}
-
-test('the button opens the panel when nothing stands in the way', async () => {
-  action()
-  const button = screen.getByRole('button', { name: copy.dispute.action })
-  expect(button).toBeEnabled()
-  await userEvent.click(button)
-  expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
-})
-
-test.each([
-  ['an open challenge exists', 'link "View the open challenge"'],
-  ['in cooldown', 'disabled with the end date'],
-  ['confirmed danger', 'button not shown'],
-  ['modules not live', 'disabled with the fixed sentence'],
-])('%s: %s', async (situation) => {
-  vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
-  if (situation === 'an open challenge exists') {
-    action({ activeChallengeId: '12' })
-    expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/12')
-    expect(screen.queryByRole('button', { name: copy.dispute.action })).toBeNull()
-  }
-  if (situation === 'in cooldown') {
-    wagmi.reads.current.cooldownEndsAt = unixOf(new Date('2026-12-04T00:00:00.000Z'))
-    action()
-    expect(screen.getByRole('button', { name: copy.dispute.action })).toBeDisabled()
-    expect(screen.getByText(copy.dispute.cooldownUntil.replace('{time}', '2026-12-04 00:00 UTC'))).toBeInTheDocument()
-    const asked = wagmi.readCalls.find(call => call.functionName === 'cooldownEndsAt')
-    expect(asked?.args).toEqual([ME, targetId])
-  }
-  if (situation === 'confirmed danger') {
-    action({ tier: 'CONFIRMED_DANGER' })
-    expect(screen.queryByRole('button', { name: copy.dispute.action })).toBeNull()
-    expect(screen.queryByRole('link', { name: copy.dispute.viewOpen })).toBeNull()
-  }
-  if (situation === 'modules not live') {
-    config.modulesLive = false
-    action()
-    expect(screen.getByRole('button', { name: copy.dispute.action })).toBeDisabled()
-    expect(screen.getByText(copy.common.modulesNotLive)).toBeInTheDocument()
-  }
-})
-
-test('an elapsed cooldown leaves the button open', () => {
-  vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
-  wagmi.reads.current.cooldownEndsAt = unixOf(new Date('2026-11-30T00:00:00.000Z'))
-  action()
-  expect(screen.getByRole('button', { name: copy.dispute.action })).toBeEnabled()
-})
-
-test('without a wallet the panel asks for one instead of reading a cooldown', async () => {
-  state.value = { kind: 'no-wallet', isLoading: false, isError: false, recheck: () => {} }
-  action()
-  expect(wagmi.readCalls.some(call => call.functionName === 'cooldownEndsAt' && call.args?.[0] !== undefined)).toBe(false)
-  await userEvent.click(screen.getByRole('button', { name: copy.dispute.action }))
-  expect(screen.getByText(copy.wallet.connectTitle)).toBeInTheDocument()
 })
 
 // ---- the dispute page ----------------------------------------------------------------------
@@ -604,37 +347,10 @@ test('the phase strip is named as the phases, and the endings table keeps its ow
   expect(screen.queryByRole('list', { name: copy.dispute.outcomesTitle })).toBeNull()
 })
 
-test('the open challenge is read from the Court, so a challenge opened a moment ago turns the button into a link', () => {
-  wagmi.reads.current.activeChallengeOf = 13n
-  action({ activeChallengeId: null })
-  expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/13')
-  expect(screen.queryByRole('button', { name: copy.dispute.action })).toBeNull()
-  const asked = wagmi.readCalls.find(call => call.functionName === 'activeChallengeOf')
-  expect(asked?.args).toEqual([targetId])
-})
-
-test('a challenge that the Court no longer holds open leaves the button open, whatever the page was loaded with', () => {
-  wagmi.reads.current.activeChallengeOf = 0n
-  action({ activeChallengeId: '12' })
-  expect(screen.getByRole('button', { name: copy.dispute.action })).toBeEnabled()
-  expect(screen.queryByRole('link', { name: copy.dispute.viewOpen })).toBeNull()
-})
-
-test('until the Court answers, the page says which challenge is open', () => {
-  wagmi.reads.current.activeChallengeOf = undefined
-  action({ activeChallengeId: '12' })
-  expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/12')
-})
-
-test('the panel stays open while the transaction it sent is being confirmed, even once the Court reports the challenge', async () => {
-  wagmi.reads.current.activeChallengeOf = 0n
-  const view = action()
-  await userEvent.click(screen.getByRole('button', { name: copy.dispute.action }))
-  expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
-  wagmi.reads.current.activeChallengeOf = 13n
-  view.rerender(
-    <ChallengeAction targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} tier="CAUTION_FLAGGED" activeChallengeId={null} />,
-  )
-  expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/13')
-  expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
+test('a skill is named by its repository on the dispute page, and an address is shortened', () => {
+  const skill = dispute({ detail: detail({ label: 'sealflare/guard' }) })
+  expect(screen.getByRole('heading', { level: 1 }).parentElement).toHaveTextContent('sealflare/guard')
+  skill.unmount()
+  dispute()
+  expect(screen.getByRole('heading', { level: 1 }).parentElement).toHaveTextContent('0x60b9…022f')
 })

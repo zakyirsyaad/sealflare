@@ -5,49 +5,17 @@ import { UserRejectedRequestError } from 'viem'
 import { CONSTANTS, FLAGS, FLAG_NAMES, SKILL_FLAGS_MASK } from '@sealflare/shared/rules'
 import { EvidenceReport, evidenceHashOf, parseShortProof } from '@sealflare/shared/schemas'
 
-const wagmi = vi.hoisted(() => ({
-  signTypedDataAsync: vi.fn(),
-  writeContractAsync: vi.fn(),
-  reads: { current: {} as Record<string, unknown> },
-  receipt: { current: { isSuccess: false, isError: false, error: null as unknown } },
-}))
-vi.mock('wagmi', () => ({
-  useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
-  useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
-  useWaitForTransactionReceipt: () => wagmi.receipt.current,
-  useReadContract: (params: { functionName: string }) => ({
-    data: wagmi.reads.current[params.functionName],
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-  useConnectors: () => [{ uid: '1', id: 'injected', name: 'Browser wallet' }],
-  useDisconnect: () => ({ mutate: vi.fn() }),
-  useSwitchChain: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-}))
+vi.mock('wagmi', async () => (await import('./dispute.mocks')).wagmiModule)
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }), usePathname: () => '/app' }))
-
-const state = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
-vi.mock('../lib/chain/userState', () => ({ useUserState: () => state.value }))
-vi.mock('../lib/chain/config', () => ({
-  get expectedChainId() {
-    return 56
-  },
-  modulesLive: true,
-  agentIdUrl: 'https://agent-id.example/get',
-}))
-
-const uploadEvidence = vi.hoisted(() => vi.fn())
-vi.mock('../lib/api/client', async () => {
-  const actual = await vi.importActual<typeof import('../lib/api/client')>('../lib/api/client')
-  return { ...actual, api: { uploadEvidence } }
-})
+vi.mock('../lib/chain/userState', async () => (await import('./dispute.mocks')).userStateModule)
+vi.mock('../lib/chain/config', async () => (await import('./dispute.mocks')).configModule)
+vi.mock('../lib/api/client', async () => (await import('./dispute.mocks')).clientModule())
 
 import { ChallengePanel } from '../components/dispute/ChallengePanel'
 import { ReplyPanel } from '../components/dispute/ReplyPanel'
 import { copy } from '../lib/copy'
-import { COURT, CORE, ME, address, scan, targetId, txHash } from './dispute.fixtures'
+import { resetDispute, state, uploadEvidence, wagmi } from './dispute.mocks'
+import { CORE, COURT, ME, address, scan, targetId, txHash } from './dispute.fixtures'
 import { bundle, skillId, skillScan } from './attest.fixtures'
 
 const rejection = () => new UserRejectedRequestError(new Error('The user rejected the request.'))
@@ -71,22 +39,8 @@ async function toReview(statement = 'The owner can mint without a cap.') {
 const submit = () => userEvent.click(screen.getByRole('button', { name: copy.dispute.submit }))
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({
-    chainId: 56,
-    agentId: '0x3000000000000000000000000000000000000003',
-    core: CORE,
-    court: COURT,
-  })
-  state.value = { kind: 'holder', address: ME, isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 5 }
+  resetDispute()
   wagmi.reads.current = { nextExpireForfeitBps: 2000 }
-  wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
-  wagmi.signTypedDataAsync.mockResolvedValue(`0x${'11'.repeat(65)}`)
-  wagmi.writeContractAsync.mockResolvedValue(txHash)
-  uploadEvidence.mockImplementation(async (body: { reportJson: string }) => ({
-    evidenceURI: 'ipfs://bafycid',
-    evidenceHash: evidenceHashOf(new TextEncoder().encode(body.reportJson)),
-  }))
 })
 
 // ---- opening a challenge -------------------------------------------------------------------

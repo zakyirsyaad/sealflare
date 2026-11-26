@@ -5,7 +5,6 @@ import { EmptyState } from '../ui/EmptyState'
 import { ErrorState } from '../ui/ErrorState'
 import { modulesLive } from '../../lib/chain/config'
 import { copy } from '../../lib/copy'
-import { shortAddress } from '../../lib/format'
 import type { PublisherRole } from '../../server/disputes'
 import { EvidenceBox } from './EvidenceBox'
 import { JuryBox, JurorsTable } from './JuryBox'
@@ -14,7 +13,7 @@ import { PayoutTable } from './PayoutTable'
 import { PhaseStrip } from './PhaseStrip'
 import { ReplyBox } from './ReplyBox'
 import { SettleActions } from './SettleActions'
-import { outcomeWord, phaseWord, verdictText } from './labels'
+import { outcomeWord, phaseWord, targetLabel, verdictText } from './labels'
 import { useChallengeChain } from './useChallengeChain'
 import { useNow } from './useNow'
 
@@ -52,6 +51,23 @@ function Verdict({ detail, outcome }: { detail: ChallengeDetail; outcome: Challe
   )
 }
 
+/** The title row: the number, the target, the phase and the way back to the target. */
+function Header({ detail, phase, outcome }: { detail: ChallengeDetail; phase: ChallengeDetail['phase'] | 'NONE'; outcome: ChallengeDetail['outcome'] }) {
+  return (
+    <div className="sf-identity">
+      <h1 className="sf-identity__label">
+        {copy.dispute.disputeTitle} <span className="sf-mono">#{detail.id}</span>
+      </h1>
+      <Chip className="sf-mono">{targetLabel(detail.label)}</Chip>
+      <Chip>{phaseWord(phase, outcome)}</Chip>
+      <span className="sf-identity__spacer" />
+      <a className="sf-btn sf-btn--ghost" href={`/app/t/${detail.targetId}`}>
+        {copy.dispute.viewTarget}
+      </a>
+    </div>
+  )
+}
+
 /** The dispute, read from the index and followed on the chain. The phase is the Court's. */
 function DisputeBody({ detail, publisherRole, publisher }: DisputeScreenProps & { detail: ChallengeDetail }) {
   const now = useNow()
@@ -59,23 +75,10 @@ function DisputeBody({ detail, publisherRole, publisher }: DisputeScreenProps & 
   // The index only fills the gap until the chain answers. It never decides what the page offers.
   const phase = chain.phase ?? detail.phase
   const outcome = chain.outcome ?? detail.outcome
-  const commits = chain.commits ?? detail.commits
-  const reveals = chain.reveals ?? detail.reveals
   const closed = phase === 'CLOSED'
-  const open = !closed && phase !== 'NONE'
   return (
     <div className="sf-target sf-dispute">
-      <div className="sf-identity">
-        <h1 className="sf-identity__label">
-          {copy.dispute.disputeTitle} <span className="sf-mono">#{detail.id}</span>
-        </h1>
-        <Chip className="sf-mono">{shortAddress(detail.label)}</Chip>
-        <Chip>{phaseWord(phase, outcome)}</Chip>
-        <span className="sf-identity__spacer" />
-        <a className="sf-btn sf-btn--ghost" href={`/app/t/${detail.targetId}`}>
-          {copy.dispute.viewTarget}
-        </a>
-      </div>
+      <Header detail={detail} phase={phase} outcome={outcome} />
       <PhaseStrip phase={chain.phase} commitEndsAt={detail.commitEndsAt} revealEndsAt={detail.revealEndsAt} now={now} />
       <div className="sf-target__body">
         <div className="sf-dispute__main">
@@ -97,12 +100,12 @@ function DisputeBody({ detail, publisherRole, publisher }: DisputeScreenProps & 
               now={now}
             />
           </div>
-          {open && <Outcomes />}
+          {!closed && phase !== 'NONE' && <Outcomes />}
           {closed && <Verdict detail={detail} outcome={outcome} />}
           {phase !== 'COMMIT' && phase !== 'NONE' && <JurorsTable jurors={detail.jurors} />}
         </div>
         <div className="sf-dispute__side">
-          <JuryBox phase={phase} commits={commits} reveals={reveals} />
+          <JuryBox phase={phase} commits={chain.commits ?? detail.commits} reveals={chain.reveals ?? detail.reveals} />
           <SettleActions
             challengeId={detail.id}
             targetId={detail.targetId}

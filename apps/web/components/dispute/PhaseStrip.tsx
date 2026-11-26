@@ -48,7 +48,9 @@ export function PhaseStrip(props: PhaseStripProps) {
               <span aria-hidden="true">{cell.number} </span>
               <span>{cell.name}</span>
             </span>
-            {status !== null && <span className="sf-phase__status sf-mono">{status}</span>}
+            {status !== null && <span className="sf-phase__status sf-mono" suppressHydrationWarning>
+                {status}
+              </span>}
             <span className="sf-phase__help">{cell.help}</span>
           </li>
         )

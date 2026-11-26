@@ -26,7 +26,11 @@ function Frame({ aside, children }: { aside?: string; children: React.ReactNode 
     <section className="sf-frame sf-evidence" aria-label={copy.dispute.reply}>
       <div className="sf-rows__row sf-evidence__head">
         <span className="sf-mono">{copy.dispute.reply}</span>
-        {aside !== undefined && <span className="sf-mono">{aside}</span>}
+        {aside !== undefined && (
+          <span className="sf-mono" suppressHydrationWarning>
+            {aside}
+          </span>
+        )}
       </div>
       <div className="sf-stack sf-evidence__body">{children}</div>
     </section>

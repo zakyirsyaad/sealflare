@@ -2,9 +2,10 @@
 import { CONSTANTS, XP, type FlagName } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { flagLabel, formatBnb, shortAddress } from '../../lib/format'
+import { flagLabel, formatBnb } from '../../lib/format'
 import { AttestButton } from '../attest/AttestButton'
 import { isWorking, type AttestState } from '../attest/useAttest'
+import { targetLabel } from './labels'
 
 export type ChallengeReviewProps = {
   /** The name of the target, as the page shows it. */
@@ -23,11 +24,6 @@ export type ChallengeReviewProps = {
 
 const BPS = 10_000
 
-/** An address is shortened, a repository name is not. */
-function labelOf(label: string): string {
-  return /^0x[0-9a-fA-F]{40}$/.test(label) ? shortAddress(label) : label
-}
-
 function Row({ name, value }: { name: string; value: React.ReactNode }) {
   return (
     <div className="sf-rows__row">
@@ -43,7 +39,7 @@ function OnChain({ label, flags }: Pick<ChallengeReviewProps, 'label' | 'flags'>
     <section className="sf-stack">
       <span className="sf-mono">{copy.attest.onChain}</span>
       <div className="sf-rows">
-        <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{labelOf(label)}</span>} />
+        <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{targetLabel(label)}</span>} />
         <Row name={copy.dispute.rowFlags} value={<span className="sf-mono">{flags.map(flagLabel).join(', ')}</span>} />
         <Row name={copy.attest.rowEvidence} value={copy.attest.rowEvidenceValue} />
         <Row
