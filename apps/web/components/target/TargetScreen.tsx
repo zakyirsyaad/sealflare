@@ -11,6 +11,8 @@ import { TargetTabs } from './TargetTabs'
 import { copy } from '../../lib/copy'
 import { scanCurrentVersionHref } from '../../lib/currentVersion'
 import { shortAddress } from '../../lib/format'
+import type { Binding } from '../../lib/publish/binding'
+import type { PublisherBond } from '../../lib/publish/bond'
 
 export type TargetScreenProps = {
   targetId: string
@@ -27,6 +29,10 @@ export type TargetScreenProps = {
   /** The scanned bundle is another bundle than the one the registry sealed. */
   bundleChanged: boolean
   failed: boolean
+  /** How the target was bound, read from the event log of Core. */
+  binding?: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond?: PublisherBond | null
 }
 
 /** The link names another bundle than the one the registry rated. */
@@ -78,7 +84,14 @@ export function TargetScreen(props: TargetScreenProps) {
         </div>
       </PendingVoteProvider>
       <section className="sf-frame sf-target__tabs">
-        <TargetTabs detail={detail} rows={props.attestations} scan={props.scan} evidenceFailed={props.evidenceFailed} />
+        <TargetTabs
+          detail={detail}
+          rows={props.attestations}
+          scan={props.scan}
+          evidenceFailed={props.evidenceFailed}
+          binding={props.binding ?? null}
+          publisherBond={props.publisherBond ?? null}
+        />
       </section>
     </div>
   )

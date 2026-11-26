@@ -11,6 +11,15 @@ export const InternalEnv = z.object({
     .min(32, 'the inter-service key needs at least 32 characters')
     .refine((value) => new Set(value).size >= 16, 'the inter-service key needs at least 16 different characters'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3040),
+  /**
+   * The probe set and the model the sandbox runs now.
+   *
+   * A clean sandbox result expires when either of them changes, so the service has to know which
+   * version is current. Both are optional: without them no clean result is shown, because a
+   * result of an unknown version cannot be called current.
+   */
+  SANDBOX_PROBE_SET_VERSION: z.string().min(1).optional(),
+  SANDBOX_MODEL_ID: z.string().min(1).optional(),
 })
 
 export type InternalEnv = z.infer<typeof InternalEnv>

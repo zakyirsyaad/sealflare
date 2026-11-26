@@ -96,6 +96,14 @@ describe('the tier of a target, read from a node that lags behind the head', () 
     expect(block).toBe(HEAD - 3n)
   }, TIMEOUT)
 
+  test('the local chain reads the head, because one node never lags behind itself', async () => {
+    const { tierMarginFor } = await import('../server/chain')
+
+    expect(tierMarginFor(31337)).toBe(0n)
+    expect(tierMarginFor(56)).toBe(3n)
+    expect(tierMarginFor(97)).toBe(3n)
+  })
+
   test('a tier at a fixed block is read at that block', async () => {
     const tier = await (await reader()).tierAt(TARGET, 100n)
 

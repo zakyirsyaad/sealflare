@@ -266,6 +266,27 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-tab__empty { margin: 0; color: var(--muted-foreground); }
 .sf-tab__facts { display: flex; flex-direction: column; gap: var(--space-2); }
 .sf-tab__facts p { margin: 0; }
+
+/* Publish: one question, then the steps that prove it */
+.sf-publish { display: flex; flex-direction: column; gap: var(--space-10); }
+.sf-publish__heading { margin: 0; font-size: clamp(38px, 5vw, 60px); line-height: 1; font-weight: 600; letter-spacing: -.045em; }
+.sf-publish__steps { display: flex; flex-direction: column; border-bottom: var(--hairline) solid var(--border); }
+.sf-seg { display: inline-flex; border: var(--hairline) solid var(--border); }
+.sf-seg button { height: var(--control-lg); padding: 0 18px; border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.sf-seg button[aria-pressed="true"] { background: var(--foreground); color: var(--background); font-weight: 600; }
+.sf-step { display: flex; gap: var(--space-5); padding: var(--space-8) 0; border-top: var(--hairline) solid var(--border); }
+.sf-step__n { flex-shrink: 0; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: var(--hairline) solid var(--border); font-family: var(--font-mono); font-size: 13px; color: var(--muted-foreground); }
+.sf-step--done .sf-step__n { background: var(--positive); border-color: var(--positive); color: var(--background); }
+.sf-step--now .sf-step__n { border-color: var(--foreground); color: var(--foreground); }
+.sf-step__body { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.sf-step__title { margin: 0; font-size: 20px; line-height: 26px; font-weight: 600; }
+.sf-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.sf-field__label { font-family: var(--font-mono); font-size: 12px; line-height: 18px; color: var(--muted-foreground); }
+.sf-share { border: var(--hairline) solid var(--border); background: var(--card); }
+.sf-share__head { display: flex; gap: var(--space-3); flex-wrap: wrap; justify-content: space-between; padding: 12px 16px; border-bottom: var(--hairline) solid var(--border); }
+.sf-share__body { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 16px; }
+.sf-share__link { flex: 1 1 260px; min-width: 0; font-size: 13px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.sf-share__snippet { margin: 0; padding: 12px 16px; border: var(--hairline) solid var(--border); background: var(--card); font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .sf-version { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; padding: var(--space-4) var(--space-5); border: var(--hairline) solid var(--warning); background: color-mix(in oklab, var(--warning) 9%, transparent); }
 .sf-version p { margin: 0; }
 .sf-target--missing, .sf-target--error { display: flex; flex-direction: column; gap: var(--space-4); align-items: flex-start; }
