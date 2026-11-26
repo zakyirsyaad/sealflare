@@ -5,7 +5,7 @@ import type { TimedEvent } from '../decode'
 import { proofText } from '../proof'
 import { CHALLENGE_OUTCOMES, PUBLISHER_ROLES, SCORE_REASONS, TARGET_TYPE_NAMES, VERDICT_NAMES, nameOf } from '../enums'
 import { missingRow, requireGuardian, requireTarget } from './rows'
-import { fillBountySlot } from './vault'
+import { fillBountySlot, refreshTargetBond } from './vault'
 
 /** The address the contract stores as a bytes32. */
 function addressOf(target: Hex): Address {
@@ -169,6 +169,8 @@ async function applyPublisherBound(tx: Db, event: TimedEvent & { name: 'Publishe
     lower(event.args.publisher),
     role,
   ])
+  // The bond that counts is the bond of the publisher of record, and the publisher just changed.
+  await refreshTargetBond(tx, event.args.targetId)
 }
 
 async function applyDelegatecallFlagged(

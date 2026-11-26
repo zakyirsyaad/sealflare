@@ -48,9 +48,10 @@ export async function applyVaultEvent(tx: Db, event: TimedVaultEvent): Promise<v
  *
  * The rule is the one of `Vault.activeBond`: only the publisher's own bond counts, and it stops
  * counting the moment a withdrawal is asked for, although it stays slashable until it is
- * finalized. The `bonds` table keeps the bond itself; the target keeps what counts.
+ * finalized. The `bonds` table keeps the bond itself; the target keeps what counts. The Core event
+ * that binds a new publisher refreshes it too, because the bond that counts follows the publisher.
  */
-async function refreshTargetBond(tx: Db, targetId: Hex): Promise<void> {
+export async function refreshTargetBond(tx: Db, targetId: Hex): Promise<void> {
   await tx.query(
     `UPDATE targets SET bond = COALESCE(
        (SELECT CASE WHEN b.withdrawable_at IS NULL THEN b.amount ELSE 0 END
