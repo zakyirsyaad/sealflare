@@ -75,7 +75,12 @@ function pathOf(path: string): string {
  * indexed data without a meta block is refused: an answer that does not name the block it was
  * read at cannot be told apart from an answer that was read a moment ago.
  */
-async function request<T>(path: string, init: RequestInit, needsMeta: boolean): Promise<InternalAnswer<T>> {
+async function request<T>(
+  path: string,
+  init: RequestInit,
+  needsMeta: boolean,
+  timeoutMs: number = TIMEOUT_MS,
+): Promise<InternalAnswer<T>> {
   const { INTERNAL_URL, INTERNAL_KEY } = parseInternalEnv(process.env)
   const headers = new Headers(init.headers)
   headers.set('authorization', `Bearer ${INTERNAL_KEY}`)
@@ -84,7 +89,7 @@ async function request<T>(path: string, init: RequestInit, needsMeta: boolean): 
     response = await fetch(`${INTERNAL_URL.replace(/\/$/, '')}${pathOf(path)}`, {
       ...init,
       headers,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch {
     throw new InternalServiceError('INTERNAL', 'The internal service could not be reached.')
@@ -138,8 +143,15 @@ export async function internalRead<T = unknown>(path: string): Promise<InternalA
  *
  * A write of the nonce or of the rate limit is not read from indexed data, so it has no block to
  * name and no meta block is required.
+ *
+ * A write that does more than a row of the database, like the queue of a sandbox run, is given a
+ * longer deadline of its own.
  */
-export async function internalPost<T = unknown>(path: string, body: unknown): Promise<InternalAnswer<T>> {
+export async function internalPost<T = unknown>(
+  path: string,
+  body: unknown,
+  options: { timeoutMs?: number } = {},
+): Promise<InternalAnswer<T>> {
   return request<T>(
     path,
     {
@@ -148,5 +160,6 @@ export async function internalPost<T = unknown>(path: string, body: unknown): Pr
       body: JSON.stringify(body),
     },
     false,
+    options.timeoutMs ?? TIMEOUT_MS,
   )
 }

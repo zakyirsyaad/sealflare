@@ -8,6 +8,15 @@ import { getChainReader } from '../../../../server/chain'
 /** A signed request may not live longer than ten minutes, and never further ahead than that. */
 const MAX_EXPIRY_SECONDS = 600n
 
+/**
+ * How long this route waits for the internal service.
+ *
+ * The internal service reads the chain, fetches the skill of the bundle and then queues the run.
+ * The call waits longer than the other ones, so a run that was queued reaches the client with its
+ * id. A run that is queued but never announced would hold a slot of the quota for good.
+ */
+const INTERNAL_TIMEOUT_MS = 30_000
+
 /** The status every refusal of the internal service is answered with. */
 const STATUS: Record<string, number> = {
   BAD_REQUEST: 400,
@@ -42,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
   if (holder !== null) return holder
 
   try {
-    const answer = await internalPost<unknown>('/sandbox/runs', run)
+    const answer = await internalPost<unknown>('/sandbox/runs', run, { timeoutMs: INTERNAL_TIMEOUT_MS })
     return ok(answer.data)
   } catch (error) {
     if (error instanceof InternalServiceError) {

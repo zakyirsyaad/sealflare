@@ -135,11 +135,12 @@ export interface FakeWorker extends WorkerClient {
  * The fake worker.
  *
  * `refuse` makes the worker refuse a run with a reason, `unreachable` makes it fail to answer, and
- * `answer` gives the status of a run.
+ * `answer` gives the status of a run. `healthy` is the answer of the health check of the worker.
  */
 export function fakeWorker(options: {
   refuse?: 'DAILY_LIMIT' | 'BUSY'
   unreachable?: boolean
+  healthy?: boolean
   answer?: (runId: string) => WorkerRunStatus | null
 } = {}): FakeWorker {
   const started: string[] = []
@@ -154,6 +155,10 @@ export function fakeWorker(options: {
       if (options.unreachable === true) throw new WorkerUnavailable('The sandbox worker could not be reached.')
       if (options.answer !== undefined) return options.answer(runId)
       return null
+    },
+    health: async () => {
+      if (options.unreachable === true) throw new WorkerUnavailable('The sandbox worker could not be reached.')
+      return options.healthy ?? true
     },
     async start(request: WorkerRunRequest): Promise<void> {
       started.push(request.runId)
@@ -180,6 +185,7 @@ export function sandboxFixture(
     worker?: FakeWorker
     probeSetVersion?: string
     modelId?: string
+    token?: string | null
   } = {},
 ): SandboxFixture {
   const worker = options.worker ?? fakeWorker()
@@ -190,7 +196,10 @@ export function sandboxFixture(
       sql: db,
       now: () => NOW,
       chain: fakeChain({ ...(options.signer === undefined ? {} : { signer: options.signer }), ...(options.holder === undefined ? {} : { holder: options.holder }) }),
-      skills: { fetcher },
+      skills: {
+        fetcher,
+        ...(options.token === null ? {} : { token: options.token ?? 'g'.repeat(32) }),
+      },
       probeSetVersion: options.probeSetVersion ?? 'v1',
       modelId: options.modelId ?? 'model-1',
     },

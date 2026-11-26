@@ -9,7 +9,16 @@ import type { ChainReader } from '../sandbox/chain'
 import { isPaused } from '../sandbox/pause'
 import { quotaLeft, resetsAt, takeQuota } from '../sandbox/quota'
 import { enqueue, newRunId, readRun, type SandboxDeps } from '../sandbox/queue'
-import { BundleMismatch, NotASkill, readReference, readSkillMd, SkillTooLarge, SkillUnavailable, type SkillDeps } from '../sandbox/skills'
+import {
+  BundleMismatch,
+  NoGitHubToken,
+  NotASkill,
+  readReference,
+  readSkillMd,
+  SkillTooLarge,
+  SkillUnavailable,
+  type SkillDeps,
+} from '../sandbox/skills'
 import { readJson } from './json'
 import { commitNonce, releaseNonce, reserveNonce, type NonceRefusal } from './nonce'
 
@@ -84,7 +93,13 @@ async function createRun(c: Context, deps: SandboxRouteDeps): Promise<Response> 
   return c.json(ok(answer.data))
 }
 
-/** Does everything a request for a run needs, and answers with the run or with a refusal. */
+/**
+ * Does everything a request for a run needs, and answers with the run or with a refusal.
+ *
+ * The cheap checks come first: the pause, the signature, the Agent ID and the nonce. The ones that
+ * cost the most, a slot of the quota and the fetch of the skill, come last. The Agent ID is a read
+ * of the chain, so it runs before the nonce, which only reads the database.
+ */
 async function prepare(
   deps: SandboxRouteDeps,
   request: z.infer<typeof SandboxRunCreateRequest>,
@@ -113,13 +128,7 @@ async function prepare(
     return queued
   }
 
-  const skill = await readSkill(deps, request.src, request.bundleHash)
-  if ('code' in skill) {
-    await releaseNonce(deps.sql, { address: request.address, nonce: request.nonce })
-    return skill
-  }
-
-  const queued = await queueRun(deps, request, skill.skillMd)
+  const queued = await queueRun(deps, request)
   if ('code' in queued) {
     await releaseNonce(deps.sql, { address: request.address, nonce: request.nonce })
     return queued
@@ -187,6 +196,13 @@ async function readSkill(
     if (error instanceof NotASkill) {
       return { code: 'BAD_REQUEST', message: 'The sandbox only runs on a skill.', status: 400 }
     }
+    if (error instanceof NoGitHubToken) {
+      return {
+        code: 'BAD_REQUEST',
+        message: 'The sandbox cannot read a skill because no GitHub token is configured.',
+        status: 400,
+      }
+    }
     if (error instanceof BundleMismatch) {
       return {
         code: 'BAD_REQUEST',
@@ -204,16 +220,25 @@ async function readSkill(
   }
 }
 
+/** A refusal that is thrown inside the transaction, so everything in it is rolled back. */
+class RefusedError extends Error {
+  constructor(readonly refusal: Refusal) {
+    super(refusal.message)
+    this.name = 'RefusedError'
+  }
+}
+
 /**
  * Puts a run in the queue.
  *
- * The slot of the quota and the row of the run are written in one transaction, so a run is never
- * in the queue without a slot and a slot is never taken without a run.
+ * The slot of the quota is taken first, so an address that has no runs left never triggers a
+ * fetch of the repository. The skill is read after that, and the row of the run is written last.
+ * Everything happens in one transaction: a run that cannot be read leaves no row and no slot
+ * behind, because the transaction is rolled back.
  */
 async function queueRun(
   deps: SandboxRouteDeps,
   request: z.infer<typeof SandboxRunCreateRequest>,
-  skillMd: string,
 ): Promise<{ data: CreatedRun } | Refusal> {
   const queue: SandboxDeps = {
     sql: deps.sql,
@@ -222,23 +247,30 @@ async function queueRun(
     modelId: deps.modelId,
   }
   try {
-    return await deps.sql.transaction(async (tx) => {
+    return await deps.sql.transaction(async tx => {
       const scoped: SandboxDeps = { ...queue, sql: tx }
       const quota = await takeQuota(scoped, request.address)
       if (!quota.taken) {
-        return { code: 'QUOTA_EXHAUSTED', message: 'The daily sandbox runs are used up.', status: 429 }
+        throw new RefusedError({
+          code: 'QUOTA_EXHAUSTED',
+          message: 'The daily sandbox runs are used up.',
+          status: 429,
+        })
       }
+      const skill = await readSkill(deps, request.src, request.bundleHash)
+      if ('code' in skill) throw new RefusedError(skill)
       const runId = newRunId()
       const position = await enqueue(scoped, {
         runId,
         address: request.address,
         bundleHash: request.bundleHash,
         src: request.src,
-        skillMd,
+        skillMd: skill.skillMd,
       })
       return { data: { runId, status: 'queued', queuePosition: position, quotaLeft: quota.left } }
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof RefusedError) return error.refusal
     return { code: 'INTERNAL', message: 'The run could not be queued.', status: 500 }
   }
 }

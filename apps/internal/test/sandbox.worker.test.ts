@@ -58,7 +58,16 @@ async function used(db: { query: <T>(text: string, params?: readonly unknown[]) 
 
 /** The queue of a test. */
 function poller(db: Parameters<typeof pollOnce>[0]['sql'], worker: PollerDeps['worker']): PollerDeps {
-  return { sql: db, now: () => NOW, probeSetVersion: 'v1', modelId: 'model-1', worker }
+  return pollerAt(db, worker, () => NOW)
+}
+
+/** The queue of a test, with a clock the test moves itself. */
+function pollerAt(
+  db: Parameters<typeof pollOnce>[0]['sql'],
+  worker: PollerDeps['worker'],
+  now: () => Date,
+): PollerDeps {
+  return { sql: db, now, probeSetVersion: 'v1', modelId: 'model-1', worker }
 }
 
 test('quota comes back for an infrastructure failure and not for a skill_content failure', async () => {
@@ -119,7 +128,9 @@ test('a violation seen in a poll is stored before the run ends, and survives the
   expect(cached[0]?.status).toBe('SANDBOX_FUZZ_FAILED')
 
   const gone = fakeWorker({ unreachable: true })
-  await pollOnce(poller(db, gone))
+  // A worker that is restarting answers nothing for a moment, so a few failed reads in a row are
+  // allowed before the run is failed.
+  for (let attempt = 0; attempt < 3; attempt += 1) await pollOnce(poller(db, gone))
 
   const afterFailure = await runs(db)
   expect(afterFailure[0]?.status).toBe('incomplete')
@@ -209,5 +220,128 @@ test('the worker is asked for the run of the queue, one run at a time', async ()
   const running = await db.query<{ run_id: string }>("SELECT * FROM sandbox_runs WHERE status = 'running'")
   expect(running).toHaveLength(1)
   expect(running[0]?.run_id).not.toBe(secondRun.runId)
+  await close()
+})
+
+test('a worker that is busy and not healthy ends the run and gives the quota back', async () => {
+  const { db, close } = await createTestDb()
+  const worker = fakeWorker({ refuse: 'BUSY', healthy: false })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  expect(await used(db)).toBe(1)
+
+  await pollOnce(poller(db, worker))
+
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+  expect(failed[0]?.failure_cause).toBe('infrastructure')
+  expect(await used(db)).toBe(0)
+  await close()
+})
+
+test('a worker that is busy and healthy leaves the run in the queue', async () => {
+  const { db, close } = await createTestDb()
+  const worker = fakeWorker({ refuse: 'BUSY', healthy: true })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  const queued = await runs(db)
+  expect(queued[0]?.status).toBe('queued')
+  expect(await used(db)).toBe(1)
+  await close()
+})
+
+test('a run that waits longer than it may wait ends and gives the quota back', async () => {
+  const { db, close } = await createTestDb()
+  const worker = fakeWorker({ refuse: 'BUSY', healthy: true })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  const later = new Date(NOW.getTime() + 31 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => later))
+
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+  expect(failed[0]?.failure_cause).toBe('infrastructure')
+  expect(await used(db)).toBe(0)
+  await close()
+})
+
+test('a run that takes longer than it may take ends and gives the quota back', async () => {
+  const { db, close } = await createTestDb()
+  const worker = fakeWorker({ answer: (runId) => ({ runId, state: 'running', probes: [] }) })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  const later = new Date(NOW.getTime() + 21 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => later))
+
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+  expect(failed[0]?.failure_cause).toBe('infrastructure')
+  expect(await used(db)).toBe(0)
+  await close()
+})
+
+test('a run that is done without a transcript is followed until the transcript shows up', async () => {
+  const { db, close } = await createTestDb()
+  let reads = 0
+  const worker = fakeWorker({
+    answer: (runId) => {
+      reads += 1
+      const result = cleanResult(BUNDLE_HASH)
+      return reads <= 1
+        ? { runId, state: 'done', probes: result.probes, result }
+        : { runId, state: 'done', probes: result.probes, result, evidenceURI: 'ipfs://bafkreitest' }
+    },
+  })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  // The run is done, but the worker uploads the transcript after the run itself.
+  await pollOnce(poller(db, worker))
+  const waiting = await db.query<{ status: string; evidence_uri: string | null }>(
+    'SELECT status, evidence_uri FROM sandbox_runs',
+  )
+  expect(waiting[0]?.status).toBe('done')
+  expect(waiting[0]?.evidence_uri).toBeNull()
+
+  await pollOnce(poller(db, worker))
+  const finished = await db.query<{ status: string; evidence_uri: string | null }>(
+    'SELECT status, evidence_uri FROM sandbox_runs',
+  )
+  expect(finished[0]?.status).toBe('done')
+  expect(finished[0]?.evidence_uri).toBe('ipfs://bafkreitest')
+  await close()
+})
+
+test('a run that ends badly is never shown as a clean run', async () => {
+  const { db, close } = await createTestDb()
+  const clean = cleanResult(BUNDLE_HASH)
+  const worker = fakeWorker({
+    answer: (runId) => ({ runId, state: 'running', probes: clean.probes }),
+  })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+  await pollOnce(poller(db, worker))
+
+  const gone = fakeWorker({ unreachable: true })
+  for (let attempt = 0; attempt < 3; attempt += 1) await pollOnce(poller(db, gone))
+
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+  expect(failed[0]?.result).toBeNull()
+
+  const cached = await db.query<{ status: string }>('SELECT status FROM sandbox_cache')
+  expect(cached).toHaveLength(0)
   await close()
 })

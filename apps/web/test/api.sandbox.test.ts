@@ -83,7 +83,11 @@ describe('the sandbox API', () => {
     expect(body.success).toBe(true)
     expect(body.data.runId).toBe(RUN_ID)
     expect(body.data.quotaLeft).toBe(4)
-    expect(internalPost).toHaveBeenCalledWith('/sandbox/runs', expect.objectContaining({ bundleHash: BUNDLE }))
+    expect(internalPost).toHaveBeenCalledWith(
+      '/sandbox/runs',
+      expect.objectContaining({ bundleHash: BUNDLE }),
+      expect.objectContaining({ timeoutMs: expect.any(Number) }),
+    )
   })
 
   test('a signature by another address is refused and nothing is queued', async () => {

@@ -1,6 +1,6 @@
 -- The sandbox queue needs to remember what it was asked to run, what it has already seen, and
 -- which day the quota was taken on. Every change is additive, so a database that already ran 001
--- to 003 keeps its rows.
+-- to 004 keeps its rows.
 
 -- The order in which the runs entered the queue. The queue reads the oldest run first, and a
 -- number is a better order than a timestamp, because two runs can share a timestamp.
@@ -29,6 +29,14 @@ ALTER TABLE sandbox_runs ADD COLUMN skill_md text;
 -- asked. Such a run is finished by the queue without a run of the worker and without a slot of
 -- the quota.
 ALTER TABLE sandbox_runs ADD COLUMN from_cache boolean NOT NULL DEFAULT false;
+
+-- How many reads of the worker failed in a row. A worker that is restarting answers nothing for
+-- a moment, so a run is only failed after a few reads in a row failed.
+ALTER TABLE sandbox_runs ADD COLUMN read_failures integer NOT NULL DEFAULT 0;
+
+-- The moment the run was seen as done without a transcript. The worker uploads the transcript
+-- after the run itself, so the run is followed until the transcript shows up.
+ALTER TABLE sandbox_runs ADD COLUMN evidence_since timestamptz;
 
 -- The sandbox is paused for the rest of the day when the worker reached its daily cost limit. The
 -- day is the key, so the pause ends by itself when the day ends.

@@ -6,6 +6,10 @@ import { z } from 'zod'
  * They are optional, because the service also runs the parts that do not sandbox. The sandbox is
  * only started when every one of them is there, so a service without them never answers a
  * sandbox request with a run it cannot do.
+ *
+ * The probe set version and the model have no default. The worker refuses a run whose probe set
+ * version is not its own, so a guessed value would turn every run into a failure. The operator
+ * has to name both, and the service reads them from the same worker the run goes to.
  */
 export const SandboxEnv = z.object({
   CHAIN_ID: z.coerce.number().int().min(1).max(999999).default(56),
@@ -16,8 +20,8 @@ export const SandboxEnv = z.object({
   RPC_URLS: z.string().min(1).optional(),
   WORKER_URL: z.string().url().optional(),
   WORKER_BEARER_KEY: z.string().min(32, 'the worker key needs at least 32 characters').optional(),
-  SANDBOX_PROBE_SET_VERSION: z.string().min(1).max(40).default('v1'),
-  SANDBOX_MODEL_ID: z.string().min(1).max(80).default('sealflare-sim-v1'),
+  SANDBOX_PROBE_SET_VERSION: z.string().min(1).max(40).optional(),
+  SANDBOX_MODEL_ID: z.string().min(1).max(80).optional(),
   GITHUB_TOKEN: z.string().min(1).optional(),
 })
 
@@ -62,7 +66,9 @@ export function sandboxConfig(env: SandboxEnv): SandboxConfig | null {
     env.CORE_ADDRESS === undefined ||
     env.RPC_URLS === undefined ||
     env.WORKER_URL === undefined ||
-    env.WORKER_BEARER_KEY === undefined
+    env.WORKER_BEARER_KEY === undefined ||
+    env.SANDBOX_PROBE_SET_VERSION === undefined ||
+    env.SANDBOX_MODEL_ID === undefined
   ) {
     return null
   }

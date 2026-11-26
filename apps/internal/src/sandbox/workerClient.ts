@@ -12,6 +12,11 @@ export interface WorkerClient {
   start(request: WorkerRunRequest): Promise<void>
   /** The status of a run, or null when the worker does not know it. */
   status(runId: string): Promise<WorkerRunStatus | null>
+  /**
+   * Whether the worker is healthy. It is false when the worker answered its health check with a
+   * failure, and the call throws when the worker could not be reached at all.
+   */
+  health(): Promise<boolean>
 }
 
 /** The two reasons the worker refuses a run. */
@@ -28,6 +33,20 @@ export class WorkerRefused extends Error {
     super(`The sandbox worker refused the run: ${reason}.`)
     this.name = 'WorkerRefused'
     this.reason = reason
+  }
+}
+
+/**
+ * The worker refused the request itself.
+ *
+ * The worker answers 400 when the request does not fit it, for example when the probe set
+ * version is not the one it runs. Such a run never starts and never starts again, so it is not
+ * an infrastructure failure of the worker but a mistake in the request.
+ */
+export class WorkerRejected extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorkerRejected'
   }
 }
 
@@ -88,6 +107,10 @@ export function createWorkerClient(options: WorkerClientOptions): WorkerClient {
         const reason = parsed.success && !parsed.data.accepted ? parsed.data.reason : 'BUSY'
         throw new WorkerRefused(reason)
       }
+      if (response.status === 400 || response.status === 413) {
+        // The worker refused the request itself. It never starts, and it never starts again.
+        throw new WorkerRejected('The sandbox worker did not accept the request.')
+      }
       if (response.status !== 202) {
         throw new WorkerUnavailable('The sandbox worker did not accept the run.')
       }
@@ -102,6 +125,13 @@ export function createWorkerClient(options: WorkerClientOptions): WorkerClient {
       const parsed = WorkerRunStatus.safeParse(await response.json().catch(() => null))
       if (!parsed.success) throw new WorkerUnavailable('The sandbox worker sent a status that could not be read.')
       return parsed.data
+    },
+
+    async health(): Promise<boolean> {
+      const response = await call('/healthz', { method: 'GET' })
+      // The worker answers 503 when it faulted, and 200 while it is healthy. Every other answer
+      // is an answer that cannot be read, so the worker is not trusted to be healthy.
+      return response.status === 200
     },
   }
 }

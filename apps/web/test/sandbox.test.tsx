@@ -59,7 +59,14 @@ test('a running run shows the probe in progress', () => {
     run: { runId: 'run_1', status: 'running', currentProbe: 'indirect_injection' },
   }
   render(<SandboxSection targetType="AI_SKILL_BUNDLE" src={SRC} bundleHash={BUNDLE} sandbox={null} />)
-  expect(screen.getByText('Running the Indirect injection probe.')).toBeVisible()
+  expect(screen.getByText('Running probe: indirect injection.')).toBeVisible()
+})
+
+test('a running run with no probe yet says the probe set is running', () => {
+  stubQuota()
+  hook.value = { ...hook.value, run: { runId: 'run_1', status: 'running' } }
+  render(<SandboxSection targetType="AI_SKILL_BUNDLE" src={SRC} bundleHash={BUNDLE} sandbox={null} />)
+  expect(screen.getByText('Running the probe set.')).toBeVisible()
 })
 
 test('a clean result says no violation was observed, with the model and the date', () => {

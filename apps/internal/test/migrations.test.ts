@@ -28,7 +28,7 @@ const EXPECTED_TABLES = [
   'sandbox_pause',
 ]
 
-const MIGRATIONS = ['001_indexer.sql', '002_operational.sql', '003_guards.sql', '004_sandbox.sql']
+const MIGRATIONS = ['001_indexer.sql', '002_operational.sql', '003_guards.sql', '005_sandbox.sql']
 
 const MIGRATIONS_DIR = new URL('../migrations/', import.meta.url)
 

@@ -46,6 +46,7 @@ const app = createApp({
           }),
           skills: {
             fetcher: createGitHubFetcher(config.githubToken === undefined ? {} : { token: config.githubToken }),
+            ...(config.githubToken === undefined ? {} : { token: config.githubToken }),
           },
           probeSetVersion: config.probeSetVersion,
           modelId: config.modelId,
