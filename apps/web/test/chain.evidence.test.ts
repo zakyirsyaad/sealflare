@@ -71,10 +71,10 @@ beforeAll(async () => {
     let body = ''
     request.on('data', chunk => (body += chunk))
     request.on('end', () => {
-      // A real node answers a batch of calls in one request, and the client sends several log
-      // ranges at the same time. The fake node speaks that protocol too.
       const parsed = JSON.parse(body) as (Request & { id: number }) | Array<Request & { id: number }>
       const calls = Array.isArray(parsed) ? parsed : [parsed]
+      // The transport of the chain puts the calls that come at the same time into one request, so
+      // the node answers a list of calls as well as a single one.
       const answers = calls.map(call => {
         try {
           return { jsonrpc: '2.0', id: call.id, result: answer(call) }

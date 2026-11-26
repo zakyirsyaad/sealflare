@@ -1,6 +1,5 @@
 import 'server-only'
-import { createPublicClient, fallback, hexToString, http, type Address, type Hex } from 'viem'
-import { getBlockNumber } from 'viem/actions'
+import { createPublicClient, fallback, hexToString, http, type Address, type Hex, type PublicClient } from 'viem'
 import { bsc, bscTestnet, foundry } from 'viem/chains'
 import { z } from 'zod'
 import { coreAbi, vaultAbi } from '@sealflare/shared/abi'
@@ -49,16 +48,26 @@ export type BondState = { amount: bigint; withdrawalAvailableAt: number; lockedB
 
 /** Everything the target page needs from the chain. */
 export interface ChainReader {
-  /** Null when the registry has never seen this target. */
-  target(targetId: Hex): Promise<CoreTarget | null>
-  /** The tier always comes from Core, never from a cached row. */
-  tier(targetId: Hex): Promise<TrustTier>
-  attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
+  /** Null when the registry has never seen this target. Read at the block when one is given. */
+  target(targetId: Hex, blockNumber?: bigint): Promise<CoreTarget | null>
+  /**
+   * The tier always comes from Core, never from a cached row. A page passes the block it reads
+   * everything at, so it shows one moment; without one the tier is read a few blocks below the head.
+   */
+  tier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier>
+  /** The tier at a fixed block, so every tier of one answer comes from the same moment. */
+  tierAt(targetId: Hex, blockNumber: bigint): Promise<TrustTier>
+  /** The block the tiers are read at, a few blocks below the head and shared by one answer. */
+  tierBlockNumber(): Promise<bigint>
+  /** Whether the address holds an Agent ID, which every signed request needs. */
+  isAgentIdHolder(address: Address): Promise<boolean>
+  attestations(targetId: Hex, count: number, blockNumber?: bigint): Promise<CoreAttestation[]>
   /** The evidence of the event log, read from the block the target was created in. Rejects when the log cannot be read in full. */
   evidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]>
   /** The evidence of the event log above a block, for the votes that are not final yet. */
   evidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]>
-  bond(targetId: Hex, publisher: Address): Promise<BondState | null>
+  /** The bond of the publisher. A page passes the block it reads everything at. */
+  bond(targetId: Hex, publisher: Address, blockNumber?: bigint): Promise<BondState | null>
   /**
    * How the target was bound, read from the event log. Null when the log does not say. The
    * publisher the target reports now is passed in, so a cached binding of a publisher that has
@@ -103,26 +112,43 @@ function chainFor(chainId: number) {
 }
 
 /**
- * The client is built once per chain and set of RPC urls. A page view reads the target, its tier
- * and every attestation, and a new client for each of those reads would open a new connection
- * for every call.
+ * How many calls the transport puts into one request, and how long it waits for the others.
+ *
+ * Some providers refuse a large batch: the keyless endpoint that viem uses for BSC takes 25 calls
+ * and a free plan of another provider takes 3. viem copies the error of a refused batch to every
+ * call, and the fallback sends the same batch to the next url, so one such provider in the list
+ * would fail every read. The batch stays small, and the many reads of a list go out as Multicall3
+ * calls instead (see `getRpcClient`).
  */
-let cachedClient: { key: string; client: ReturnType<typeof createPublicClient> } | null = null
+const BATCHING = { batch: { batchSize: 10, wait: 10 } } as const
 
-export function getRpcClient(): ReturnType<typeof createPublicClient> {
+/**
+ * The client of the chain.
+ *
+ * The client is built once and kept, because the batching of the transport only works inside one
+ * client. A client of its own for every read would send every read in a request of its own. The
+ * reads of one block that come at the same time are grouped into Multicall3 calls, so the tiers of
+ * a list are a few `eth_call`s and not one call each. viem reads the address of Multicall3 from the
+ * chain, and a chain without one, such as the local Anvil, is read with plain `eth_call`s.
+ */
+let cached: { key: string; client: PublicClient } | null = null
+
+export function getRpcClient(): PublicClient {
   const chain = chainFor(expectedChainId)
   const urls = rpcUrls()
   const key = `${chain.id}|${urls.join(',')}`
-  if (cachedClient !== null && cachedClient.key === key) return cachedClient.client
-  const transport = urls.length === 0 ? http() : fallback(urls.map(url => http(url)))
-  const client = createPublicClient({ chain, transport })
-  cachedClient = { key, client }
-  return client
+  if (cached !== null && cached.key === key) return cached.client
+  const transport = urls.length === 0 ? http(undefined, BATCHING) : fallback(urls.map(url => http(url, BATCHING)))
+  // The client is kept, so its cache is kept too. A block number that is cached would be read as
+  // the head of the chain for the rest of the life of the process.
+  const built = createPublicClient({ chain, transport, cacheTime: 0, batch: { multicall: true } })
+  cached = { key, client: built }
+  return built
 }
 
 /** The read of a test starts with no client, as a fresh process would. */
 export function clearRpcClient(): void {
-  cachedClient = null
+  cached = null
 }
 
 function coreAddress(): Address {
@@ -148,12 +174,13 @@ function targetExists(target: CoreTarget): boolean {
   return target.createdAt > 0
 }
 
-async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
+async function readTarget(targetId: Hex, blockNumber?: bigint): Promise<CoreTarget | null> {
   const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getTarget',
     args: [targetId],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
   })
   const target = {
     targetType: targetTypeOf(raw.targetType),
@@ -175,12 +202,13 @@ async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
   return targetExists(target) ? target : null
 }
 
-async function readAttestation(targetId: Hex, index: number): Promise<CoreAttestation> {
+async function readAttestation(targetId: Hex, index: number, blockNumber?: bigint): Promise<CoreAttestation> {
   const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getAttestation',
     args: [targetId, index],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
   })
   return {
     guardian: raw.guardian,
@@ -195,11 +223,11 @@ async function readAttestation(targetId: Hex, index: number): Promise<CoreAttest
   }
 }
 
-async function readAttestations(targetId: Hex, count: number): Promise<CoreAttestation[]> {
+async function readAttestations(targetId: Hex, count: number, blockNumber?: bigint): Promise<CoreAttestation[]> {
   const rows: CoreAttestation[] = []
   for (let start = 0; start < count; start += READ_BATCH) {
     const indexes = Array.from({ length: Math.min(READ_BATCH, count - start) }, (_, offset) => start + offset)
-    rows.push(...(await Promise.all(indexes.map(index => readAttestation(targetId, index)))))
+    rows.push(...(await Promise.all(indexes.map(index => readAttestation(targetId, index, blockNumber)))))
   }
   return rows
 }
@@ -257,8 +285,8 @@ const CONFIRMATIONS = 12n
  * stays one row.
  */
 async function readEvidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]> {
-  // The head is read without the cache of the client: the confirmed block below depends on it.
-  const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
+  // The client keeps no block number (cacheTime 0): the confirmed block below depends on the head.
+  const head = await getRpcClient().getBlockNumber()
   const key = targetId.toLowerCase()
   const cached = evidenceCache.get(key)
   const fromBlock = cached === undefined ? await createdBlock(targetId, createdAt, head) : cached.block + 1n
@@ -306,7 +334,7 @@ function checkedRows(key: string, rows: readonly EvidenceRow[], count: number): 
  * service, and only the joined set has to cover every attestation of the target.
  */
 async function readEvidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]> {
-  const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
+  const head = await getRpcClient().getBlockNumber()
   if (fromBlock > head) return []
   const event = eventItem<AttestedEvent>('Attested')
   const logs = await collectLogs(
@@ -334,7 +362,7 @@ export function completeEvidence(rows: readonly EvidenceRow[], count: number): E
   throw new Error(`The event log of the target is not complete: the attestations ${missing.join(', ')} are missing.`)
 }
 
-async function readBond(targetId: Hex, publisher: Address): Promise<BondState | null> {
+async function readBond(targetId: Hex, publisher: Address, blockNumber?: bigint): Promise<BondState | null> {
   const vault = vaultAddress()
   if (vault === null) return null
   try {
@@ -343,6 +371,7 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
       abi: vaultAbi,
       functionName: 'bondOf',
       args: [targetId, publisher],
+      ...(blockNumber === undefined ? {} : { blockNumber }),
     })
     return {
       amount: raw.amount,
@@ -384,7 +413,7 @@ async function readBinding(targetId: Hex, createdAt: number, current: CurrentPub
     bindings.delete(key)
   }
   try {
-    const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
+    const head = await getRpcClient().getBlockNumber()
     const from = await createdBlock(targetId, createdAt, head)
     if (from > head) return null
     const event = eventItem<PublisherBoundEvent>('PublisherBound')
@@ -409,18 +438,65 @@ async function readBinding(targetId: Hex, createdAt: number, current: CurrentPub
   }
 }
 
+/**
+ * The tier of a target, read from Core. The block is optional: without it the tier is read a few
+ * blocks below the head, and with it the tier is read at the moment the answer names.
+ */
+async function readTier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier> {
+  const value = await getRpcClient().readContract({
+    address: coreAddress(),
+    abi: coreAbi,
+    functionName: 'tierOf',
+    args: [targetId],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
+  })
+  return pick(TRUST_TIERS, value, 'trust tier')
+}
+
+/**
+ * How many blocks below the head the tiers are read.
+ *
+ * The head of one node is not the head of the next one. A node that is a few blocks behind
+ * cannot answer for a block it does not have, and a tier of the exact head is not worth an answer
+ * that fails. Three blocks are enough for a node that lags a little.
+ *
+ * The local chain is the exception. It is one node that mines a block for every transaction, so it
+ * never lags behind itself, and three blocks there are three transactions: after the seed, the
+ * target of the last two would not exist yet at that block.
+ */
+const LOCAL_CHAIN_ID = 31337
+
+export function tierMarginFor(chainId: number): bigint {
+  return chainId === LOCAL_CHAIN_ID ? 0n : 3n
+}
+
+/**
+ * The block the tiers are read at.
+ *
+ * Every tier of one answer comes from this block, so the tiers of a list cannot disagree about
+ * how old they are.
+ */
+async function tierBlockNumber(): Promise<bigint> {
+  const head = await getRpcClient().getBlockNumber()
+  const margin = tierMarginFor(expectedChainId)
+  return head > margin ? head - margin : 0n
+}
+
 /** The reader used by the target page. Every call goes out over a public RPC. */
 export function getChainReader(): ChainReader {
   return {
     target: readTarget,
-    tier: async targetId => {
+    tier: async (targetId, blockNumber) => readTier(targetId, blockNumber ?? (await tierBlockNumber())),
+    tierAt: (targetId, blockNumber) => readTier(targetId, blockNumber),
+    tierBlockNumber,
+    isAgentIdHolder: async address => {
       const value = await getRpcClient().readContract({
         address: coreAddress(),
         abi: coreAbi,
-        functionName: 'tierOf',
-        args: [targetId],
+        functionName: 'isAgentIdHolder',
+        args: [address],
       })
-      return pick(TRUST_TIERS, value, 'trust tier')
+      return value
     },
     attestations: readAttestations,
     evidence: readEvidence,

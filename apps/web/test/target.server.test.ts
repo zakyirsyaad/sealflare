@@ -62,6 +62,9 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
   return {
     target: async () => coreTarget(),
     tier: async () => 'UNRATED',
+    tierAt: async () => 'UNRATED',
+    tierBlockNumber: async () => 1n,
+    isAgentIdHolder: async () => true,
     attestations: async () => [attestation(), attestation({ verdict: 'DANGER', weight: 3, flags: FLAGS.HIDDEN_MINT, safeOrdinal: 0 })],
     evidence: async () => [
       { index: 0, shortProof: 'source verified', evidenceURI: 'https://example.org/1', txHash: `0x${'33'.repeat(32)}` },
@@ -121,6 +124,32 @@ function skillReport(contentHash: `0x${string}`) {
 function skillTarget(report: ReturnType<typeof skillReport>, overrides: Partial<CoreTarget> = {}) {
   return coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: report.targetId as `0x${string}`, ...overrides })
 }
+
+test('the target, its votes and its tier are read at one block, so a page shows one moment', async () => {
+  const target = vi.fn(async () => coreTarget())
+  const tier = vi.fn(async () => 'UNRATED' as const)
+  const attestations = vi.fn(async () => [attestation()])
+  const bond = vi.fn(async () => ({ amount: 0n, withdrawalAvailableAt: 0, lockedByChallengeId: 0n }))
+  const publisher = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' as const
+  reader.current = fakeReader({
+    tierBlockNumber: async () => 77n,
+    target: vi.fn(async () => coreTarget({ publisher, publisherRole: 'VERIFIED_PUBLISHER' })),
+    tier,
+    attestations,
+    bond,
+  })
+
+  await loadTarget(targetId, null)
+
+  expect(tier).toHaveBeenCalledWith(targetId, 77n)
+  expect(attestations).toHaveBeenCalledWith(targetId, 2, 77n)
+  // A bond posted or withdrawn in the last blocks must not sit next to votes from before it.
+  expect(bond).toHaveBeenCalledWith(targetId, publisher, 77n)
+
+  reader.current = fakeReader({ tierBlockNumber: async () => 77n, target, tier, attestations })
+  await loadTarget(targetId, null)
+  expect(target).toHaveBeenCalledWith(targetId, 77n)
+})
 
 test('the tier comes from Core even when the row of the target disagrees', async () => {
   reader.current = fakeReader({ tier: async () => 'UNRATED' })

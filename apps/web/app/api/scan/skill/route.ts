@@ -3,6 +3,8 @@ import { ScanError, ScanSkillRequest } from '@sealflare/shared/schemas'
 import { fail, failUnexpected, ok } from '../../../../server/respond'
 import { getScanEnvironment } from '../../../../server/scanner'
 import { putScan } from '../../../../server/scanStore'
+import { takeRateLimit } from '../../../../server/rate'
+import { callerOf } from '../../../../server/caller'
 
 const STATUS: Record<string, number> = {
   INPUT_NOT_RECOGNIZED: 400,
@@ -30,6 +32,12 @@ export async function POST(request: Request) {
   if (reference.kind !== 'skill') return fail('INPUT_NOT_RECOGNIZED', 'That is not a repository link.', 400)
   const path = parsed.data.path ?? reference.path
   try {
+    // A scan is counted before it runs, so a caller that scans too often is stopped before the
+    // scanner is paid for it.
+    const limit = await takeRateLimit('scan', callerOf(request))
+    if (!limit.allowed) {
+      return fail('RATE_LIMITED', 'Too many scans from this network.', 429, { retryAfterSeconds: limit.retryAfterSeconds })
+    }
     const { scanner, repo } = getScanEnvironment()
     const report = await scanner.scanSkill(
       {
