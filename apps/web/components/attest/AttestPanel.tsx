@@ -68,11 +68,12 @@ function walletGate(user: UserState, disconnect: () => void): React.ReactNode {
 }
 
 /** Tells the page about the vote as soon as the receipt is good, so it shows before the indexer has it. */
-function useRegisterVote(attest: Attestation, verdict: Verdict | null) {
+function useRegisterVote(attest: Attestation) {
   const { register } = usePendingVote()
+  const { state, txHash, verdict } = attest
   useEffect(() => {
-    if (attest.state === 'done' && attest.txHash !== null && verdict !== null) register(verdict, attest.txHash)
-  }, [attest.state, attest.txHash, verdict, register])
+    if (state === 'done' && txHash !== null && verdict !== null) register(verdict, txHash)
+  }, [state, txHash, verdict, register])
 }
 
 type Pane = {
@@ -125,7 +126,7 @@ export function AttestPanel(props: AttestPanelProps) {
     scan: props.scan,
     address: 'address' in user ? user.address : null,
   })
-  useRegisterVote(attest, choice.verdict)
+  useRegisterVote(attest)
 
   const submit = () => {
     if (choice.verdict === null) return

@@ -4,7 +4,7 @@ import { useSignTypedData, useWaitForTransactionReceipt, useWriteContract } from
 import { toHex, type Address, type Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
 import { API_EIP712, EvidenceReport, evidenceHashOf, parseShortProof, type ScanReport } from '@sealflare/shared/schemas'
-import { isValidFlags, type TargetType, type TrustTier, type Verdict } from '@sealflare/shared/rules'
+import { isValidFlags, targetIdOfContract, targetIdOfSkill, type TargetType, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import { ApiError, api } from '../../lib/api/client'
 import { addresses } from '../../lib/chain/addresses'
 import { expectedChainId } from '../../lib/chain/config'
@@ -67,13 +67,17 @@ function freshNonce(): string {
  * The word the registry takes.
  *
  * A contract is named by its address, a skill by the canonical hash of its bundle. The id of a
- * target is the hash of that word, so the id is never the word itself.
+ * target is the hash of that word, so the id is never the word itself. The vote is permanent, so
+ * a word that does not hash to the id of this page is refused before anything is signed.
  */
 function wordOf(target: AttestTarget): Hex | null {
   const word = target.targetWord
   if (word === null) return null
   const fits = target.targetType === 'SMART_CONTRACT' ? isContractWord(word) : isBytes32(word)
-  return fits ? (word as Hex) : null
+  if (!fits) return null
+  const id =
+    target.targetType === 'SMART_CONTRACT' ? targetIdOfContract(`0x${word.slice(26)}`) : targetIdOfSkill(word as Hex)
+  return id.toLowerCase() === target.targetId.toLowerCase() ? (word as Hex) : null
 }
 
 /**
@@ -330,6 +334,8 @@ export function useAttest(target: AttestTarget) {
   const [state, setState] = useState<AttestState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<Hex | null>(null)
+  // The verdict that was sent, because the choice on the screen may change after the vote.
+  const [verdict, setVerdict] = useState<Verdict | null>(null)
   const fail = useCallback((message: string) => {
     setState('failed')
     setError(message)
@@ -339,6 +345,7 @@ export function useAttest(target: AttestTarget) {
 
   const submit = async (input: AttestInput) => {
     setError(null)
+    setVerdict(input.verdict)
     const outcome = await attempt(target, input, {
       sign: signTypedDataAsync,
       write: writeContractAsync,
@@ -353,7 +360,8 @@ export function useAttest(target: AttestTarget) {
     setState('idle')
     setError(null)
     setTxHash(null)
+    setVerdict(null)
   }, [])
 
-  return { state, error, txHash, submit, reset }
+  return { state, error, txHash, verdict, submit, reset }
 }

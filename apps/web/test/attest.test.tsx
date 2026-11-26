@@ -199,6 +199,15 @@ test('a target whose word is unknown asks for no signature', async () => {
   expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
 })
 
+test('a word that does not hash to the id of the target asks for no signature', async () => {
+  panel({ targetWord: `0x${'0'.repeat(24)}${'11'.repeat(20)}` })
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByText(copy.attest.targetUnknown)).toBeInTheDocument()
+  expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
 test('a drifted contract asks for no signature even when the panel is open', async () => {
   panel({ tier: 'STALE_CODEHASH_DRIFT' })
   await toReview('Safe')
@@ -345,11 +354,11 @@ test('a scanner flag that will not travel with the report waits for a quote of t
   expect(sent.reportJson).not.toContain('the contract is not verified on the explorer')
 })
 
-test('a report that cannot be built asks for no signature', async () => {
+test('a target id that is not a bytes32 asks for no signature', async () => {
   panel({ targetId: '0x1234' })
   await toReview('Safe')
   await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
-  expect(await screen.findByText(copy.attest.reportInvalid)).toBeInTheDocument()
+  expect(await screen.findByText(copy.attest.targetUnknown)).toBeInTheDocument()
   expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
   expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
 })

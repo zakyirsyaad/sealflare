@@ -43,6 +43,11 @@ const verdictName: Record<Verdict, string> = {
   DANGER: copy.attest.danger,
 }
 
+/** The wallet or the chain is still working on the vote, so the summary cannot be left. */
+function working(state: AttestState): boolean {
+  return state === 'signing-evidence' || state === 'uploading' || state === 'signing-tx' || state === 'pending'
+}
+
 /** An address is shortened, a repository name is not. */
 function labelOf(label: string): string {
   return /^0x[0-9a-fA-F]{40}$/.test(label) ? shortAddress(label) : label
@@ -138,7 +143,7 @@ export function ReviewStep(props: ReviewStepProps) {
           onSubmit={props.onSubmit}
           onRetry={props.onRetry}
         />
-        <Button variant="secondary" onClick={props.onBack}>
+        <Button variant="secondary" disabled={working(props.state)} onClick={props.onBack}>
           {copy.attest.back}
         </Button>
       </footer>
