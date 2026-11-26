@@ -49,7 +49,7 @@ function doneStatus(runId: string, cause?: 'infrastructure' | 'skill_content'): 
 async function runs(db: { query: <T>(text: string, params?: readonly unknown[]) => Promise<T[]> }): Promise<
   { run_id: string; status: string; failure_cause: string | null; result: unknown }[]
 > {
-  return db.query('SELECT run_id, status, failure_cause, result FROM sandbox_runs ORDER BY created_at')
+  return db.query('SELECT run_id, status, failure_cause, result FROM sandbox_runs ORDER BY seq')
 }
 
 /** The quota of the address, read from the database. */
@@ -150,6 +150,11 @@ test('a violation seen in a poll is stored before the run ends, and survives the
   const result = afterFailure[0]?.result as SandboxResult
   expect(result.status).toBe('SANDBOX_FUZZ_FAILED')
   expect(result.probes[0]?.runs[0]?.violations[0]?.rule).toBe('no-transfer')
+
+  // The run ended with a verdict about the skill, so it is not a failure of our infrastructure
+  // and the slot of the quota does not come back.
+  expect(afterFailure[0]?.failure_cause).toBeNull()
+  expect(await used(db)).toBe(1)
 
   const cacheAfterFailure = await db.query<{ status: string }>('SELECT status FROM sandbox_cache')
   expect(cacheAfterFailure[0]?.status).toBe('SANDBOX_FUZZ_FAILED')
@@ -286,7 +291,7 @@ test('a run that waits longer than it may wait ends and gives the quota back', a
   await close()
 })
 
-test('a run that takes longer than it may take ends and gives the quota back', async () => {
+test('a run that takes longer than it may take ends, and its slot comes back when the run really ends', async () => {
   const { db, close } = await createTestDb()
   const worker = fakeWorker({ answer: (runId) => ({ runId, state: 'running', probes: [] }) })
   const { app } = sandboxFixture(db, { worker })
@@ -300,6 +305,14 @@ test('a run that takes longer than it may take ends and gives the quota back', a
   const failed = await runs(db)
   expect(failed[0]?.status).toBe('incomplete')
   expect(failed[0]?.failure_cause).toBe('infrastructure')
+  // The worker may still be going with the run, so the slot is not given back yet. A run that
+  // ends with a verdict about the skill keeps its slot, so the slot can only come back when the
+  // run ends without one.
+  expect(await used(db)).toBe(1)
+
+  const muchLater = new Date(NOW.getTime() + 42 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => muchLater))
+
   expect(await used(db)).toBe(0)
   await close()
 })
@@ -351,12 +364,14 @@ test('a run that failed its deadline is still read, and a violation at the end r
   await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
   await pollOnce(poller(db, worker))
 
-  // The run stops moving, so it fails its deadline and gives the quota back.
+  // The run stops moving, so it fails its deadline. Its slot is not given back yet, because the
+  // worker may still be going with it.
   const later = new Date(NOW.getTime() + 21 * 60_000)
   await pollOnce(pollerAt(db, worker, () => later))
   const failed = await runs(db)
   expect(failed[0]?.status).toBe('incomplete')
-  expect(await used(db)).toBe(0)
+  expect(failed[0]?.failure_cause).toBe('infrastructure')
+  expect(await used(db)).toBe(1)
 
   // The worker is still going with it, so it is read again. A violation it finds now is kept.
   await pollOnce(pollerAt(db, worker, () => later))
@@ -365,6 +380,11 @@ test('a run that failed its deadline is still read, and a violation at the end r
   const result = ended[0]?.result as SandboxResult
   expect(result.status).toBe('SANDBOX_FUZZ_FAILED')
   expect(result.probes[0]?.runs[0]?.violations[0]?.rule).toBe('no-transfer')
+
+  // The run ended with a verdict about the skill, so it is not a failure of our infrastructure
+  // any more and its slot does not come back.
+  expect(ended[0]?.failure_cause).toBeNull()
+  expect(await used(db)).toBe(1)
 
   const cached = await db.query<{ status: string }>('SELECT status FROM sandbox_cache')
   expect(cached).toHaveLength(1)
@@ -377,18 +397,23 @@ test('the quota of a failed run comes back only once', async () => {
   const worker = fakeWorker({ unreachable: true })
   const { app } = sandboxFixture(db, { worker })
 
-  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  // Two slots of the same address, so a second refund of the first run would show: the count
+  // would go below one instead of staying at one.
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH, nonce: '1' }))
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH, nonce: '2' }))
+  expect(await used(db)).toBe(2)
+
   await pollOnce(poller(db, worker))
   for (let attempt = 0; attempt < 3; attempt += 1) await pollOnce(poller(db, worker))
 
   const failed = await runs(db)
   expect(failed[0]?.status).toBe('incomplete')
-  expect(await used(db)).toBe(0)
+  expect(await used(db)).toBe(1)
 
   // The run is read again and again, but the slot of the quota comes back only once.
   await pollOnce(poller(db, worker))
   await pollOnce(poller(db, worker))
-  expect(await used(db)).toBe(0)
+  expect(await used(db)).toBe(1)
   await close()
 })
 
@@ -469,6 +494,11 @@ test('a run that ends badly is never shown as a clean run', async () => {
   const failed = await runs(db)
   expect(failed[0]?.status).toBe('incomplete')
   expect(failed[0]?.result).toBeNull()
+
+  // The run ended without a verdict, so it failed for a reason of ours and the slot of the quota
+  // comes back.
+  expect(failed[0]?.failure_cause).toBe('infrastructure')
+  expect(await used(db)).toBe(0)
 
   const cached = await db.query<{ status: string }>('SELECT status FROM sandbox_cache')
   expect(cached).toHaveLength(0)

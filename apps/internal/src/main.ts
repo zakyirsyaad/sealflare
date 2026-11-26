@@ -6,6 +6,7 @@ import { parseEnv, sandboxConfig } from './env'
 import { createChainReader } from './sandbox/chain'
 import { runQueue, type PollerDeps } from './sandbox/poller'
 import { createWorkerClient } from './sandbox/workerClient'
+import { waitForQueue } from './shutdown'
 
 /** How often the expired nonces and the old rate rows are removed. */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
@@ -73,21 +74,30 @@ const poller: PollerDeps | null =
         worker: createWorkerClient({ url: config.workerUrl, key: config.workerKey }),
       }
 
+/** The promise of the queue, so the service can wait for the pass that is in flight. */
+let queue: Promise<void> | null = null
+
 if (poller === null) {
   console.warn('the sandbox is not configured, so the sandbox routes are not mounted')
 } else {
   // The queue waits for every pass before it starts the next one, so two passes never read the
-  // same run at the same time.
-  void runQueue(poller, {
+  // same run at the same time. The promise is kept, so the service can wait for the pass that is
+  // in flight before it closes the pool of the database.
+  queue = runQueue(poller, {
     isStopped: () => stopping,
     onError: (error: unknown) => console.error('the sandbox queue failed', error),
   })
+  // A queue that fails outside of a pass is reported and does not take the service down.
+  queue.catch((error: unknown) => console.error('the sandbox queue failed', error))
 }
 
 const stop = async (): Promise<void> => {
   stopping = true
   clearInterval(timer)
   server.close()
+  // The pass of the queue that is in flight is waited for, so a run that is being refunded is not
+  // cut off in the middle.
+  await waitForQueue(queue)
   await close()
   process.exit(0)
 }

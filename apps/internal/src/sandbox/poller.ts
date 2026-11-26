@@ -75,6 +75,9 @@ export async function runQueue(
     } catch (error) {
       onError(error)
     }
+    // The service waits for the pass that is in flight before it closes the pool of the
+    // database, so the queue ends as soon as that pass is over.
+    if (isStopped()) break
     await sleep(intervalMs)
   }
 }

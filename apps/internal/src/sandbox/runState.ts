@@ -11,6 +11,10 @@ import type { WorkerClient } from './workerClient'
  * A run moves through the states of the queue: it waits, it runs, and it ends with a result or
  * without one. Every change of state is guarded by the status the row had, so two passes of the
  * queue that overlap can never end the same run twice.
+ *
+ * The slot of the quota of a run comes back only when the run ends without a verdict about the
+ * skill and the failure was ours. A run that caught a forbidden tool call did its job, so it
+ * keeps its slot and is not blamed for anything.
  */
 export interface RunDeps extends SandboxDeps {
   worker: WorkerClient
@@ -27,6 +31,26 @@ export const LATE_DEADLINE_MS = 20 * 60_000
 
 /** How long the transcript of a finished run is waited for. The worker uploads it after the run. */
 export const EVIDENCE_DEADLINE_MS = 2 * 60_000
+
+/** The blame of a run that ended, and what happens to the slot of its quota. */
+interface Ending {
+  /** Who is to blame for the run not ending normally. */
+  cause: FailureCause | null
+  /** Whether the slot of the quota comes back. */
+  refund: boolean
+}
+
+/**
+ * The blame of a run that ended, and what happens to the slot of its quota.
+ *
+ * A run that ended with a verdict about the skill did its job: the skill is at fault, so nothing
+ * is blamed and the slot does not come back. Only a failure of our own infrastructure gives the
+ * slot back, so a run that failed because of us does not cost the caller a run of the day.
+ */
+function endingOf(result: SandboxResult | null, cause: FailureCause | undefined): Ending {
+  if (result !== null && result.status === 'SANDBOX_FUZZ_FAILED') return { cause: null, refund: false }
+  return { cause: cause ?? null, refund: cause === 'infrastructure' }
+}
 
 /**
  * Reads what the worker has so far and moves the run on.
@@ -107,9 +131,24 @@ async function countFailure(deps: RunDeps, row: RunRow, message: string): Promis
   await failRun(deps, row, 'infrastructure', message)
 }
 
-/** Stops following a run that failed its deadline. The run keeps the result it had. */
+/**
+ * Stops following a run that failed its deadline.
+ *
+ * The worker may not be waited for any longer, so the run ends here. Its slot of the quota comes
+ * back, unless the run already ended with a verdict about the skill. The result the run reached
+ * is stored, so a violation the worker found before it went away is still shown.
+ */
 async function stopFollowing(deps: RunDeps, row: RunRow): Promise<void> {
-  await deps.sql.query('UPDATE sandbox_runs SET late_since = NULL, read_failures = 0 WHERE run_id = $1', [row.run_id])
+  const fresh = await freshRow(deps, row.run_id)
+  const result = failureResult(deps, row, readProbes(fresh?.probes), 'The sandbox worker could not be reached.')
+  const ending = endingOf(result, 'infrastructure')
+  const rows = await deps.sql.query<{ run_id: string }>(
+    `UPDATE sandbox_runs SET late_since = NULL, read_failures = 0, failure_cause = $2, result = COALESCE($3, result)
+     WHERE run_id = $1 AND late_since IS NOT NULL RETURNING run_id`,
+    [row.run_id, ending.cause, result === null ? null : JSON.stringify(result)],
+  )
+  if (rows.length === 0) return
+  if (ending.refund) await refundQuota(deps, row.run_id)
 }
 
 /**
@@ -140,26 +179,32 @@ async function completeRun(deps: RunDeps, row: RunRow, status: WorkerRunStatus):
 /**
  * Ends a run that failed its deadline and that the worker finished after all.
  *
- * The run was already shown as failed and its slot of the quota was given back, so it stays
- * failed. A violation the worker found at the end is still stored and cached, because a violation
- * is never hidden. A run that finished cleanly keeps no result, because the frozen schema has no
- * incomplete result whose probes are all clean.
+ * The run stays failed, because it did miss its deadline. Its slot of the quota comes back now,
+ * unless the run ended with a verdict about the skill: a run that caught a forbidden tool call
+ * did its job, so nothing is blamed and the slot is not given back. A violation the worker found
+ * at the end is still stored and cached, because a violation is never hidden. A run that finished
+ * cleanly keeps no result, because the frozen schema has no incomplete result whose probes are
+ * all clean.
  */
 async function completeLateRun(deps: RunDeps, row: RunRow, status: WorkerRunStatus): Promise<void> {
   const fresh = await freshRow(deps, row.run_id)
   const result = failureResult(deps, row, readProbes(fresh?.probes), 'The sandbox run took longer than it may take.')
+  const ending = endingOf(result, 'infrastructure')
   const rows = await deps.sql.query<{ run_id: string }>(
-    `UPDATE sandbox_runs SET result = $2, evidence_uri = $3, evidence_since = $4, late_since = NULL, read_failures = 0
+    `UPDATE sandbox_runs SET result = $2, evidence_uri = $3, evidence_since = $4, late_since = NULL, read_failures = 0,
+       failure_cause = $5
      WHERE run_id = $1 AND late_since IS NOT NULL RETURNING run_id`,
     [
       row.run_id,
       result === null ? null : JSON.stringify(result),
       status.evidenceURI ?? null,
       status.evidenceURI === undefined ? deps.now().toISOString() : null,
+      ending.cause,
     ],
   )
   if (rows.length === 0) return
   if (result !== null && result.status === 'SANDBOX_FUZZ_FAILED') await cachePut(deps, result)
+  if (ending.refund) await refundQuota(deps, row.run_id)
 }
 
 /**
@@ -229,7 +274,8 @@ export function countProbeRuns(probes: readonly ProbeResult[]): number {
  * Ends a run that the worker finished.
  *
  * The result of the run is stored in the cache, so the next reader of the bundle sees it without
- * running it again. Only an infrastructure failure gives the quota back.
+ * running it again. Only an infrastructure failure gives the quota back, and a run that ended
+ * with a verdict about the skill does not get its slot back at all.
  *
  * The update only touches a run that is still running, so a pass that is late cannot rewrite a run
  * that another pass already ended. The quota is only given back when the update hit a row.
@@ -244,6 +290,7 @@ async function finishRun(
 ): Promise<void> {
   const status = cause === undefined ? 'done' : 'incomplete'
   const waiting = evidenceURI === undefined && result !== null
+  const ending = endingOf(result, cause)
   const rows = await deps.sql.query<{ run_id: string }>(
     `UPDATE sandbox_runs SET status = $2, result = $3, evidence_uri = $4, finished_at = $5,
        failure_cause = $6, failure_message = $7, evidence_since = $8, read_failures = 0
@@ -254,20 +301,21 @@ async function finishRun(
       result === null ? null : JSON.stringify(result),
       evidenceURI ?? null,
       deps.now().toISOString(),
-      cause ?? null,
+      ending.cause,
       message ?? null,
       waiting ? deps.now().toISOString() : null,
     ],
   )
   if (rows.length === 0) return
-  if (cause === 'infrastructure') await refundQuota(deps, row.run_id)
+  if (ending.refund) await refundQuota(deps, row.run_id)
 }
 
 /**
  * Ends a run that failed.
  *
  * The probes that were stored before the failure are kept, so a violation that was already caught
- * is still shown. The quota is only given back when the failure was ours.
+ * is still shown. The quota is only given back when the failure was ours and the run did not end
+ * with a verdict about the skill.
  *
  * The update only touches a run that has not ended yet, so two passes that overlap cannot end the
  * same run twice. The quota is only given back when the update hit a row.
@@ -275,41 +323,45 @@ async function finishRun(
 export async function failRun(deps: RunDeps, row: RunRow, cause: FailureCause, message: string): Promise<void> {
   const fresh = await freshRow(deps, row.run_id)
   const result = failureResult(deps, row, readProbes(fresh?.probes), message)
+  const ending = endingOf(result, cause)
   const rows = await deps.sql.query<{ run_id: string }>(
     `UPDATE sandbox_runs SET status = 'incomplete', result = $2, finished_at = $3,
        failure_cause = $4, failure_message = $5, evidence_since = NULL, read_failures = 0
      WHERE run_id = $1 AND status IN ('queued', 'running') RETURNING run_id`,
-    [row.run_id, result === null ? null : JSON.stringify(result), deps.now().toISOString(), cause, message],
+    [row.run_id, result === null ? null : JSON.stringify(result), deps.now().toISOString(), ending.cause, message],
   )
   if (rows.length === 0) return
   if (result !== null && result.status === 'SANDBOX_FUZZ_FAILED') await cachePut(deps, result)
-  if (cause === 'infrastructure') await refundQuota(deps, row.run_id)
+  if (ending.refund) await refundQuota(deps, row.run_id)
 }
 
 /**
  * Fails a run that does not move any more and keeps reading it.
  *
- * The run is shown as failed and its slot of the quota comes back, but the worker may still be
- * going with it, so the run is followed until the worker says it is done.
+ * The run is shown as failed, but the worker may still be going with it, so the run is followed
+ * until the worker says it is done. The slot of the quota comes back only then: a run that ends
+ * with a verdict about the skill did its job, and a run that ends without one failed for a
+ * reason of ours.
  */
 async function failLate(deps: RunDeps, row: RunRow, message: string): Promise<void> {
   const fresh = await freshRow(deps, row.run_id)
   const result = failureResult(deps, row, readProbes(fresh?.probes), message)
+  const ending = endingOf(result, 'infrastructure')
   const rows = await deps.sql.query<{ run_id: string }>(
     `UPDATE sandbox_runs SET status = 'incomplete', result = $2, finished_at = $3,
-       failure_cause = 'infrastructure', failure_message = $4, late_since = $5, read_failures = 0
+       failure_cause = $4, failure_message = $5, late_since = $6, read_failures = 0
      WHERE run_id = $1 AND status = 'running' RETURNING run_id`,
     [
       row.run_id,
       result === null ? null : JSON.stringify(result),
       deps.now().toISOString(),
+      ending.cause,
       message,
       deps.now().toISOString(),
     ],
   )
   if (rows.length === 0) return
   if (result !== null && result.status === 'SANDBOX_FUZZ_FAILED') await cachePut(deps, result)
-  await refundQuota(deps, row.run_id)
 }
 
 /** The row of a run, read again so the stored probes are the ones that were written last. */
