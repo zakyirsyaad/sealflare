@@ -13,6 +13,9 @@ const { wallet } = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/chain/userState', () => ({ useUserState: () => wallet.current }))
+vi.mock('../lib/sandbox/useSandboxRun', () => ({
+  useSandboxRun: () => ({ run: null, busy: false, error: null, paused: false, start: vi.fn() }),
+}))
 vi.mock('wagmi', () => ({
   useConnect: () => ({ mutate: () => {}, isPending: false, error: null }),
   useConnectors: () => [],

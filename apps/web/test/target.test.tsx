@@ -16,6 +16,12 @@ const { wallet } = vi.hoisted(() => ({
 
 vi.mock('../lib/chain/userState', () => ({ useUserState: () => wallet.current }))
 
+const { sandbox } = vi.hoisted(() => ({
+  sandbox: { current: { run: null, busy: false, error: null, paused: false, start: vi.fn() } as Record<string, unknown> },
+}))
+
+vi.mock('../lib/sandbox/useSandboxRun', () => ({ useSandboxRun: () => sandbox.current }))
+
 // The attest panel stays mounted while its dialog is closed, so its wallet hooks run on every page.
 vi.mock('wagmi', () => ({
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),

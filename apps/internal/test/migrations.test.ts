@@ -27,6 +27,7 @@ const EXPECTED_TABLES = [
   'sandbox_runs',
   'sandbox_cache',
   'sandbox_quota',
+  'sandbox_pause',
 ]
 
 const MIGRATIONS = [
@@ -34,6 +35,7 @@ const MIGRATIONS = [
   '002_operational.sql',
   '003_guards.sql',
   '004_court_vault.sql',
+  '005_sandbox.sql',
   '006_bounty_before_target.sql',
   '007_verdict_moment.sql',
 ]

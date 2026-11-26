@@ -9,6 +9,7 @@ import { TargetError } from './TargetError'
 import { TargetMissing } from './TargetMissing'
 import { TargetTabs } from './TargetTabs'
 import { copy } from '../../lib/copy'
+import type { SandboxSource } from '../../lib/sandbox/source'
 import { scanCurrentVersionHref } from '../../lib/currentVersion'
 import { shortAddress } from '../../lib/format'
 import type { Binding } from '../../lib/publish/binding'
@@ -33,6 +34,8 @@ export type TargetScreenProps = {
   binding?: Binding | null
   /** The bond of the publisher, as the vault holds it. */
   publisherBond?: PublisherBond | null
+  /** The bundle the sandbox can run on, or null when this target has none. */
+  sandbox?: SandboxSource | null
 }
 
 /** The link names another bundle than the one the registry rated. */
@@ -91,6 +94,7 @@ export function TargetScreen(props: TargetScreenProps) {
           evidenceFailed={props.evidenceFailed}
           binding={props.binding ?? null}
           publisherBond={props.publisherBond ?? null}
+          sandbox={props.sandbox ?? null}
         />
       </section>
     </div>
