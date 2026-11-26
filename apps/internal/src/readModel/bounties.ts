@@ -1,6 +1,6 @@
 import { AddressSchema, Bytes32Schema, VerdictSchema, type BountySummary } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
-import { decimalString } from './targets'
+import { decimalString } from './values'
 
 /**
  * The read model of the bounties the Vault brought.
@@ -59,7 +59,7 @@ export async function listBounties(
 ): Promise<{ items: BountySummary[]; total: number }> {
   const total = await countBounties(sql, filters)
   const rows = await sql.query<BountyRow>(
-    `SELECT b.id, b.target_id, b.label, b.requester, b.slots, b.amount, b.created_at, b.settleable_at,
+    `SELECT b.id, b.target_id, ${LABEL} AS label, b.requester, b.slots, b.amount, b.created_at, b.settleable_at,
        b.settled, (SELECT count(*)::int FROM bounty_fillers f WHERE f.bounty_id = b.id) AS filled
      FROM bounties b
      WHERE ($1::text IS NULL OR b.target_id = $1) AND ($2::text IS NULL OR b.requester = $2)
@@ -69,6 +69,12 @@ export async function listBounties(
   )
   return { items: rows.map(summaryOf), total }
 }
+
+/**
+ * The name of the target a bounty asks for. A bounty can come before its target exists, and then
+ * it has no label of its own: the id of the target stands in until `TargetCreated` brings one.
+ */
+const LABEL = `COALESCE(b.label, (SELECT t.label FROM targets t WHERE t.target_id = b.target_id), b.target_id)`
 
 /** How many bounties the filters match. */
 async function countBounties(sql: Db, filters: BountyFilters): Promise<number> {
@@ -87,7 +93,7 @@ async function countBounties(sql: Db, filters: BountyFilters): Promise<number> {
  */
 export async function bountyDetail(sql: Db, id: string): Promise<unknown | null> {
   const rows = await sql.query<BountyRow>(
-    `SELECT b.id, b.target_id, b.label, b.requester, b.slots, b.amount, b.created_at, b.settleable_at,
+    `SELECT b.id, b.target_id, ${LABEL} AS label, b.requester, b.slots, b.amount, b.created_at, b.settleable_at,
        b.settled, (SELECT count(*)::int FROM bounty_fillers f WHERE f.bounty_id = b.id) AS filled
      FROM bounties b WHERE b.id = $1`,
     [id],

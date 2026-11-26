@@ -7,6 +7,8 @@ import { readIndexedEvidence } from './indexedEvidence'
 import { getScan, getScanForSource, putScan, putScanForSource } from './scanStore'
 import { getScanEnvironment } from './scanner'
 import { contractWord } from '../lib/targetWord'
+import type { Binding } from '../lib/publish/binding'
+import type { PublisherBond } from '../lib/publish/bond'
 
 const ZERO_HASH = `0x${'0'.repeat(64)}` as const
 
@@ -205,11 +207,15 @@ export type TargetPageData = {
   differentBundle: boolean
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
+  failed: boolean
   /** The word `Core.attest` takes for this target. Null when the target is not known yet. */
   targetWord: string | null
   /** The scanned bundle is another bundle than the one the registry sealed. */
   bundleChanged: boolean
-  failed: boolean
+  /** How the target was bound, read from the event log. Null when the log does not say. */
+  binding: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond: PublisherBond | null
 }
 
 /**
@@ -233,9 +239,13 @@ async function readEvidence(reader: ChainReader, targetId: Hex, createdAt: numbe
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
-  const target = await reader.target(targetId)
-  const tier = target ? await reader.tier(targetId) : 'UNRATED'
-  const attestations = target ? await reader.attestations(targetId, target.attestationCount) : []
+  // One block for the target, its votes, its tier and the bond of its publisher, so they come from
+  // the same moment. The event log (the evidence and the binding) is read up to the head: it holds
+  // links and the way the target was bound, not a number that can disagree with the votes.
+  const block = await reader.tierBlockNumber()
+  const target = await reader.target(targetId, block)
+  const tier = target ? await reader.tier(targetId, block) : 'UNRATED'
+  const attestations = target ? await reader.attestations(targetId, target.attestationCount, block) : []
   let evidence: EvidenceRow[] = []
   let evidenceFailed = false
   // A target without attestations has no event to read. The log is never walked for nothing.
@@ -248,8 +258,13 @@ async function readChain(reader: ChainReader, targetId: Hex) {
     }
   }
   const bond =
-    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher) : null
-  return { target, tier, attestations, evidence, evidenceFailed, bond }
+    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher, block) : null
+  // A target with no publisher has no PublisherBound event, so the log is not walked for it.
+  const binding =
+    target === null || target.publisher === ZERO_ADDRESS
+      ? null
+      : await reader.binding(targetId, target.createdAt, { publisher: target.publisher, role: target.publisherRole })
+  return { target, tier, attestations, evidence, evidenceFailed, bond, binding }
 }
 
 /**
@@ -268,9 +283,11 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     unbondingAt: null,
     differentBundle: false,
     evidenceFailed: false,
+    failed: false,
     targetWord: null,
     bundleChanged: false,
-    failed: false,
+    binding: null,
+    publisherBond: null,
   }
   if (!parsedId.success) return { ...empty, failed: true }
   const id = parsedId.data
@@ -305,6 +322,15 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   const detail = parsed.success ? parsed.data : null
   const unbondingAt = chain.bond && chain.bond.withdrawalAvailableAt > 0 ? chain.bond.withdrawalAvailableAt : null
   const isContractTarget = (chain.target?.targetType ?? scan?.targetType ?? 'SMART_CONTRACT') === 'SMART_CONTRACT'
+  const publisherBond: PublisherBond | null =
+    chain.bond === null
+      ? null
+      : {
+          amount: chain.bond.amount.toString(),
+          withdrawalAvailableAt: unbondingAt,
+          lockedByChallengeId:
+            chain.bond.lockedByChallengeId > 0n ? chain.bond.lockedByChallengeId.toString() : null,
+        }
   return {
     targetId: id,
     detail,
@@ -315,8 +341,10 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     unbondingAt,
     differentBundle,
     evidenceFailed: chain.evidenceFailed,
+    failed: false,
     targetWord: targetWordOf(chain.target, scan, isContractTarget),
     bundleChanged: bundleChanged(chain.target, candidate),
-    failed: false,
+    binding: chain.binding,
+    publisherBond,
   }
 }

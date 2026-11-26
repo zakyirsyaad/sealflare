@@ -69,6 +69,13 @@ describe('the client of the internal service', () => {
     await expect(internalGet('/targets')).rejects.toMatchObject({ code: 'INTERNAL' })
   })
 
+  test('a read whose meta block names no finalized block is an error, because its block is unknown', async () => {
+    vi.stubEnv('INTERNAL_URL', 'https://internal.example.com')
+    vi.stubEnv('INTERNAL_KEY', 'test-only-key')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer({ success: true, data: { items: [] }, meta: {} })))
+    await expect(internalGet('/targets')).rejects.toMatchObject({ code: 'INTERNAL' })
+  })
+
   test('a meta block of the wrong shape is an error, and never a page of its own', async () => {
     vi.stubEnv('INTERNAL_URL', 'https://internal.example.com')
     vi.stubEnv('INTERNAL_KEY', 'test-only-key')
