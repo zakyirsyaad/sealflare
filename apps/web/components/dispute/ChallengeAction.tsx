@@ -100,28 +100,29 @@ function LiveChallenge(props: ChallengeActionProps) {
       }}
     />
   )
-  if (openId !== null) {
-    return (
-      <>
+  // The panel is always the last child, in the same place in both branches. A panel that moves
+  // is unmounted and mounted again by React, and the receipt of a transaction that was sent is
+  // dropped with it, so the link to that transaction is never shown.
+  return (
+    <>
+      {openId !== null ? (
         <a className="sf-btn sf-btn--secondary sf-btn--block" href={`/app/disputes/${openId}`}>
           {copy.dispute.viewOpen}
         </a>
-        {panel}
-      </>
-    )
-  }
-  return (
-    <>
-      <Button
-        variant="secondary"
-        className="sf-btn--block"
-        disabled={cooldown.ends !== null || cooldown.unknown}
-        onClick={() => setOpen(true)}
-      >
-        {copy.dispute.action}
-      </Button>
-      {cooldown.ends !== null && (
-        <p className="sf-actions__note">{copy.dispute.cooldownUntil.replace('{time}', formatUtc(cooldown.ends))}</p>
+      ) : (
+        <>
+          <Button
+            variant="secondary"
+            className="sf-btn--block"
+            disabled={cooldown.ends !== null || cooldown.unknown}
+            onClick={() => setOpen(true)}
+          >
+            {copy.dispute.action}
+          </Button>
+          {cooldown.ends !== null && (
+            <p className="sf-actions__note">{copy.dispute.cooldownUntil.replace('{time}', formatUtc(cooldown.ends))}</p>
+          )}
+        </>
       )}
       {panel}
     </>

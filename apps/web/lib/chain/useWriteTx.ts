@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import type { Abi, Address, Hex } from 'viem'
 import { expectedChainId } from './config'
@@ -73,16 +73,19 @@ export function useReceiptOutcome(
 ) {
   // The replacement belongs to the transaction it was reported for, so a retry starts clean.
   const [replacement, setReplacement] = useState<ReplacementReport | null>(null)
-  const watched = useRef<Hex | null>(txHash)
-  watched.current = txHash
-  const onReplaced = useCallback((response: { reason: Replacement }) => {
-    setReplacement({ hash: watched.current ?? '', reason: response.reason })
-  }, [])
+  const onReplaced = useCallback(
+    (response: { reason: Replacement; replacedTransaction: { hash: string } }) => {
+      // The chain names the transaction the replacement was reported for, so a report from an
+      // older wait never lands on the transaction that is watched now.
+      setReplacement({ hash: response.replacedTransaction.hash.toLowerCase(), reason: response.reason })
+    },
+    [],
+  )
   const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined, chainId: expectedChainId, onReplaced })
   useEffect(() => {
     if (state !== 'pending') return
     // A replacement of another transaction says nothing about this one.
-    const reason = replacement !== null && replacement.hash === txHash ? replacement.reason : null
+    const reason = replacement !== null && replacement.hash === txHash?.toLowerCase() ? replacement.reason : null
     // A transaction the wallet cancelled or replaced never became the one that was sent.
     if (reason !== null && reason !== 'repriced') {
       settle('failed', copy.errors.txReplaced, null)

@@ -49,7 +49,7 @@ test('a transaction the wallet cancelled is a failure, never "Waiting for finali
   await toReview()
   await submit()
   await waitFor(() => expect(wagmi.receiptParams.at(-1)?.onReplaced).toBeTypeOf('function'), { timeout: 5_000 })
-  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled' }))
+  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled', replacedTransaction: { hash: txHash } }))
   expect(await screen.findByRole('alert', {}, { timeout: 5_000 })).toHaveTextContent(copy.errors.txReplaced)
   expect(screen.queryByText(copy.common.waitingFinality)).toBeNull()
 }, 20_000)
@@ -76,11 +76,33 @@ test('a retry after a cancelled transaction is not failed by the replacement of 
   await toReview()
   await submit()
   await waitFor(() => expect(wagmi.receiptParams.at(-1)?.onReplaced).toBeTypeOf('function'), { timeout: 5_000 })
-  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled' }))
+  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled', replacedTransaction: { hash: txHash } }))
   expect(await screen.findByRole('alert', {}, { timeout: 5_000 })).toHaveTextContent(copy.errors.txReplaced)
   await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
-  await waitFor(() => expect(wagmi.writeContractAsync).toHaveBeenCalledTimes(2), { timeout: 5_000 })
+  // The retry is waited for under its own hash before the alert is looked for.
+  await waitFor(() => expect(wagmi.receiptParams.at(-1)?.hash).toBe(second), { timeout: 5_000 })
+  await screen.findByRole('button', { name: copy.attest.pending }, { timeout: 5_000 })
   expect(screen.queryByRole('alert')).toBeNull()
+}, 20_000)
+
+test('a replacement that is reported for an older transaction does not fail the transaction that is watched now', async () => {
+  // The wallet answers late: the report names the transaction that was replaced, and that
+  // transaction is not the one the panel waits for now.
+  const second = `0x${'ef'.repeat(32)}`
+  wagmi.writeContractAsync.mockReset()
+  wagmi.writeContractAsync.mockResolvedValueOnce(txHash).mockResolvedValueOnce(second)
+  panel()
+  await toReview()
+  await submit()
+  await waitFor(() => expect(wagmi.receiptParams.at(-1)?.onReplaced).toBeTypeOf('function'), { timeout: 5_000 })
+  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled', replacedTransaction: { hash: txHash } }))
+  expect(await screen.findByRole('alert', {}, { timeout: 5_000 })).toHaveTextContent(copy.errors.txReplaced)
+  await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
+  await waitFor(() => expect(wagmi.receiptParams.at(-1)?.hash).toBe(second), { timeout: 5_000 })
+  // A late report about the first transaction arrives after the retry is pending.
+  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled', replacedTransaction: { hash: txHash } }))
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('button', { name: copy.attest.pending })).toBeInTheDocument()
 }, 20_000)
 
 test('a speed-up is linked under the hash that was mined', async () => {
@@ -96,7 +118,7 @@ test('a speed-up is linked under the hash that was mined', async () => {
       error: null,
       data: { status: 'success', transactionHash: mined },
     } as never
-    wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'repriced' })
+    wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'repriced', replacedTransaction: { hash: txHash } })
   })
   const link = await screen.findByRole('link', { name: copy.target.transaction }, { timeout: 5_000 })
   expect(link).toHaveAttribute('href', `https://bscscan.com/tx/${mined}`)

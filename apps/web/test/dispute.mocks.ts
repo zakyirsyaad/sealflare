@@ -18,7 +18,11 @@ export const wagmi = {
   /** Reads again and answers with what the chain holds now, as `refetch` of a read does. */
   refetch: vi.fn(async (name: string) => ({ data: wagmi.reads.current[name], isError: wagmi.readErrors.current[name] === true })),
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } as Record<string, unknown> },
-  receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
+  receiptParams: [] as {
+    hash?: string
+    chainId?: number
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
+  }[],
   block: { current: { timestamp: BigInt(Math.floor(NOW.getTime() / 1000)) } },
   blockCalls: [] as { chainId?: number; refetchInterval?: number }[],
 }
@@ -30,7 +34,11 @@ export const wagmiModule = {
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
   useSignMessage: () => ({ signMessageAsync: wagmi.signMessageAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
-  useWaitForTransactionReceipt: (params: { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }) => {
+  useWaitForTransactionReceipt: (params: {
+    hash?: string
+    chainId?: number
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
+  }) => {
     wagmi.receiptParams.push(params)
     return wagmi.receipt.current
   },
