@@ -92,9 +92,11 @@ async function candidatesHandler(c: Context, deps: TargetRouteDeps): Promise<Res
     return c.json(okWithMeta({ items: parsed.data }, { finalizedBlock: block }))
   } catch (error) {
     if (error instanceof TooManyCandidatesError) {
+      // The request asked for a filter that cannot be read in one go. The answer names the
+      // reason, so the caller can ask for a narrower filter instead of showing an empty list.
       return c.json(
-        fail('INTERNAL', `There are more than ${TIER_CANDIDATE_LIMIT} candidates, so the filters have to be narrower.`),
-        503,
+        fail('BAD_REQUEST', `There are more than ${TIER_CANDIDATE_LIMIT} candidates, so the filters have to be narrower.`),
+        400,
       )
     }
     throw error

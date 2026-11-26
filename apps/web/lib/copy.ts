@@ -1,5 +1,7 @@
 // Exact UI strings from docs/ux.md, grouped by screen. Shared wording lives in common.
 import { dispute } from './copy.dispute'
+import { explore } from './copy.explore'
+import { guardians } from './copy.guardians'
 import { jury } from './copy.jury'
 
 export const copy = {
@@ -458,12 +460,8 @@ export const copy = {
     "withdraw": "Withdraw",
     "claimXp": "Claim XP"
   },
-  "explore": {
-    "title": "Explore"
-  },
-  "guardians": {
-    "title": "Guardians"
-  },
+  "explore": explore,
+  "guardians": guardians,
   "site": {
     "launch": "Launch app",
     "docs": "Docs",

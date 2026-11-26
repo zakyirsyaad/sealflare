@@ -131,6 +131,35 @@ describe('the public target API', () => {
     expect(blocks.size).toBe(1)
   })
 
+  test('a verdict filter holds every tier of that verdict', async () => {
+    internalGet.mockResolvedValue({
+      data: { items: [summary({ targetId: FIRST }), summary({ targetId: SECOND }), summary({ targetId: THIRD })] },
+      meta: { finalizedBlock: '12345' },
+    })
+    reader.tierAt.mockImplementation(async (id: string) => {
+      if (id === FIRST) return 'COMMUNITY_SAFE'
+      if (id === SECOND) return 'WARRANTY_BACKED_SAFE'
+      return 'CAUTION_FLAGGED'
+    })
+    const response = await listRoute(request('/api/targets?verdict=SAFE'))
+    const body = await answer(response)
+    expect(body.data.items.map((item: { targetId: string }) => item.targetId)).toEqual([FIRST, SECOND])
+    expect(body.meta.page.total).toBe(2)
+  })
+
+  test('a verdict that is not a verdict is BAD_REQUEST', async () => {
+    const response = await listRoute(request('/api/targets?verdict=MAYBE'))
+    expect(response.status).toBe(400)
+    expect((await answer(response)).error.code).toBe('BAD_REQUEST')
+    expect(internalGet).not.toHaveBeenCalled()
+  })
+
+  test('a query that names a tier and a verdict is refused', async () => {
+    const response = await listRoute(request('/api/targets?tier=COMMUNITY_SAFE&verdict=SAFE'))
+    expect(response.status).toBe(400)
+    expect(internalGet).not.toHaveBeenCalled()
+  })
+
   test('a tier filter reads the candidates of the internal service, not one page of the list', async () => {
     internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
     await listRoute(request('/api/targets?tier=COMMUNITY_SAFE'))
@@ -169,14 +198,72 @@ describe('the public target API', () => {
     expect(pastBody.meta.page).toEqual({ total: 2, page: 9, limit: 1 })
   })
 
-  test('too many candidates are a 503 without partial data', async () => {
-    internalGet.mockRejectedValue(new InternalServiceError('INTERNAL', 'too many candidates'))
+  test('too many candidates ask for a narrower filter instead of a 503', async () => {
+    internalGet.mockRejectedValue(
+      new InternalServiceError('BAD_REQUEST', 'There are more than 500 candidates, so the filters have to be narrower.'),
+    )
     const response = await listRoute(request('/api/targets?tier=COMMUNITY_SAFE'))
+    expect(response.status).toBe(400)
+    const body = await answer(response)
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('BAD_REQUEST')
+    expect(body.data).toBeUndefined()
+  })
+
+  test('a failure of the internal service is a 503 without partial data', async () => {
+    internalGet.mockRejectedValue(new InternalServiceError('INTERNAL', 'the service is down'))
+    const response = await listRoute(request('/api/targets'))
     expect(response.status).toBe(503)
     const body = await answer(response)
     expect(body.success).toBe(false)
     expect(body.error.code).toBe('INTERNAL')
     expect(body.data).toBeUndefined()
+  })
+
+  test('a filter of few candidates that runs out of time is a failure of the read', async () => {
+    vi.useFakeTimers()
+    try {
+      internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
+      // The tier never arrives, so the request runs out of time.
+      reader.tierAt.mockImplementation(() => new Promise(() => {}))
+      const pending = listRoute(request('/api/targets?verdict=SAFE'))
+      await vi.advanceTimersByTimeAsync(9000)
+      const response = await pending
+      // The filter covers one target, so it was not too wide. The read ran out of time, and the
+      // answer says so instead of asking for a narrower filter that was fine.
+      expect(response.status).toBe(503)
+      const body = await answer(response)
+      expect(body.success).toBe(false)
+      expect(body.error.code).toBe('INTERNAL')
+      expect(body.error.message).not.toContain('Narrow the filter')
+      expect(body.data).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('a filter that covers many candidates and runs out of time asks for a narrower filter', async () => {
+    vi.useFakeTimers()
+    try {
+      const candidates = Array.from({ length: 101 }, (_, index) =>
+        summary({ targetId: `0x${String(index + 1).padStart(64, '0')}` }),
+      )
+      internalGet.mockResolvedValue({ data: { items: candidates }, meta: { finalizedBlock: '12345' } })
+      reader.tierAt.mockImplementation(() => new Promise(() => {}))
+      const pending = listRoute(request('/api/targets?verdict=SAFE'))
+      await vi.advanceTimersByTimeAsync(9000)
+      const response = await pending
+      // More candidates than one round of tier reads cannot be answered inside the deadline, so
+      // the reader is asked for a narrower filter.
+      expect(response.status).toBe(400)
+      const body = await answer(response)
+      expect(body.success).toBe(false)
+      expect(body.error.code).toBe('BAD_REQUEST')
+      expect(body.error.message).toContain('Narrow the filter')
+      expect(body.data).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test('a failed tier read is a 503 without partial data', async () => {
@@ -207,7 +294,10 @@ describe('the public target API', () => {
       const response = await pending
       await vi.advanceTimersByTimeAsync(20_000)
 
-      expect(response.status).toBe(503)
+      // A filter that runs out of time covers more targets than one request can read, so the
+      // reader is asked for a narrower filter.
+      expect(response.status).toBe(400)
+      expect((await answer(response)).error.code).toBe('BAD_REQUEST')
       // The batches that started before the deadline were two. The third never started.
       expect(reader.tierAt).toHaveBeenCalledTimes(200)
     } finally {

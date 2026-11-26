@@ -7,7 +7,7 @@ import { insertGuardian } from './court.seed'
  * The guardians the Core knows, and the penalty that is still waiting to be charged.
  */
 
-test('the guardian list is paged and the guardians with the most votes come first', async () => {
+test('the guardian list is paged and the guardians with the same score come first by their votes', async () => {
   const { db, close } = await createTestDb()
   const { app } = testApp(db)
   await insertGuardian(db, { address: GUARDIAN, attestations: 2 })
@@ -17,6 +17,18 @@ test('the guardian list is paged and the guardians with the most votes come firs
   expect(answer.success).toBe(true)
   expect(answer.data?.items.map((item) => item.address)).toEqual([GUARDIAN_B])
   expect(answer.meta?.page).toEqual({ total: 2, page: 1, limit: 1 })
+  await close()
+})
+
+test('the guardians come first by the score of the chain, not by the number of votes', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  await insertGuardian(db, { address: GUARDIAN, score: 5, attestations: 9 })
+  await insertGuardian(db, { address: GUARDIAN_B, score: 40, attestations: 1 })
+
+  const answer = asAnswer<{ items: { address: string }[] }>(await body(await get(app, '/guardians')))
+  expect(answer.success).toBe(true)
+  expect(answer.data?.items.map((item) => item.address)).toEqual([GUARDIAN_B, GUARDIAN])
   await close()
 })
 

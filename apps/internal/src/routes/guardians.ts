@@ -35,7 +35,7 @@ export function guardianRoutes(deps: GuardianRouteDeps): Hono {
   return app
 }
 
-/** The list of the guardians, the ones with the most votes first. */
+/** The list of the guardians, the ones with the highest score first. */
 async function listHandler(c: Context, deps: GuardianRouteDeps): Promise<Response> {
   const query = readListQuery(c)
   if (!query.ok) {
