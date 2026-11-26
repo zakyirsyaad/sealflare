@@ -316,7 +316,7 @@ function checkedRows(key: string, rows: readonly EvidenceRow[], count: number): 
  * service, and only the joined set has to cover every attestation of the target.
  */
 async function readEvidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]> {
-  const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
+  const head = await getRpcClient().getBlockNumber()
   if (fromBlock > head) return []
   const event = eventItem<AttestedEvent>('Attested')
   const logs = await collectLogs(
