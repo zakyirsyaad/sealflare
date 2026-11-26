@@ -302,3 +302,29 @@ test('a tie costs the challenger no XP', async () => {
   expect(dispute?.xp).toBeNull()
   await close()
 })
+
+test('a juror in the majority earned the juror XP, any other seat earned none', async () => {
+  const { db, close } = await createTestDb()
+  const id = targetId(41)
+  await insertTarget(db, { id, label: 'The target' })
+  const seats: { challengeId: string; outcome: 'UPHELD' | 'REJECTED' | 'TIED' | 'EXPIRED' | 'PENDING'; revealed: boolean; uphold: boolean | null; xp: number | null }[] = [
+    { challengeId: '30', outcome: 'UPHELD', revealed: true, uphold: true, xp: 3 },
+    { challengeId: '31', outcome: 'REJECTED', revealed: true, uphold: false, xp: 3 },
+    { challengeId: '32', outcome: 'UPHELD', revealed: true, uphold: false, xp: null },
+    { challengeId: '33', outcome: 'REJECTED', revealed: true, uphold: true, xp: null },
+    { challengeId: '34', outcome: 'UPHELD', revealed: false, uphold: null, xp: null },
+    { challengeId: '35', outcome: 'TIED', revealed: true, uphold: true, xp: null },
+    { challengeId: '36', outcome: 'EXPIRED', revealed: true, uphold: true, xp: null },
+    { challengeId: '37', outcome: 'PENDING', revealed: true, uphold: true, xp: null },
+  ]
+  for (const seat of seats) {
+    await insertChallenge(db, { id: seat.challengeId, targetId: id, challenger: '0x' + '9'.repeat(40), outcome: seat.outcome })
+    await insertJuror(db, { challengeId: seat.challengeId, address: GUARDIAN, revealed: seat.revealed, uphold: seat.uphold })
+  }
+
+  const activity = await readActivity(db, GUARDIAN)
+  const jurorXp = activity.history.filter((item) => item.kind === 'juror').map((item) => item.xp)
+  expect(jurorXp.filter((xp) => xp === 3)).toHaveLength(2)
+  expect(jurorXp.filter((xp) => xp === null)).toHaveLength(seats.length - 2)
+  await close()
+})

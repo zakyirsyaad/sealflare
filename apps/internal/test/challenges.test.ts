@@ -131,3 +131,17 @@ test('an id that is not a whole number is refused', async () => {
   expect(response.status).toBe(400)
   await close()
 })
+
+test('a counter-evidence URI that is empty is no counter-evidence', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db, { now: () => NOW })
+  const id = targetId(55)
+  await insertTarget(db, { id })
+  // The contract does not check the URI of a reply, so an empty one is a reply without evidence.
+  await insertChallenge(db, { id: '6', targetId: id, challenger: GUARDIAN, counterEvidenceUri: '' })
+
+  const answer = asAnswer<{ counterEvidenceURI: string | null }>(await body(await get(app, '/challenges/6')))
+  expect(answer.success).toBe(true)
+  expect(answer.data?.counterEvidenceURI).toBeNull()
+  await close()
+})

@@ -137,7 +137,8 @@ export async function challengeDetail(sql: Db, id: string, now: Date): Promise<u
     flags: row.flags,
     shortProof: row.short_proof,
     evidenceURI,
-    counterEvidenceURI: row.counter_evidence_uri ?? null,
+    // The contract does not check the URI of a reply, so an empty one means no counter-evidence.
+    counterEvidenceURI: row.counter_evidence_uri === null || row.counter_evidence_uri === '' ? null : row.counter_evidence_uri,
     publisher: row.publisher === null ? null : AddressSchema.parse(row.publisher),
     jurors,
     upholdWeight: row.uphold_weight,

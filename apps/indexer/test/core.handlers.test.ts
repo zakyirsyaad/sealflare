@@ -12,6 +12,7 @@ const core = () => addresses().core
 const FIRST = targetAddress(0x21)
 const THIRD = targetAddress(0x23)
 const FOURTH = targetAddress(0x24)
+const FIFTH = targetAddress(0x25)
 
 test('an attestation becomes a row with its frozen weight, both ordinals and its short proof', async () => {
   const { db, close } = await createTestDb()
@@ -81,6 +82,22 @@ test('keeps the Attested row when the emitted evidence URI is empty', async () =
   )
   expect(rows).toHaveLength(1)
   expect(rows[0]?.evidence_uri).toBe('')
+  await close()
+})
+
+test('keeps the Attested row when the short proof holds a NUL byte', async () => {
+  const { db, close } = await createTestDb()
+  // Postgres refuses U+0000 in a text column, so the proof is cleaned before it is stored.
+  await attest({ from: 0, contract: FIFTH, shortProof: '0x550045' })
+
+  await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
+
+  const rows = await db.query<{ short_proof: string }>(
+    'SELECT short_proof FROM attestations WHERE target_id = (SELECT target_id FROM targets WHERE src = $1)',
+    [FIFTH],
+  )
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.short_proof).toBe('U\uFFFDE')
   await close()
 })
 

@@ -9,8 +9,11 @@ import {
   commitVote,
   createBounty,
   createTestDb,
+  depositBond,
   distribute,
   openChallenge,
+  requestBondWithdrawal,
+  sponsor,
   targetAddress,
   targetIdOf,
   withdraw,
@@ -151,5 +154,44 @@ test('the escrow of a dispute is the sum of the movements of that dispute', asyn
     [id.toString()],
   )
   expect(escrow[0]?.total).toBe('600')
+  await close()
+})
+
+test('the bond of a target is the bond of its publisher of record', async () => {
+  const target = targetAddress(0x96)
+  const { db, close } = await createTestDb()
+  await attest({ from: 0, contract: target })
+  // The publisher of record is the one that posted the bond.
+  await sponsor({ from: 1, targetId: targetIdOf(target) })
+  await depositBond({ from: 1, targetId: targetIdOf(target), value: 500n })
+
+  await indexOnce({ client: chainClient(), sql: db, addresses: all() })
+
+  const rows = await db.query<{ bond: string; publisher_role: string }>(
+    'SELECT bond::text AS bond, publisher_role FROM targets WHERE src = $1',
+    [target],
+  )
+  expect(rows[0]?.publisher_role).toBe('THIRD_PARTY_SPONSOR')
+  expect(rows[0]?.bond).toBe('500')
+  await close()
+})
+
+test('a bond that is being withdrawn does not count for the target', async () => {
+  const target = targetAddress(0x97)
+  const { db, close } = await createTestDb()
+  await attest({ from: 0, contract: target })
+  await sponsor({ from: 1, targetId: targetIdOf(target) })
+  await depositBond({ from: 1, targetId: targetIdOf(target), value: 500n })
+  await requestBondWithdrawal({ from: 1, targetId: targetIdOf(target) })
+
+  await indexOnce({ client: chainClient(), sql: db, addresses: all() })
+
+  // The bond is still slashable, but it does not count for the target any more.
+  const rows = await db.query<{ bond: string }>('SELECT bond::text AS bond FROM targets WHERE src = $1', [target])
+  expect(rows[0]?.bond).toBe('0')
+  const bonds = await db.query<{ amount: string }>('SELECT amount::text AS amount FROM bonds WHERE target_id = $1', [
+    targetIdOf(target),
+  ])
+  expect(bonds[0]?.amount).toBe('500')
   await close()
 })

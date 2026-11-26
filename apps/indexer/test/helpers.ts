@@ -170,19 +170,31 @@ let bondsPosted = 0
  *
  * The Core knows a target before a bond can be posted for it, so the vote comes first. The
  * target is one of its own for every call, so the vote never clashes with the vote of another
- * test.
+ * test. A target that is given is one the caller made the indexer hear of already.
  */
-export async function depositBond(options: { from?: number; targetId?: Hex }) {
+export async function depositBond(options: { from?: number; targetId?: Hex; value?: bigint }) {
   bondsPosted += 1
   const contract = `0x${bondsPosted.toString(16).padStart(2, '0').repeat(20)}` as Address
-  await attest({ from: 5, contract })
+  if (!options.targetId) await attest({ from: 5, contract })
   const client = wallet(options.from ?? 0)
   const hash = await client.writeContract({
     address: addresses().vault,
     abi: vaultAbi,
     functionName: 'depositBond',
     args: [options.targetId ?? targetIdOf(contract)],
-    value: 0n,
+    value: options.value ?? 0n,
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** Asks the stub Vault for the bond of a target back. */
+export async function requestBondWithdrawal(options: { from?: number; targetId: Hex }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().vault,
+    abi: vaultAbi,
+    functionName: 'requestBondWithdrawal',
+    args: [options.targetId],
   })
   return publicClient().waitForTransactionReceipt({ hash })
 }

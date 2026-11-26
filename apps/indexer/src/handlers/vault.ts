@@ -2,7 +2,7 @@ import type { Address, Hex } from 'viem'
 import { CONSTANTS } from '@sealflare/shared/rules'
 import type { Db } from '@sealflare/internal/db'
 import type { TimedVaultEvent } from '../decodeVault'
-import { labelOfTarget, requireBounty, requireTarget } from './rows'
+import { labelOfTarget, requireBounty, requireChallenge, requireTarget } from './rows'
 
 /**
  * Writes one Vault event into the database.
@@ -44,6 +44,25 @@ export async function applyVaultEvent(tx: Db, event: TimedVaultEvent): Promise<v
 }
 
 /**
+ * The bond a target shows is the bond of its publisher of record.
+ *
+ * The rule is the one of `Vault.activeBond`: only the publisher's own bond counts, and it stops
+ * counting the moment a withdrawal is asked for, although it stays slashable until it is
+ * finalized. The `bonds` table keeps the bond itself; the target keeps what counts.
+ */
+async function refreshTargetBond(tx: Db, targetId: Hex): Promise<void> {
+  await tx.query(
+    `UPDATE targets SET bond = COALESCE(
+       (SELECT CASE WHEN b.withdrawable_at IS NULL THEN b.amount ELSE 0 END
+          FROM bonds b
+         WHERE b.target_id = targets.target_id AND b.depositor = targets.publisher),
+       0)
+     WHERE target_id = $1`,
+    [targetId],
+  )
+}
+
+/**
  * A warranty bond grows.
  *
  * A deposit cancels a withdrawal that was asked for before, because the contract zeroes the
@@ -61,6 +80,7 @@ async function applyBondDeposited(tx: Db, event: TimedVaultEvent & { name: 'Bond
        finalized_at = NULL`,
     [event.args.targetId, event.args.depositor.toLowerCase(), event.args.total.toString(), event.at.toISOString()],
   )
+  await refreshTargetBond(tx, event.args.targetId)
 }
 
 /**
@@ -86,6 +106,7 @@ async function applyBondWithdrawalRequested(
       new Date(Number(event.args.availableAt) * 1000).toISOString(),
     ],
   )
+  await refreshTargetBond(tx, event.args.targetId)
 }
 
 /** The bond left the Vault. The amount is credited to the balance of its owner. */
@@ -96,6 +117,7 @@ async function applyBondWithdrawn(tx: Db, event: TimedVaultEvent & { name: 'Bond
      WHERE target_id = $1 AND depositor = $2`,
     [event.args.targetId, event.args.depositor.toLowerCase(), event.at.toISOString()],
   )
+  await refreshTargetBond(tx, event.args.targetId)
 }
 
 /** The bond of the publisher of record is locked for the duration of a dispute. */
@@ -118,11 +140,18 @@ async function applyBondSettled(tx: Db, event: TimedVaultEvent & { name: 'BondSe
      WHERE target_id = $1 AND depositor = $2`,
     [event.args.targetId, event.args.depositor.toLowerCase(), event.args.released.toString()],
   )
+  await refreshTargetBond(tx, event.args.targetId)
   // The slashed part of the bond is paid out with the escrow of the challenge.
   await addToEscrow(tx, event, event.args.challengeId, event.args.slashed)
 }
 
-/** A stake joined the escrow of a challenge. */
+/**
+ * A stake joined the escrow of a challenge.
+ *
+ * The stake is paid in the same transaction that opens the dispute, and the Court emits the
+ * opening after the Vault has taken the stake. The row of the dispute is therefore written in
+ * the same range, a moment later, and the escrow of a dispute is only read through it.
+ */
 async function applyStakeDeposited(tx: Db, event: TimedVaultEvent & { name: 'StakeDeposited' }): Promise<void> {
   await addToEscrow(tx, event, event.args.challengeId, event.args.amount)
 }
@@ -134,6 +163,7 @@ async function applyStakeDeposited(tx: Db, event: TimedVaultEvent & { name: 'Sta
  * the money of another one.
  */
 async function applyDistributed(tx: Db, event: TimedVaultEvent & { name: 'Distributed' }): Promise<void> {
+  await requireChallenge(tx, event.args.challengeId, 'Vault')
   await tx.query(
     `INSERT INTO payouts (challenge_id, tx_hash, log_index, recipient, amount, at)
      VALUES ($1, $2, $3, $4, $5, $6)

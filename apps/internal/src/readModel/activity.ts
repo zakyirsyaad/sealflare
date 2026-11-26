@@ -134,6 +134,10 @@ async function readAttestations(sql: Db, address: string): Promise<ActivityItem[
  * The seats of an account in a jury.
  *
  * A vote that was not revealed yet has no direction, so the history never shows one either.
+ *
+ * The XP follows the contract: a juror whose revealed vote is on the side the verdict names earns
+ * the majority XP. A tie, an expiry, a dispute still open and a vote that was never revealed earn
+ * nothing.
  */
 async function readJurors(sql: Db, address: string): Promise<ActivityItem[]> {
   const rows = await sql.query<{
@@ -141,9 +145,10 @@ async function readJurors(sql: Db, address: string): Promise<ActivityItem[]> {
     label: string
     revealed: boolean
     uphold: boolean | null
+    outcome: string
     at: Date | string
   }>(
-    `SELECT c.target_id, t.label, j.revealed, j.uphold, j.at
+    `SELECT c.target_id, t.label, c.outcome, j.revealed, j.uphold, j.at
      FROM jurors j JOIN challenges c ON c.id = j.challenge_id
      JOIN targets t ON t.target_id = c.target_id
      WHERE j.address = $1`,
@@ -154,9 +159,17 @@ async function readJurors(sql: Db, address: string): Promise<ActivityItem[]> {
     targetId: Bytes32Schema.parse(row.target_id),
     label: row.label,
     result: resultOfVote(row.revealed, row.uphold),
-    xp: null,
+    xp: xpOfVote(row.outcome, row.revealed, row.uphold),
     at: isoDate(row.at),
   }))
+}
+
+/** The XP of a seat: the majority XP when the revealed vote is on the winning side. */
+function xpOfVote(outcome: string, revealed: boolean, uphold: boolean | null): number | null {
+  if (!revealed) return null
+  if (outcome === 'UPHELD' && uphold === true) return XP.JUROR_MAJORITY
+  if (outcome === 'REJECTED' && uphold === false) return XP.JUROR_MAJORITY
+  return null
 }
 
 /** What a seat in a jury says. A vote that was not revealed yet only says that it was cast. */
