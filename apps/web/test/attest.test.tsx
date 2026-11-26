@@ -12,7 +12,11 @@ const wagmi = vi.hoisted(() => ({
   switchChain: vi.fn(),
   connectors: [{ uid: '1', id: 'injected', name: 'Browser wallet' }],
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } },
-  receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
+  receiptParams: [] as {
+    hash?: string
+    chainId?: number
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
+  }[],
 }))
 vi.mock('wagmi', () => ({
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
@@ -20,7 +24,7 @@ vi.mock('wagmi', () => ({
   useWaitForTransactionReceipt: (params: {
     hash?: string
     chainId?: number
-    onReplaced?: (replacement: { reason: string }) => void
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
   }) => {
     wagmi.receiptParams.push(params)
     return wagmi.receipt.current

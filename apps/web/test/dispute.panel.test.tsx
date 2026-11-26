@@ -14,7 +14,7 @@ import { ChallengeAction } from '../components/dispute/ChallengeAction'
 import { ChallengePanel } from '../components/dispute/ChallengePanel'
 import { copy } from '../lib/copy'
 import { config, resetDispute, state, uploadEvidence, wagmi } from './dispute.mocks'
-import { COURT, CORE, ME, NOW, address, scan, targetId } from './dispute.fixtures'
+import { COURT, CORE, ME, NOW, address, scan, targetId, txHash } from './dispute.fixtures'
 
 function panel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = {}) {
   return render(
@@ -242,6 +242,26 @@ test('the panel stays open while the transaction it sent is being confirmed, eve
   expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/13')
   expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
 })
+
+test('the panel keeps the transaction it sent when the Court reports the challenge while it is pending', async () => {
+  // The button becomes a link while the transaction is still being confirmed. The panel may not
+  // be mounted again, because that drops the receipt of a transaction that was sent.
+  wagmi.reads.current.activeChallengeOf = 0n
+  const view = action()
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.action }))
+  await toReview()
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submit }))
+  await screen.findByRole('button', { name: copy.attest.pending }, { timeout: 5_000 })
+  wagmi.reads.current.activeChallengeOf = 13n
+  view.rerender(
+    <ChallengeAction targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} tier="CAUTION_FLAGGED" activeChallengeId={null} />,
+  )
+  expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/13')
+  // The panel is still on the review step, and the transaction it sent is still tracked.
+  expect(screen.getByText(copy.dispute.step[2])).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: copy.attest.pending })).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: copy.target.transaction })).toHaveAttribute('href', `https://bscscan.com/tx/${txHash}`)
+}, 20_000)
 
 // ---- the panel may be left ------------------------------------------------------------------
 

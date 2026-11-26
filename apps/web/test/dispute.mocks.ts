@@ -10,7 +10,11 @@ export const wagmi = {
   readErrors: { current: {} as Record<string, boolean> },
   readCalls: [] as { functionName: string; args?: readonly unknown[]; refetchInterval?: number }[],
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } as Record<string, unknown> },
-  receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
+  receiptParams: [] as {
+    hash?: string
+    chainId?: number
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
+  }[],
   block: { current: { timestamp: BigInt(Math.floor(NOW.getTime() / 1000)) } },
   blockCalls: [] as { chainId?: number; refetchInterval?: number }[],
 }
@@ -21,7 +25,11 @@ export const uploadEvidence = vi.fn()
 export const wagmiModule = {
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
-  useWaitForTransactionReceipt: (params: { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }) => {
+  useWaitForTransactionReceipt: (params: {
+    hash?: string
+    chainId?: number
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
+  }) => {
     wagmi.receiptParams.push(params)
     return wagmi.receipt.current
   },

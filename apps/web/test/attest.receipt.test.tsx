@@ -8,7 +8,11 @@ const wagmi = vi.hoisted(() => ({
   writeContractAsync: vi.fn(),
   connectors: [{ uid: '1', id: 'injected', name: 'Browser wallet' }],
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } },
-  receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
+  receiptParams: [] as {
+    hash?: string
+    chainId?: number
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
+  }[],
 }))
 vi.mock('wagmi', () => ({
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
@@ -16,7 +20,7 @@ vi.mock('wagmi', () => ({
   useWaitForTransactionReceipt: (params: {
     hash?: string
     chainId?: number
-    onReplaced?: (replacement: { reason: string }) => void
+    onReplaced?: (replacement: { reason: string; replacedTransaction: { hash: string } }) => void
   }) => {
     wagmi.receiptParams.push(params)
     return wagmi.receipt.current
@@ -108,7 +112,7 @@ test('a vote the wallet cancelled is a failure, never a pending vote', async () 
   await toReview()
   await submit()
   await waitFor(() => expect(wagmi.receiptParams.at(-1)?.onReplaced).toBeTypeOf('function'), { timeout: 5_000 })
-  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled' }))
+  act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled', replacedTransaction: { hash: txHash } }))
   expect(await screen.findByRole('alert', {}, { timeout: 5_000 })).toHaveTextContent(copy.errors.txReplaced)
   expect(screen.queryByRole('button', { name: copy.attest.pending })).toBeNull()
 }, 20_000)
