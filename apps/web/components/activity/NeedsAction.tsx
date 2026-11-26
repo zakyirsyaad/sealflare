@@ -2,23 +2,14 @@
 import type { Address } from 'viem'
 import type { NeedsAction as NeedsActionItem } from '@sealflare/shared/schemas'
 import { copy } from '../../lib/copy'
-import { shortAddress } from '../../lib/format'
 import { dueText, rowOf, sortByUrgency, type ActionRow } from '../../lib/activity/needsAction'
 import { useNow } from '../../lib/activity/useNow'
-import { ApplyPenaltiesButton } from './ApplyPenaltiesButton'
 import { SettleXpButton } from './SettleXpButton'
-
-/** A target of the account on which a penalty is still waiting. */
-export type PendingPenalty = { targetId: string; pending: number; attestations: number | null }
 
 export type NeedsActionProps = {
   account: Address
   /** The actions the indexer found for the account. */
   items: readonly NeedsActionItem[]
-  /** The penalties that are still waiting on the targets of the account. */
-  penalties: readonly PendingPenalty[]
-  /** Called once a page of penalties was applied, so the rest is read again. */
-  onApplied: () => void
   /** Called once a settlement was mined, so the rows of the account are read again. */
   onSettled?: () => void
 }
@@ -26,26 +17,23 @@ export type NeedsActionProps = {
 /**
  * The panel of the things that wait on the account.
  *
- * The rows come from the indexed rows of the account and from the chain, and they are ordered by
- * how urgent they are: the action that is due first comes first.
+ * The rows come from the indexed rows of the account, so an action never says something the chain
+ * has not said yet. The order of the rows is the order of urgency: the action that is due first
+ * comes first. The count of the panel is the count of the mark on the wallet button.
  */
-export function NeedsAction({ account, items, penalties, onApplied, onSettled }: NeedsActionProps) {
+export function NeedsAction({ account, items, onSettled }: NeedsActionProps) {
   const now = useNow()
   const rows = sortByUrgency(items).map(rowOf)
-  const total = rows.length + penalties.length
-  if (total === 0) return null
+  if (rows.length === 0) return null
   return (
     <section className="sf-frame sf-frame--crop" aria-label={copy.activity.needsAction}>
       <div className="sf-panel__head sf-panel__head--row">
         <h2>{copy.activity.needsAction}</h2>
-        <span className="sf-mono">{total}</span>
+        <span className="sf-mono">{rows.length}</span>
       </div>
       <ul className="sf-todos">
         {rows.map((row, index) => (
           <Row key={row.key} row={row} account={account} now={now} primary={index === 0} onSettled={onSettled} />
-        ))}
-        {penalties.map(penalty => (
-          <PenaltyRow key={penalty.targetId} penalty={penalty} account={account} onApplied={onApplied} />
         ))}
       </ul>
     </section>
@@ -95,7 +83,7 @@ function Control({
   if (row.kind === 'claim') return <SettleXpButton account={account} targetId={row.targetId} primary={primary} onSettled={onSettled} />
   if (row.kind === 'reveal' || row.kind === 'reply' || row.kind === 'close') {
     // The dispute page of a challenge that has no number is a page that does not exist.
-    if (row.challengeId === null) return null
+    if (row.challengeId === null) return <p className="sf-lead">{copy.activity.noChallenge}</p>
     return (
       <a className={`sf-btn ${variant}`} href={`/app/disputes/${row.challengeId}`}>
         {labelOf(row.kind)}
@@ -116,31 +104,4 @@ function labelOf(kind: ActionRow['kind']): string {
   if (kind === 'close') return copy.activity.closeAction
   if (kind === 'bond') return copy.activity.bondAction
   return copy.activity.bountyAction
-}
-
-/** A target of the account on which a penalty is still waiting. */
-function PenaltyRow({
-  penalty,
-  account,
-  onApplied,
-}: {
-  penalty: PendingPenalty
-  account: Address
-  onApplied: () => void
-}) {
-  return (
-    <li className="sf-todo">
-      <div className="sf-todo__body">
-        <h3 className="sf-todo__title">{copy.activity.penaltiesTitle.replace('{target}', shortAddress(penalty.targetId))}</h3>
-        <p className="sf-todo__detail">{copy.activity.penaltiesDetail}</p>
-      </div>
-      <ApplyPenaltiesButton
-        account={account}
-        targetId={penalty.targetId}
-        pending={penalty.pending}
-        attestations={penalty.attestations}
-        onApplied={onApplied}
-      />
-    </li>
-  )
 }

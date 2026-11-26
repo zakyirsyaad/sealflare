@@ -34,7 +34,8 @@ export function useVaultBalance(address: string | null): {
   const refetch = useStableRefetch(read)
   return {
     wei: typeof data === 'bigint' ? data : null,
-    failed: read.isError === true,
+    // A deployment that names no vault cannot be read, and that is a failure, not a loading read.
+    failed: read.isError === true || (vault === null && address !== null),
     refetch,
   }
 }
@@ -84,7 +85,11 @@ export function useStanding(address: string | null): StandingReading {
     query: { enabled },
   })
   const score = scoreOf(guardian.data)
-  const failed = guardian.isError === true || weight.isError === true || quota.isError === true
+  const failed =
+    guardian.isError === true ||
+    weight.isError === true ||
+    quota.isError === true ||
+    (core === null && address !== null)
   const readGuardian = useStableRefetch(guardian)
   const readWeight = useStableRefetch(weight)
   const readQuota = useStableRefetch(quota)
@@ -130,20 +135,12 @@ export function usePendingPenalties(targets: readonly string[]): {
     () =>
       core === null
         ? []
-        : targets.flatMap(target => [
-            {
-              abi: coreAbi,
-              address: core,
-              functionName: 'pendingPenalties' as const,
-              args: [target as Hex],
-            },
-            {
-              abi: coreAbi,
-              address: core,
-              functionName: 'getTarget' as const,
-              args: [target as Hex],
-            },
-          ]),
+        : targets.map(target => ({
+            abi: coreAbi,
+            address: core,
+            functionName: 'pendingPenalties' as const,
+            args: [target as Hex],
+          })),
     // The contracts are rebuilt only when the targets change, so the read is not repeated.
     [key, core],
   )
@@ -152,17 +149,45 @@ export function usePendingPenalties(targets: readonly string[]): {
     chainId: expectedChainId,
     query: { enabled: core !== null && targets.length > 0 },
   })
-  const pending: Record<string, TargetPenalties> = {}
+  const counts: Record<string, number> = {}
   targets.forEach((target, index) => {
-    const count = read.data?.[index * 2]
-    const view = read.data?.[index * 2 + 1]
-    pending[target] = {
-      pending: typeof count === 'number' ? count : 0,
-      attestations: attestationCountOf(view),
-    }
+    const value = read.data?.[index]
+    counts[target] = typeof value === 'number' ? value : 0
+  })
+  // Only the targets that wait on a penalty are read a second time, so the batch stays small.
+  const waiting = targets.filter(target => (counts[target] ?? 0) > 0)
+  const waitingKey = waiting.join(',')
+  const views = useMemo(
+    () =>
+      core === null
+        ? []
+        : waiting.map(target => ({
+            abi: coreAbi,
+            address: core,
+            functionName: 'getTarget' as const,
+            args: [target as Hex],
+          })),
+    [waitingKey, core],
+  )
+  const readViews = useReadContracts({
+    contracts: views,
+    chainId: expectedChainId,
+    query: { enabled: core !== null && waiting.length > 0 },
+  })
+  const pending: Record<string, TargetPenalties> = {}
+  targets.forEach(target => {
+    pending[target] = { pending: counts[target] ?? 0, attestations: null }
+  })
+  waiting.forEach((target, index) => {
+    const known = pending[target]
+    pending[target] = { pending: known?.pending ?? 0, attestations: attestationCountOf(readViews.data?.[index]) }
   })
   const refetch = useStableRefetch(read)
-  return { pending, failed: read.isError === true, refetch }
+  return {
+    pending,
+    failed: read.isError === true || (core === null && targets.length > 0),
+    refetch,
+  }
 }
 
 /** How many attestations a target holds, when the chain answered with the target. */

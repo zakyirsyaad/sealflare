@@ -1,0 +1,66 @@
+'use client'
+import type { Address } from 'viem'
+import { copy } from '../../lib/copy'
+import { shortAddress } from '../../lib/format'
+import { ApplyPenaltiesButton } from './ApplyPenaltiesButton'
+
+/** A target of the account on which a penalty is still waiting. */
+export type PendingPenalty = { targetId: string; pending: number; attestations: number | null }
+
+export type PenaltiesPanelProps = {
+  account: Address
+  /** The targets on which a penalty is still waiting. */
+  penalties: readonly PendingPenalty[]
+  /** Called once a page of penalties was applied, so the rest is read again. */
+  onApplied: () => void
+}
+
+/**
+ * The panel of the penalties that wait on the targets of the account.
+ *
+ * The penalties are not one of the actions of ux.md section 11, so they have a panel of their own
+ * and the count of the needs action panel stays the count of the mark on the wallet button.
+ */
+export function PenaltiesPanel({ account, penalties, onApplied }: PenaltiesPanelProps) {
+  if (penalties.length === 0) return null
+  return (
+    <section className="sf-frame sf-frame--crop" aria-label={copy.activity.penaltiesPanel}>
+      <div className="sf-panel__head sf-panel__head--row">
+        <h2>{copy.activity.penaltiesPanel}</h2>
+        <span className="sf-mono">{penalties.length}</span>
+      </div>
+      <ul className="sf-todos">
+        {penalties.map(penalty => (
+          <PenaltyRow key={penalty.targetId} penalty={penalty} account={account} onApplied={onApplied} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** A target of the account on which a penalty is still waiting. */
+function PenaltyRow({
+  penalty,
+  account,
+  onApplied,
+}: {
+  penalty: PendingPenalty
+  account: Address
+  onApplied: () => void
+}) {
+  return (
+    <li className="sf-todo">
+      <div className="sf-todo__body">
+        <h3 className="sf-todo__title">{copy.activity.penaltiesTitle.replace('{target}', shortAddress(penalty.targetId))}</h3>
+        <p className="sf-todo__detail">{copy.activity.penaltiesDetail}</p>
+      </div>
+      <ApplyPenaltiesButton
+        account={account}
+        targetId={penalty.targetId}
+        pending={penalty.pending}
+        attestations={penalty.attestations}
+        onApplied={onApplied}
+      />
+    </li>
+  )
+}

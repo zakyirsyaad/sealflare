@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const ACCOUNT = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
@@ -363,4 +363,70 @@ test('the last page of penalties covers only the attestations that are left', as
     expect(chain.write).toHaveBeenLastCalledWith(expect.objectContaining({ args: [TARGET, 100, 20] })),
   )
   expect(await screen.findByText(copy.activity.penaltiesCovered)).toBeInTheDocument()
+})
+
+test('the last page of penalties says how many penalties it applied', async () => {
+  let pages = 0
+  chain.write.mockImplementation(async () => {
+    pages += 1
+    chain.penalties[TARGET] = 70
+    return `0x${pages.toString(16).padStart(64, '0')}`
+  })
+  chain.penalties = { [TARGET]: 120 }
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  expect(await screen.findByText('The last page applied 50 penalties.')).toBeInTheDocument()
+})
+
+test('a page of penalties that applied nothing says so', async () => {
+  let pages = 0
+  chain.write.mockImplementation(async () => {
+    pages += 1
+    return `0x${pages.toString(16).padStart(64, '0')}`
+  })
+  chain.penalties = { [TARGET]: 120 }
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  expect(await screen.findByText(copy.activity.penaltiesNone)).toBeInTheDocument()
+})
+
+test('a deployment that names no contract shows the failed state', async () => {
+  process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({ chainId: 56 })
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  expect(await screen.findByText(copy.activity.balanceFailed)).toBeInTheDocument()
+  expect(screen.getByText(copy.activity.standingFailed)).toBeInTheDocument()
+  expect(screen.queryByText('0.015')).toBeNull()
+})
+
+test('the count of the needs-action panel is the count of the mark on the wallet button', async () => {
+  answer = activity({ needsAction: [need(), need({ kind: 'CAN_CLOSE' })], history: [historyItem()] })
+  render(
+    <>
+      <AppHeader />
+      <MyActivityPage />
+    </>,
+  )
+  await waitFor(() => expect(screen.getByRole('button', { name: /2 items need action/ })).toBeInTheDocument())
+  const panel = await screen.findByRole('region', { name: copy.activity.needsAction })
+  expect(within(panel).getByText('2')).toBeInTheDocument()
+})
+
+test('the mark on the wallet button is read again after a settlement', async () => {
+  answer = activity({
+    needsAction: [need({ kind: 'XP_CLAIMABLE', challengeId: undefined, dueAt: undefined, detail: 'Your early Safe vote held for 48 hours.' })],
+    history: [historyItem()],
+  })
+  render(
+    <>
+      <AppHeader />
+      <MyActivityPage />
+    </>,
+  )
+  await waitFor(() => expect(screen.getByRole('button', { name: /1 item needs action/ })).toBeInTheDocument())
+  answer = activity({ history: [historyItem()] })
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.claimAction }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: /1 item needs action/ })).toBeNull())
 })

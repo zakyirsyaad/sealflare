@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { ACTIVITY_CHANGED } from './activityChanged'
 import { loadActivity } from './api'
 
 /**
@@ -7,7 +8,8 @@ import { loadActivity } from './api'
  *
  * The mark on the wallet button must be visible without opening the menu, so the count is read
  * on every screen of the application. Without a wallet there is nothing to wait on, and the count
- * of another account is never shown.
+ * of another account is never shown. The count is read again when the rows of the account change,
+ * so a settlement on one screen does not leave a stale mark on the other screens.
  */
 export function useNeedsActionCount(address: string | null): number {
   const [reading, setReading] = useState({ address: null as string | null, count: 0 })
@@ -17,11 +19,18 @@ export function useNeedsActionCount(address: string | null): number {
       return
     }
     let live = true
-    void loadActivity(address).then(
-      data => { if (live) setReading({ address, count: data.needsAction.length }) },
-      () => { if (live) setReading({ address, count: 0 }) },
-    )
-    return () => { live = false }
+    const read = () => {
+      void loadActivity(address).then(
+        data => { if (live) setReading({ address, count: data.needsAction.length }) },
+        () => { if (live) setReading({ address, count: 0 }) },
+      )
+    }
+    read()
+    window.addEventListener(ACTIVITY_CHANGED, read)
+    return () => {
+      live = false
+      window.removeEventListener(ACTIVITY_CHANGED, read)
+    }
   }, [address])
   return reading.address === address ? reading.count : 0
 }

@@ -2,6 +2,7 @@
 import { CONSTANTS, weightOf } from '@sealflare/shared/rules'
 import { copy } from '../../lib/copy'
 import { ErrorState } from '../ui/ErrorState'
+import { Skeleton } from '../ui/Skeleton'
 
 export type StandingProps = {
   /** The score of the account, as the registry holds it. */
@@ -35,6 +36,8 @@ export function Standing({ score, weight, toNextWeight, attestationsLeft, failed
       <div className="sf-panel__head"><h2>{copy.activity.standing}</h2></div>
       {failed ? (
         <ErrorState what={copy.activity.standingFailed} onChainSafe onRetry={onRetry} />
+      ) : score === null && weight === null ? (
+        <Skeleton label={copy.common.loading} />
       ) : (
         <div className="sf-standing">
           <div className="sf-standing__weight">

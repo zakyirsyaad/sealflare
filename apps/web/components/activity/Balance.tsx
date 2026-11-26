@@ -4,6 +4,7 @@ import { modulesLive } from '../../lib/chain/config'
 import { copy } from '../../lib/copy'
 import { formatBnb } from '../../lib/format'
 import { ErrorState } from '../ui/ErrorState'
+import { Skeleton } from '../ui/Skeleton'
 import { WithdrawButton } from './WithdrawButton'
 
 export type BalanceProps = {
@@ -33,11 +34,12 @@ export function Balance({ account, balance, failed, onWithdrawn, onRetry }: Bala
       <div className="sf-balance">
         {failed ? (
           <ErrorState what={copy.activity.balanceFailed} onChainSafe onRetry={onRetry} />
+        ) : balance === null ? (
+          <Skeleton label={copy.common.loading} />
         ) : (
           <>
             <p className="sf-balance__amount">
-              {balance === null ? copy.common.loading : formatBnb(balance)}{' '}
-              <span className="sf-balance__unit">BNB</span>
+              {formatBnb(balance)} <span className="sf-balance__unit">{copy.common.bnb}</span>
             </p>
             {empty && (
               <>
