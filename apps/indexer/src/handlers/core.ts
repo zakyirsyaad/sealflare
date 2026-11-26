@@ -272,6 +272,57 @@ async function applyVerdictApplied(tx: Db, event: TimedEvent & { name: 'VerdictA
 }
 
 /**
+ * Fills what an event that was read before can still fill.
+ *
+ * The handler of an event that is in the raw log is skipped, because the state it wrote is still
+ * there. A database that was built before a column existed keeps that column empty, and the
+ * moment of a verdict is such a column: the handler of the verdict writes it and nothing else.
+ *
+ * The moment is filled here when the verdict is read again, which is what a database that is read
+ * from the start block does. The state the handler wrote is left alone, and a target whose moment
+ * is already known keeps it, so the verdict that confirmed the danger is the one that fills the
+ * columns.
+ */
+export async function reconcileCoreEvent(tx: Db, event: TimedEvent): Promise<void> {
+  if (event.name === 'VerdictApplied') await reconcileVerdictApplied(tx, event)
+}
+
+/**
+ * The moment of the verdict that confirmed a target as dangerous.
+ *
+ * Only an upheld verdict confirms the danger, so only an upheld verdict fills the columns. The
+ * votes are counted from the raw log, because the log keeps the order of the chain and the rows
+ * of the votes hold the votes that came after the verdict as well.
+ */
+async function reconcileVerdictApplied(tx: Db, event: TimedEvent & { name: 'VerdictApplied' }): Promise<void> {
+  const outcome = nameOf(CHALLENGE_OUTCOMES, event.args.outcome)
+  if (outcome !== 'UPHELD') return
+  const target = await tx.query<{ verdict_at: Date | null }>(
+    'SELECT verdict_at FROM targets WHERE target_id = $1',
+    [event.args.targetId],
+  )
+  // A target that is not in the database, or a target whose moment is known, is left alone.
+  if (!target[0] || target[0].verdict_at !== null) return
+  const count = await countVotesBefore(tx, event)
+  await tx.query('UPDATE targets SET verdict_at = $2, count_at_verdict = $3 WHERE target_id = $1', [
+    event.args.targetId,
+    event.at.toISOString(),
+    count,
+  ])
+}
+
+/** The votes a target held when its verdict was applied. */
+async function countVotesBefore(tx: Db, event: TimedEvent & { name: 'VerdictApplied' }): Promise<number> {
+  const rows = await tx.query<{ count: number }>(
+    `SELECT count(*)::int AS count FROM events
+     WHERE name = 'Attested' AND args ->> 'targetId' = $1
+       AND (block_number < $2 OR (block_number = $2 AND log_index < $3))`,
+    [event.args.targetId, event.blockNumber.toString(), event.logIndex],
+  )
+  return rows[0]?.count ?? 0
+}
+
+/**
  * The penalties the guardians of a target owe.
  *
  * Every SAFE vote on the target is a penalty the contract has not charged yet, and the counter

@@ -5,5 +5,8 @@
 -- The indexer used to stop for good on such a bounty, because the row of the target was missing.
 -- The bounty is now stored without it. The label is filled when TargetCreated arrives, and the
 -- read model falls back to the target id until then.
-ALTER TABLE bounties DROP CONSTRAINT bounties_target_id_fkey;
+--
+-- The file was called 005_bounty_before_target.sql before it was renamed, so a database that ran
+-- the old name runs this one as well. Every statement is written so that it can run twice.
+ALTER TABLE bounties DROP CONSTRAINT IF EXISTS bounties_target_id_fkey;
 ALTER TABLE bounties ALTER COLUMN label DROP NOT NULL;

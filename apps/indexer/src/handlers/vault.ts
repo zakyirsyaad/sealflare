@@ -208,6 +208,37 @@ async function applyBountyCreated(tx: Db, event: TimedVaultEvent & { name: 'Boun
       event.args.startIndex,
     ],
   )
+  await fillFromIndexedAttestations(tx, event)
+}
+
+/**
+ * The slots of a bounty fill from the attestations that come after it.
+ *
+ * In the order of the chain there are none of them yet, because the votes that come after the
+ * bounty are read later. A database that is read again from the start block has them already,
+ * because the Core events it read before are skipped and their votes are never offered to the
+ * bounty. The bounty is filled from the votes that are in the database here, which is a no-op in
+ * the order of the chain.
+ */
+async function fillFromIndexedAttestations(
+  tx: Db,
+  event: TimedVaultEvent & { name: 'BountyCreated' },
+): Promise<void> {
+  const votes = await tx.query<{ attestation_index: number; guardian: string; verdict: string; at: Date | string }>(
+    `SELECT attestation_index, guardian, verdict, at FROM attestations
+     WHERE target_id = $1 AND attestation_index >= $2
+     ORDER BY attestation_index ASC`,
+    [event.args.targetId, event.args.startIndex],
+  )
+  for (const vote of votes) {
+    await fillBountySlot(tx, {
+      targetId: event.args.targetId,
+      attestationIndex: vote.attestation_index,
+      guardian: vote.guardian as Address,
+      verdict: vote.verdict,
+      at: vote.at instanceof Date ? vote.at : new Date(vote.at),
+    })
+  }
 }
 
 /** The bounty was paid out. */
