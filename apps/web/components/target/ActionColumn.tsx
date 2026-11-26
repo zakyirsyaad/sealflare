@@ -3,10 +3,13 @@ import { useState } from 'react'
 import { CONSTANTS, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import type { AttestationRow, ScanReport } from '@sealflare/shared/schemas'
 import { useUserState } from '../../lib/chain/userState'
+import { modulesLive } from '../../lib/chain/config'
+import { moduleGate } from '../../lib/chain/modules'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
 import { formatUtc, isZeroHash, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
+import { BountyPanel } from '../bounty/BountyPanel'
 import { attestAvailability, type AttestAvailability } from '../attest/availability'
 import { usePendingVote, type PendingVote } from './pendingVote'
 
@@ -161,6 +164,8 @@ export function ActionColumn(props: ActionColumnProps) {
   const user = useUserState()
   const { vote: sessionVote } = usePendingVote()
   const [open, setOpen] = useState(false)
+  const [bountyOpen, setBountyOpen] = useState(false)
+  const gate = moduleGate(modulesLive)
   const left = user.kind === 'holder' ? user.attestationsLeft : null
   const address = 'address' in user ? user.address : undefined
   const onChain = previousVote(address, props.attestations)
@@ -189,10 +194,10 @@ export function ActionColumn(props: ActionColumnProps) {
       <Button variant="secondary" className="sf-btn--block" disabled>
         {copy.target.challenge}
       </Button>
-      <Button variant="secondary" className="sf-btn--block" disabled>
+      <Button variant="secondary" className="sf-btn--block" disabled={gate.disabled} onClick={() => setBountyOpen(true)}>
         {copy.target.fundBounty}
       </Button>
-      <p className="sf-actions__note">{copy.common.modulesNotLive}</p>
+      {gate.disabled && <p className="sf-actions__note">{gate.reason}</p>}
       <Notes
         quota={limitText(left === null ? copy.target.quotaDefault : copy.target.quotaLeft, left)}
         reason={reason}
@@ -203,6 +208,7 @@ export function ActionColumn(props: ActionColumnProps) {
       />
       {/* Mounted while closed too, so a vote that is on its way is not lost with the dialog. */}
       <AttestPanel {...panelProps(props)} open={open} onClose={() => setOpen(false)} />
+      <BountyPanel targetId={props.targetId} label={props.label} open={bountyOpen} onClose={() => setBountyOpen(false)} />
     </aside>
   )
 }
