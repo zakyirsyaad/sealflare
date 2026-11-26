@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { targetIdOfContract } from '@sealflare/shared/rules'
 import type { Hex } from 'viem'
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   connection: { address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', isConnected: true, chainId: 56 },
   bond: { amount: 0n, withdrawalAvailableAt: 0n, lockedByChallengeId: 0n },
   write: vi.fn(),
+  refetch: vi.fn(),
 }))
 
 vi.mock('../lib/chain/config', () => ({
@@ -29,7 +30,7 @@ vi.mock('../lib/chain/addresses', () => ({
 }))
 vi.mock('wagmi', () => ({
   useConnection: () => mocks.connection,
-  useReadContract: () => ({ data: mocks.bond }),
+  useReadContract: () => ({ data: mocks.bond, refetch: mocks.refetch }),
   usePublicClient: () => ({ waitForTransactionReceipt: async () => ({ status: 'success' }) }),
   useWriteContract: () => ({ mutateAsync: mocks.write }),
 }))
@@ -55,6 +56,7 @@ beforeEach(() => {
   mocks.connection = { address: me, isConnected: true, chainId: 56 }
   mocks.bond = { amount: 0n, withdrawalAvailableAt: 0n, lockedByChallengeId: 0n }
   mocks.write.mockResolvedValue(`0x${'22'.repeat(32)}` as Hex)
+  mocks.refetch.mockResolvedValue({})
 })
 
 test('the Publisher tab shows role, how ownership was proven, bond per depositor and withdrawal status', () => {
@@ -158,4 +160,21 @@ test('finalizing a withdrawal writes it from the wallet of the depositor', async
   await userEvent.click(screen.getByRole('button', { name: copy.publisher.finalizeWithdrawal }))
   expect(mocks.write).toHaveBeenCalledTimes(1)
   expect(mocks.write.mock.calls[0]![0].functionName).toBe('finalizeBondWithdrawal')
+})
+
+test('the bond is read again after a withdrawal request is confirmed', async () => {
+  mocks.bond = { amount: 500_000_000_000_000_000n, withdrawalAvailableAt: 0n, lockedByChallengeId: 0n }
+  render(<PublisherTab {...props()} />)
+  await userEvent.click(screen.getByRole('button', { name: copy.publisher.requestWithdrawal }))
+  await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1))
+})
+
+test('the bond is not read again when the withdrawal request was not confirmed', async () => {
+  mocks.bond = { amount: 500_000_000_000_000_000n, withdrawalAvailableAt: 0n, lockedByChallengeId: 0n }
+  mocks.write.mockRejectedValue(new Error('rejected'))
+  render(<PublisherTab {...props()} />)
+  await userEvent.click(screen.getByRole('button', { name: copy.publisher.requestWithdrawal }))
+  await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1))
+  expect(mocks.refetch).not.toHaveBeenCalled()
 })

@@ -188,3 +188,43 @@ describe('the evidence of a target, read through a public-RPC-like node', () => 
     await expect((await reader()).evidence(old, T0, 0)).rejects.toThrow(RangeError)
   })
 })
+
+describe('the binding of a target', () => {
+  const publisherBound = coreAbi.find(item => item.type === 'event' && item.name === 'PublisherBound')!
+
+  function boundLog(block: bigint) {
+    const data = encodeAbiParameters(
+      publisherBound.inputs.filter(input => !input.indexed),
+      [2, 0] as never,
+    )
+    const topics = encodeEventTopics({
+      abi: coreAbi,
+      eventName: 'PublisherBound',
+      args: { targetId: TARGET, publisher: GUARDIAN },
+    } as never)
+    return {
+      address: CORE.toLowerCase(), blockHash: `0x${'11'.repeat(32)}`, blockNumber: numberToHex(block), data, logIndex: '0x0',
+      removed: false, topics, transactionHash: `0x${'9'.repeat(64)}`, transactionIndex: '0x0',
+    }
+  }
+
+  test('a confirmed binding is read once, because Core never binds a target twice', async () => {
+    state.logs = [boundLog(HEAD - 100n)] as never
+    const chain = await reader()
+    const first = await chain.binding(TARGET, timestampOf(CREATED_BLOCK))
+    expect(first?.publisher.toLowerCase()).toBe(GUARDIAN.toLowerCase())
+    const reads = state.logRanges.length
+    expect(reads).toBeGreaterThan(0)
+    await chain.binding(TARGET, timestampOf(CREATED_BLOCK))
+    expect(state.logRanges.length).toBe(reads)
+  })
+
+  test('a binding that is too close to the head is read again, because the block can still change', async () => {
+    state.logs = [boundLog(HEAD - 3n)] as never
+    const chain = await reader()
+    await chain.binding(TARGET, timestampOf(CREATED_BLOCK))
+    const reads = state.logRanges.length
+    await chain.binding(TARGET, timestampOf(CREATED_BLOCK))
+    expect(state.logRanges.length).toBeGreaterThan(reads)
+  })
+})

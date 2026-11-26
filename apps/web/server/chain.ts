@@ -231,6 +231,7 @@ const evidenceCache = new Map<string, { block: bigint; rows: EvidenceRow[] }>()
 /** The read logs of the tests start from an empty cache, as a fresh process would. */
 export function clearEvidenceCache(): void {
   evidenceCache.clear()
+  bindings.clear()
 }
 
 /**
@@ -320,7 +321,12 @@ type PublisherBoundEvent = Extract<AbiEventItem, { name: 'PublisherBound' }>
  * because a target can be bound only once. A log that cannot be read leaves the method unknown:
  * the page then says so instead of guessing.
  */
+/** Core refuses a second bind of a target, so a binding that is confirmed is read once per process. */
+const bindings = new Map<string, Binding>()
+
 async function readBinding(targetId: Hex, createdAt: number): Promise<Binding | null> {
+  const known = bindings.get(targetId.toLowerCase())
+  if (known !== undefined) return known
   try {
     const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
     const from = await createdBlock(targetId, createdAt, head)
@@ -336,11 +342,11 @@ async function readBinding(targetId: Hex, createdAt: number): Promise<Binding | 
     if (last === undefined) return null
     const { publisher, role, method } = last.args
     if (publisher === undefined || role === undefined || method === undefined) return null
-    return {
-      publisher,
-      role: publisherRoleOf(role),
-      method: bindMethodOf(method),
+    const binding = { publisher, role: publisherRoleOf(role), method: bindMethodOf(method) }
+    if (last.blockNumber !== null && last.blockNumber <= head - CONFIRMATIONS) {
+      bindings.set(targetId.toLowerCase(), binding)
     }
+    return binding
   } catch {
     return null
   }

@@ -12,11 +12,12 @@ export const ownerAbi = [
 ] as const
 
 /**
- * The owner a target reports, or null when it has none. A target that answers with anything but a
- * clean address word has no owner that can be trusted, which is what the contracts do as well.
+ * The owner a target reports, or null when it has none. The contracts accept only an answer of
+ * exactly one word whose upper 12 bytes are zero, so longer data or a dirty upper part has no
+ * owner here either, and the deployer path stays open for that target.
  */
 export function decodeOwner(data: unknown): Address | null {
-  if (typeof data !== 'string' || data === '0x') return null
+  if (typeof data !== 'string' || !/^0x0{24}[0-9a-fA-F]{40}$/.test(data)) return null
   try {
     const [owner] = decodeAbiParameters([{ type: 'address' }], data as Hex)
     return owner === '0x0000000000000000000000000000000000000000' ? null : owner

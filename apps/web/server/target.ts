@@ -213,7 +213,9 @@ async function readChain(reader: ChainReader, targetId: Hex) {
   }
   const bond =
     target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher) : null
-  const binding = target === null ? null : await reader.binding(targetId, target.createdAt)
+  // A target with no publisher has no PublisherBound event, so the log is not walked for it.
+  const binding =
+    target === null || target.publisher === ZERO_ADDRESS ? null : await reader.binding(targetId, target.createdAt)
   return { target, tier, attestations, evidence, evidenceFailed, bond, binding }
 }
 

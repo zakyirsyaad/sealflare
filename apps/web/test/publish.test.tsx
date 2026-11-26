@@ -1,23 +1,30 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { privateKeyToAccount } from 'viem/accounts'
-import { getContractAddress, type Hex } from 'viem'
+import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts'
+import { getContractAddress, toHex, type Hex } from 'viem'
 import { canonicalBundleHash, targetIdOfContract, targetIdOfSkill } from '@sealflare/shared/rules'
 import { ScanReport } from '@sealflare/shared/schemas'
 import { copy } from '../lib/copy'
 import { shortAddress } from '../lib/format'
 import { bindTypedData, decodeRequest, encodeRequest, type BindRequest } from '../lib/publish/request'
 import { findDeployNonce } from '../lib/publish/deployNonce'
+import { decodeOwner } from '../lib/publish/owner'
 
 const me = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
 const owner = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
 const target = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
 const core = '0x5FbDB2315678afecb367f032d93F642f64180aa3'
 const vault = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512'
-// Anvil's public development accounts. They hold no real funds and are not secrets.
-const ownerSigner = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a'
-const otherSigner = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+// Keys of Anvil's public development mnemonic, derived here so no raw private key sits in the repository.
+const ANVIL_MNEMONIC = 'test test test test test test test test test test test junk'
+function anvilKey(addressIndex: number): Hex {
+  const key = mnemonicToAccount(ANVIL_MNEMONIC, { addressIndex }).getHdKey().privateKey
+  if (key === null) throw new Error('The development account has no private key.')
+  return toHex(key)
+}
+const ownerSigner = anvilKey(2)
+const otherSigner = anvilKey(0)
 
 const mocks = vi.hoisted(() => ({
   user: { kind: 'holder', address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', isLoading: false, isError: false, recheck: () => {} },
@@ -74,7 +81,7 @@ vi.mock('wagmi', () => ({
 }))
 
 import PublishPage from '../app/app/publish/page'
-import SignRequestPage from '../app/app/publish/sign/[request]/page'
+import SignRequestPage, { refusalReason } from '../app/app/publish/sign/[request]/page'
 
 function shareLink(container: HTMLElement): string {
   const node = container.querySelector('.sf-share__link')
@@ -372,6 +379,12 @@ test('the deployment nonce is found by recreating the address of the deployer', 
   await expect(findDeployNonce(deployer, contract, 10)).resolves.toEqual(5n)
 })
 
+test('a deployer whose only transaction made the contract is found at nonce 0', async () => {
+  const deployer = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as `0x${string}`
+  const contract = getContractAddress({ from: deployer, nonce: 0n })
+  await expect(findDeployNonce(deployer, contract, 1)).resolves.toEqual(0n)
+})
+
 const requestForSigning: BindRequest = {
   v: 1,
   kind: 'owner',
@@ -451,4 +464,43 @@ test('the sign page refuses a request whose nonce is no longer the current one',
   render(<SignRequestPage />)
   expect(await screen.findByRole('alert')).toHaveTextContent(copy.publish.requestStale)
   window.location.hash = ''
+})
+
+test('the sign page refuses a request made for another chain than the one of the app', async () => {
+  window.location.hash = `#${encodeRequest({ ...requestForSigning, chainId: 97 })}`
+  render(<SignRequestPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.publish.requestWrongChain)
+  window.location.hash = ''
+})
+
+test('a request is refused when the Core address of the app is unknown', () => {
+  expect(refusalReason(requestForSigning, me, 56, null, 0)).toBe(copy.publish.requestWrongCore)
+})
+
+test('a request with a deadline too large to show is not a request', () => {
+  expect(decodeRequest(encodeRequest({ ...requestForSigning, deadline: '9'.repeat(30) }))).toBeNull()
+})
+
+test('a 65 byte signature is left to the chain when the signer is a contract wallet', async () => {
+  mocks.signerHasCode = true
+  const { container } = render(<PublishPage />)
+  await checkOwnership()
+  await userEvent.click(screen.getByRole('button', { name: copy.publish.proveOwnership }))
+  const safeSignature = await signRequest(requestOf(container), otherSigner)
+  await pasteSignature(safeSignature)
+  await waitFor(() => expect(screen.getByRole('button', { name: copy.publish.bindAsPublisher })).toBeEnabled())
+  expect(screen.getByText(copy.publish.signatureOnChain)).toBeInTheDocument()
+  expect(screen.queryByText(copy.publish.signatureWrongSigner)).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: copy.publish.bindAsPublisher }))
+  await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1))
+  expect(mocks.write.mock.calls[0]![0].args[3]).toBe(safeSignature)
+})
+
+test('an owner answer must be exactly one clean address word', () => {
+  const word = (address: string) => `0x${'00'.repeat(12)}${address.slice(2).toLowerCase()}`
+  expect(decodeOwner(word(owner))).toBe(owner)
+  expect(decodeOwner(`${word(owner)}${'00'.repeat(32)}`)).toBeNull()
+  expect(decodeOwner(`0xff${'00'.repeat(11)}${owner.slice(2).toLowerCase()}`)).toBeNull()
+  expect(decodeOwner(word('0x0000000000000000000000000000000000000000'))).toBeNull()
+  expect(decodeOwner('0x')).toBeNull()
 })

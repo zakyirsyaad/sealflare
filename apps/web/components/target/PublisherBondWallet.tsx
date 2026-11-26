@@ -45,6 +45,11 @@ export function PublisherBondWallet({ targetId, publisher, address }: PublisherB
   const terms = bondTerms()
   const range = bondRange()
 
+  /** The bond is read again once the chain confirmed a write, so the buttons follow the real state. */
+  async function settle(write: Promise<boolean>): Promise<void> {
+    if (await write) await own.refetch()
+  }
+
   async function post(): Promise<void> {
     const wei = parseBnb(amount)
     if (wei === null) {
@@ -57,7 +62,7 @@ export function PublisherBondWallet({ targetId, publisher, address }: PublisherB
       return
     }
     setError(null)
-    await deposit(targetId, wei)
+    await settle(deposit(targetId, wei))
   }
 
   const status = locked
@@ -104,12 +109,12 @@ export function PublisherBondWallet({ targetId, publisher, address }: PublisherB
         )}
         {!isPublisher && ownAmount === 0n && <p className="sf-lead">{copy.publisher.notPublisher}</p>}
         {ownAmount > 0n && availableAt === 0 && !locked && (
-          <Button disabled={gate.disabled || state.status === 'sending'} onClick={() => void requestWithdrawal(targetId)}>
+          <Button disabled={gate.disabled || state.status === 'sending'} onClick={() => void settle(requestWithdrawal(targetId))}>
             {copy.publisher.requestWithdrawal}
           </Button>
         )}
         {ready && !locked && (
-          <Button disabled={gate.disabled || state.status === 'sending'} onClick={() => void finalizeWithdrawal(targetId)}>
+          <Button disabled={gate.disabled || state.status === 'sending'} onClick={() => void settle(finalizeWithdrawal(targetId))}>
             {copy.publisher.finalizeWithdrawal}
           </Button>
         )}

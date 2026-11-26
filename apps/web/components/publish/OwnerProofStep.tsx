@@ -24,18 +24,16 @@ const emptyCheck: Check = { signature: null, error: null, note: null }
  * wallet that has to sign is named in the request, so the signature is read before a transaction
  * is offered.
  *
- * A signature that is not an ordinary wallet signature comes from a contract wallet, and it is
- * only accepted when the wallet that has to sign really is a contract: the registry checks that
- * signature on-chain.
+ * When the wallet that has to sign is a contract, the signature is left to the registry, which
+ * checks it on-chain. A Safe with one owner signs with 65 bytes as well, and recovering that
+ * signature over the Sealflare digest gives an unrelated address, so it is never read locally.
  */
 export async function checkSignature(request: BindRequest, raw: string, signerHasCode: boolean): Promise<Check> {
   const trimmed = raw.trim()
   if (trimmed === '') return emptyCheck
   if (!isHexSignature(trimmed)) return { signature: null, error: copy.publish.signatureInvalid, note: null }
-  if (!isPlainSignature(trimmed as Hex)) {
-    if (!signerHasCode) return { signature: null, error: copy.publish.signatureInvalid, note: null }
-    return { signature: trimmed as Hex, error: null, note: copy.publish.signatureOnChain }
-  }
+  if (signerHasCode) return { signature: trimmed as Hex, error: null, note: copy.publish.signatureOnChain }
+  if (!isPlainSignature(trimmed as Hex)) return { signature: null, error: copy.publish.signatureInvalid, note: null }
   const signer = await signerOfSignature(request, trimmed as Hex)
   if (signer === null) return { signature: null, error: copy.publish.signatureInvalid, note: null }
   if (signer.toLowerCase() !== signerOf(request).toLowerCase()) {
@@ -147,9 +145,9 @@ export function OwnerProofStep({ request, connected, onBound }: OwnerProofStepPr
     }
   }
 
-  function bind(signature: Hex | undefined) {
-    if (request.kind === 'owner') void bindByOwner(request, signature)
-    else void bindByDeployer(request, signature)
+  function bind(signature: Hex | undefined, onChain = false) {
+    if (request.kind === 'owner') void bindByOwner(request, signature, { onChain })
+    else void bindByDeployer(request, signature, { onChain })
   }
 
   return (
@@ -171,7 +169,7 @@ export function OwnerProofStep({ request, connected, onBound }: OwnerProofStepPr
           onRaw={setRaw}
           check={check}
           canBind={check.signature !== null}
-          onBind={() => bind(check.signature ?? undefined)}
+          onBind={() => bind(check.signature ?? undefined, check.note !== null)}
         />
       )}
       {state.error !== null && <p role="alert">{state.error}</p>}

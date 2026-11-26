@@ -35,8 +35,8 @@ export function refusalReason(
   currentOwner: string | null = null,
 ): string | null {
   if (request === null) return copy.publish.requestInvalid
-  if (chainId !== expectedChainId) return copy.publish.requestWrongChain
-  if (core !== null && request.core.toLowerCase() !== core) return copy.publish.requestWrongCore
+  if (chainId !== expectedChainId || request.chainId !== expectedChainId) return copy.publish.requestWrongChain
+  if (core === null || request.core.toLowerCase() !== core) return copy.publish.requestWrongCore
   if (BigInt(request.deadline) * 1000n <= BigInt(now)) return copy.publish.requestExpired
   if (currentNonce !== null && currentNonce !== request.bindNonce) return copy.publish.requestStale
   if (

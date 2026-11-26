@@ -331,3 +331,23 @@ test('a target without attestations never reads the event log', async () => {
   expect(evidence).not.toHaveBeenCalled()
   expect(data.evidenceFailed).toBe(false)
 })
+
+test('a target with no publisher never walks the event log for a binding', async () => {
+  const binding = vi.fn(async () => null)
+  reader.current = fakeReader({ binding })
+  await loadTarget(targetId, null)
+  expect(binding).not.toHaveBeenCalled()
+})
+
+test('a target with a publisher reads how it was bound', async () => {
+  const publisher = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as const
+  const bound = { publisher, role: 'VERIFIED_PUBLISHER', method: 'OWNER' } as const
+  const binding = vi.fn(async () => bound)
+  reader.current = fakeReader({
+    target: async () => coreTarget({ publisher, publisherRole: 'VERIFIED_PUBLISHER' }),
+    binding,
+  })
+  const page = await loadTarget(targetId, null)
+  expect(binding).toHaveBeenCalledTimes(1)
+  expect(page.binding).toEqual(bound)
+})

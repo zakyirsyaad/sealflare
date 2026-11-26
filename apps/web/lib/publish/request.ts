@@ -15,6 +15,9 @@ export const REQUEST_VALIDITY_SECONDS = 24 * 60 * 60
 export const BindKindSchema = z.enum(['owner', 'deployer'])
 export type BindKind = z.infer<typeof BindKindSchema>
 
+/** The largest timestamp a JavaScript Date can show, so an oversized deadline cannot break the page. */
+const MAX_DEADLINE_SECONDS = 8_640_000_000_000n
+
 const baseRequest = {
   v: z.literal(1),
   chainId: z.number().int().positive(),
@@ -24,7 +27,7 @@ const baseRequest = {
   agentIdHolder: AddressSchema,
   /** The nonce the target had when the request was made. Every binding consumes it. */
   bindNonce: UintStringSchema,
-  deadline: UintStringSchema,
+  deadline: UintStringSchema.refine(value => BigInt(value) <= MAX_DEADLINE_SECONDS, 'The deadline is out of range.'),
 }
 
 /** The owner of the contract signs for it. */

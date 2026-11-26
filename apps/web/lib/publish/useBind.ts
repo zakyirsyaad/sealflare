@@ -20,6 +20,9 @@ export type BindState = {
   signature: Hex | null
 }
 
+/** `onChain`: the signer is a contract wallet, so the registry checks the signature, not the browser. */
+export type BindOptions = { onChain?: boolean }
+
 const idle: BindState = { status: 'idle', error: null, txHash: null, signature: null }
 
 function coreAddress(): Address {
@@ -82,16 +85,17 @@ export function useBind() {
 
   /**
    * The signature of the request. A signature that was pasted in is checked, and a signature that
-   * the wallet of the visitor just made is the wallet's own and is not read again.
+   * the wallet of the visitor just made is the wallet's own and is not read again. A signature of a
+   * contract wallet is left to the registry, because it cannot be read without the chain.
    */
-  async function signatureFor(request: BindRequest, pasted: Hex | undefined): Promise<Hex | null> {
+  async function signatureFor(request: BindRequest, pasted: Hex | undefined, onChain: boolean): Promise<Hex | null> {
     if (pasted === undefined) return await signRequest(request)
-    if (!(await accepts(request, pasted))) return null
+    if (!onChain && !(await accepts(request, pasted))) return null
     return pasted
   }
 
-  async function bindByOwner(request: OwnerBindRequest, signature?: Hex): Promise<void> {
-    const signed = await signatureFor(request, signature)
+  async function bindByOwner(request: OwnerBindRequest, signature?: Hex, options: BindOptions = {}): Promise<void> {
+    const signed = await signatureFor(request, signature, options.onChain === true)
     if (signed === undefined || signed === null) return
     setState(current => ({ ...current, status: 'sending', error: null, signature: signed }))
     try {
@@ -109,8 +113,12 @@ export function useBind() {
     }
   }
 
-  async function bindByDeployer(request: DeployerBindRequest, signature?: Hex): Promise<void> {
-    const signed = await signatureFor(request, signature)
+  async function bindByDeployer(
+    request: DeployerBindRequest,
+    signature?: Hex,
+    options: BindOptions = {},
+  ): Promise<void> {
+    const signed = await signatureFor(request, signature, options.onChain === true)
     if (signed === undefined || signed === null) return
     setState(current => ({ ...current, status: 'sending', error: null, signature: signed }))
     try {
