@@ -173,7 +173,7 @@ a { color: inherit; }
 .sf-table th, .sf-table td { border-bottom: 1px solid var(--border); padding: 16px 24px; overflow-wrap: anywhere; }
 .sf-panel { position: fixed; inset: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(480px, 100%); max-width: 100%; margin: 0; padding: 0; border: 1px solid var(--border); background: var(--card); color: var(--foreground); }
 .sf-panel::backdrop { background: rgb(0 0 0 / 55%); }
-.sf-panel header { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 16px 24px; }
+.sf-panel header { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); padding: 16px 24px; }
 .sf-panel header h2 { flex-grow: 1; }
 .sf-panel header .sf-mono { color: var(--muted-foreground); }
 .sf-panel h2 { margin: 0; font-size: 24px; }
@@ -316,35 +316,3 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-rows__row { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
 .sf-rows__name { color: var(--muted-foreground); }
 .sf-rows__value { text-align: right; }
-
-/* Disputes: the phase strip, the evidence boxes, the jury and the endings */
-.sf-dispute { gap: var(--space-6); }
-.sf-dispute__main { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-6); }
-.sf-dispute__side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-6); }
-.sf-dispute__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-6); }
-.sf-phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 0; padding: 0; list-style: none; }
-.sf-phase { display: flex; flex-direction: column; gap: 6px; padding: var(--space-6); border-left: var(--hairline) solid var(--border); }
-.sf-phase:first-child { border-left: 0; }
-.sf-phase[data-active="true"] { box-shadow: inset 0 3px 0 var(--positive); }
-.sf-phase__name { color: var(--muted-foreground); font-size: 12px; text-transform: lowercase; }
-.sf-phase[data-active="true"] .sf-phase__name { color: var(--positive); }
-.sf-phase__status { font-size: 24px; line-height: 32px; font-weight: 500; }
-.sf-phase__help { color: var(--muted-foreground); }
-.sf-evidence { display: flex; flex-direction: column; min-width: 0; }
-.sf-evidence__head { padding: 14px 20px; border-bottom: var(--hairline) solid var(--border); }
-.sf-evidence__body { padding: 20px; }
-.sf-proof { margin: 0; padding: 10px 12px; background: var(--muted); color: var(--muted-foreground); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.sf-jury__count { margin: 0; font-size: 24px; line-height: 28px; font-weight: 600; }
-.sf-scroll { overflow-x: auto; }
-.sf-outcomes { min-width: 560px; }
-.sf-outcomes th[scope="row"] { text-align: left; font-weight: 600; }
-.sf-endings { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.sf-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-.sf-checkrow { display: flex; gap: 12px; align-items: center; min-height: 44px; cursor: pointer; }
-.sf-checkrow input { accent-color: var(--positive); width: 18px; height: 18px; }
-.sf-textarea { height: auto; padding: 12px 14px; resize: vertical; line-height: 22px; }
-@media (max-width: 760px) {
-  .sf-phase { border-left: 0; border-top: var(--hairline) solid var(--border); }
-  .sf-phase:first-child { border-top: 0; }
-  .sf-outcomes { min-width: 0; }
-}

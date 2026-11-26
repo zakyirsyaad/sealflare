@@ -207,11 +207,11 @@ export type TargetPageData = {
   differentBundle: boolean
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
-  failed: boolean
   /** The word `Core.attest` takes for this target. Null when the target is not known yet. */
   targetWord: string | null
   /** The scanned bundle is another bundle than the one the registry sealed. */
   bundleChanged: boolean
+  failed: boolean
   /** How the target was bound, read from the event log. Null when the log does not say. */
   binding: Binding | null
   /** The bond of the publisher, as the vault holds it. */
@@ -283,9 +283,9 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     unbondingAt: null,
     differentBundle: false,
     evidenceFailed: false,
-    failed: false,
     targetWord: null,
     bundleChanged: false,
+    failed: false,
     binding: null,
     publisherBond: null,
   }
@@ -341,9 +341,9 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     unbondingAt,
     differentBundle,
     evidenceFailed: chain.evidenceFailed,
-    failed: false,
     targetWord: targetWordOf(chain.target, scan, isContractTarget),
     bundleChanged: bundleChanged(chain.target, candidate),
+    failed: false,
     binding: chain.binding,
     publisherBond,
   }

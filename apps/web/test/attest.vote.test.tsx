@@ -1,17 +1,27 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { evidenceHashOf, type SignalGroup } from '@sealflare/shared/schemas'
 
+type Receipt = {
+  isSuccess: boolean
+  isError: boolean
+  error: unknown
+  data?: { status: string; to: string | null; transactionHash: string }
+}
 const wagmi = vi.hoisted(() => ({
   signTypedDataAsync: vi.fn(),
   writeContractAsync: vi.fn(),
-  receipt: { current: { isSuccess: false, isError: false, error: null as unknown } },
+  receipt: { current: { isSuccess: false, isError: false, error: null } as Receipt },
+  watched: { current: {} as { chainId?: number; onReplaced?: (replacement: { reason: string }) => void } },
 }))
 vi.mock('wagmi', () => ({
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
-  useWaitForTransactionReceipt: () => wagmi.receipt.current,
+  useWaitForTransactionReceipt: (params: typeof wagmi.watched.current) => {
+    wagmi.watched.current = params
+    return wagmi.receipt.current
+  },
   useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
   useConnectors: () => [],
   useDisconnect: () => ({ mutate: vi.fn() }),
@@ -71,6 +81,11 @@ function page(current: Signal) {
   )
 }
 
+/** A receipt that is in a block, for a transaction that went to the given address. */
+function landed(to: string, status = 'success'): Receipt {
+  return { isSuccess: true, isError: false, error: null, data: { status, to, transactionHash: txHash } }
+}
+
 async function vote() {
   await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
   await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
@@ -86,7 +101,7 @@ beforeEach(() => {
     core: CORE,
   })
   state.value = { kind: 'holder', address, isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
-  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  wagmi.receipt.current = landed(CORE)
   wagmi.signTypedDataAsync.mockResolvedValue(`0x${'11'.repeat(65)}`)
   wagmi.writeContractAsync.mockResolvedValue(txHash)
   uploadEvidence.mockImplementation(async (body: { reportJson: string }) => ({
@@ -109,10 +124,7 @@ test('success asks the server for the page again, once', async () => {
   render(page(signal(0)))
   await vote()
   await screen.findByRole('row', { name: /Your vote: Caution/ })
-  // The row is on the screen before the effect that asks for the page again has run, so the
-  // refresh is waited for and not read from the screen alone.
   await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 5_000 })
-  expect(refresh).toHaveBeenCalledTimes(1)
 })
 
 test('after the vote the button names the verdict and links to the transaction', async () => {
@@ -142,14 +154,11 @@ test('the summary cannot be left while the wallet or the chain is still working'
   expect(screen.getByRole('button', { name: copy.attest.back })).toBeDisabled()
 })
 
-test('the vote shown is the vote that was sent, even when the choice changes afterwards', async () => {
+test('after the vote the summary cannot be taken back to another choice', async () => {
   render(page(signal(0)))
   await vote()
   await screen.findByRole('row', { name: /Your vote: Caution/ })
-  await userEvent.click(screen.getByRole('button', { name: copy.attest.back }))
-  await userEvent.click(screen.getByRole('radio', { name: /^Danger/ }))
-  expect(screen.queryByRole('row', { name: /Your vote: Danger/ })).toBeNull()
-  expect(screen.getByRole('row', { name: /Your vote: Caution/ })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: copy.attest.back })).toBeDisabled()
 })
 
 test('the wallet is read again once the receipt is good, so the quota follows the chain', async () => {
@@ -161,9 +170,167 @@ test('the wallet is read again once the receipt is good, so the quota follows th
   expect(recheck).toHaveBeenCalledTimes(1)
 })
 
-test('the panel cannot be closed while the vote is on its way', async () => {
+const attested = (verdict: string) => ({ name: copy.attest.alreadyVerdict.replace('{verdict}', verdict) })
+
+test('the panel can be closed while the wallet is open, and the vote is not lost', async () => {
+  let send: (hash: string) => void = () => {}
+  wagmi.writeContractAsync.mockReturnValue(new Promise<string>(resolve => (send = resolve)))
+  render(page(signal(0)))
+  await vote()
+  const close = screen.getByRole('button', { name: copy.common.close })
+  expect(close).toBeEnabled()
+  await userEvent.click(close)
+  expect(screen.queryByRole('button', { name: copy.attest.submit })).toBeNull()
+  await act(async () => send(txHash))
+  expect(await screen.findByRole('link', attested('Caution'))).toBeInTheDocument()
+  expect(refresh).toHaveBeenCalledTimes(1)
+})
+
+test('the receipt is waited for on the expected chain', async () => {
+  render(page(signal(0)))
+  await vote()
+  expect(wagmi.watched.current.chainId).toBe(56)
+})
+
+test('a cancel in the wallet is no vote, even though its receipt succeeded', async () => {
+  // A Cancel is a transfer of nothing to the account itself on the same nonce.
+  wagmi.receipt.current = landed(address)
+  render(page(signal(0)))
+  await vote()
+  expect(await screen.findByText(copy.attest.replaced)).toBeInTheDocument()
+  expect(screen.queryByRole('row', { name: /Your vote/ })).toBeNull()
+  expect(screen.queryByRole('link', attested('Caution'))).toBeNull()
+  expect(refresh).not.toHaveBeenCalled()
+})
+
+test('a reverted transaction is no vote', async () => {
+  wagmi.receipt.current = landed(CORE, 'reverted')
+  render(page(signal(0)))
+  await vote()
+  expect(await screen.findByText(copy.attest.reverted)).toBeInTheDocument()
+  expect(screen.queryByRole('row', { name: /Your vote/ })).toBeNull()
+})
+
+test('a replacement that is not a speed-up is no vote', async () => {
   wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
   render(page(signal(0)))
   await vote()
-  await waitFor(() => expect(screen.getByRole('button', { name: copy.common.close })).toBeDisabled())
+  act(() => wagmi.watched.current.onReplaced?.({ reason: 'cancelled' }))
+  expect(await screen.findByText(copy.attest.replaced)).toBeInTheDocument()
+  expect(screen.queryByRole('row', { name: /Your vote/ })).toBeNull()
+})
+
+test('a speed-up of the transaction is still the vote, and the link names the transaction that landed', async () => {
+  const sped = `0x${'99'.repeat(32)}`
+  wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
+  render(page(signal(0)))
+  await vote()
+  // The receipt of the replacement carries its own hash. The old one was dropped.
+  wagmi.receipt.current = {
+    isSuccess: true,
+    isError: false,
+    error: null,
+    data: { status: 'success', to: CORE, transactionHash: sped },
+  }
+  act(() => wagmi.watched.current.onReplaced?.({ reason: 'repriced' }))
+  const link = await screen.findByRole('link', attested('Caution'))
+  expect(link).toHaveAttribute('href', `https://bscscan.com/tx/${sped}`)
+})
+
+test('another account of the wallet does not inherit the vote of this session', async () => {
+  const view = render(page(signal(0)))
+  await vote()
+  await screen.findByRole('link', attested('Caution'))
+  state.value = { ...state.value, address: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8' }
+  view.rerender(page(signal(0)))
+  expect(screen.queryByRole('link', attested('Caution'))).toBeNull()
+  expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
+})
+
+test('another account of the wallet starts the panel over, so it can vote', async () => {
+  const other = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8'
+  const view = render(page(signal(0)))
+  await vote()
+  await screen.findByRole('link', attested('Caution'))
+  state.value = { ...state.value, address: other }
+  view.rerender(page(signal(0)))
+  // The panel of the first account is gone, so the second account starts at the first step.
+  expect(screen.getByRole('radio', { name: /^Caution/ })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  // The second account signs with its own account.
+  expect(wagmi.signTypedDataAsync).toHaveBeenLastCalledWith(expect.objectContaining({ account: other }))
+})
+
+test('a wallet prompt that never answers can be abandoned, and the vote may be started again', async () => {
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(() => {}))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByRole('button', { name: copy.attest.pending })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.startAgain }))
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
+})
+
+test('closing the dialog before anything was sent abandons the attempt', async () => {
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(() => {}))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  await screen.findByRole('button', { name: copy.attest.pending })
+  await userEvent.click(screen.getByRole('button', { name: copy.common.close }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  // The attempt was abandoned, so the vote may be started again.
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
+})
+
+test('a signature that answers after the attempt was abandoned never asks for the transaction', async () => {
+  // The wallet holds the signature and answers it after the Guardian started over.
+  let sign: (signature: string) => void = () => {}
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(resolve => (sign = resolve)))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByRole('button', { name: copy.attest.pending })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.startAgain }))
+
+  // The held signature answers now. The attempt is not the one on the screen any more.
+  await act(async () => {
+    sign(`0x${'11'.repeat(65)}`)
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
+  // Nothing is uploaded and no transaction is asked for, so no vote lands untracked.
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
+})
+
+test('a signature that answers after the dialog was closed never asks for the transaction', async () => {
+  let sign: (signature: string) => void = () => {}
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(resolve => (sign = resolve)))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByRole('button', { name: copy.attest.pending })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: copy.common.close }))
+
+  await act(async () => {
+    sign(`0x${'11'.repeat(65)}`)
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
 })

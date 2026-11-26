@@ -21,16 +21,50 @@ export const emptyChoice: Choice = { verdict: null, flags: 0, quotes: {} }
  */
 export function chooseVerdict(verdict: Verdict, scanFlags: number, quotes: Record<string, string> = {}): Choice {
   if (verdict === 'SAFE') return { verdict, flags: 0, quotes }
+  // The quotes are kept as they are. A verdict may add a flag, and the room every quote has gets
+  // smaller with it, but a quote the Guardian wrote is never cut without saying so.
   return { verdict, flags: scanFlags, quotes }
+}
+
+/**
+ * How many characters each quote may hold, so the statement of the report always fits.
+ *
+ * The statement holds one line `FLAG: quote` for every flag, joined by line breaks, and the report
+ * refuses a statement above `STATEMENT_MAX_CHARS`. The inputs are capped to this length, so a long
+ * quote is stopped while it is written. Every flag takes a part of the room, so a quote written
+ * before another flag was added may be longer than the room that is left, and then the vote waits
+ * until the Guardian shortens it.
+ */
+export function quoteLimit(flags: number): number {
+  const names = flagNames(flags)
+  if (names.length === 0) return STATEMENT_MAX_CHARS
+  const overhead = names.reduce((sum, name) => sum + name.length + 2, 0) + names.length - 1
+  return Math.floor((STATEMENT_MAX_CHARS - overhead) / names.length)
+}
+
+/** The lines of the statement, one for every flag that carries a quote. */
+export function statementLines(flags: number, quotes: Record<string, string>): string[] {
+  return Object.entries(quotes)
+    .filter(([flag, quote]) => quote.trim() !== '' && (flags & (FLAGS[flag as FlagName] ?? 0)) !== 0)
+    .map(([flag, quote]) => `${flag}: ${quote.trim()}`)
+}
+
+/**
+ * Whether the statement of the report fits.
+ *
+ * Adding a flag leaves every quote less room. The quotes are never cut to make room, so the
+ * statement can be too long, and then the vote is blocked until the Guardian shortens a quote.
+ */
+export function statementFits(flags: number, quotes: Record<string, string>): boolean {
+  return statementLines(flags, quotes).join('\n').length <= STATEMENT_MAX_CHARS
 }
 
 /** Adds a flag the Guardian reports. */
 export function addFlag(choice: Choice, flag: FlagName): Choice {
-  return {
-    ...choice,
-    flags: choice.flags | FLAGS[flag],
-    quotes: { ...choice.quotes, [flag]: choice.quotes[flag] ?? '' },
-  }
+  const flags = choice.flags | FLAGS[flag]
+  // The quotes the Guardian wrote stay as they are. The room they have gets smaller, and the
+  // statement is then too long until a quote is shortened, which the Guardian is told about.
+  return { ...choice, flags, quotes: { ...choice.quotes, [flag]: choice.quotes[flag] ?? '' } }
 }
 
 /** Takes a flag back out of the report. */
@@ -99,12 +133,14 @@ export function missingQuotes(choice: Choice, proved: number): FlagName[] {
  * Whether the summary may be shown.
  *
  * A Safe vote carries no flag, Caution and Danger carry at least one, and every flag stays
- * inside the mask of its target type. Every flag needs proof before the vote may be written.
+ * inside the mask of its target type. Every flag needs proof before the vote may be written, and
+ * the statement of the report has to fit, so no quote is ever cut to make room.
  */
 export function canReview(choice: Choice, proved: number, targetType: TargetType): boolean {
   if (choice.verdict === null) return false
   if (!isValidFlags(targetType, choice.verdict, choice.flags)) return false
-  return missingQuotes(choice, proved).length === 0
+  if (missingQuotes(choice, proved).length > 0) return false
+  return statementFits(choice.flags, choice.quotes)
 }
 
 /** The longest prefix of `text` that fits `maxBytes` of UTF-8. */
@@ -122,8 +158,7 @@ function cut(text: string, maxBytes: number): string {
 
 /** The lines of the proof, with the place each quote was read. */
 function proofItems(flags: number, quotes: Record<string, string>, scan: ScanReport | null): ShortProofItem[] {
-  const names = (Object.keys(FLAGS) as FlagName[]).filter(name => (flags & FLAGS[name]) !== 0)
-  return names.map(name => {
+  return flagNames(flags).map(name => {
     const finding = scan?.findings.find(item => item.flag === name)
     const excerpt = excerptOf(scan, name)
     if (excerpt !== '') return { flag: name, location: finding?.location ?? 'user report', excerpt }
@@ -174,11 +209,11 @@ function buildProof(items: ShortProofItem[]): string {
  * Undefined when the Guardian wrote no quote.
  */
 export function statementOf(flags: number, quotes: Record<string, string>): string | undefined {
-  const lines = Object.entries(quotes)
-    .filter(([flag, quote]) => quote.trim() !== '' && (flags & (FLAGS[flag as FlagName] ?? 0)) !== 0)
-    .map(([flag, quote]) => `${flag}: ${quote.trim()}`)
+  const lines = statementLines(flags, quotes)
   if (lines.length === 0) return undefined
-  return lines.join('\n').slice(0, STATEMENT_MAX_CHARS)
+  // The statement is never cut. It is either whole or it is not written, and the vote is blocked
+  // before it is signed when it is too long.
+  return lines.join('\n')
 }
 
 /**

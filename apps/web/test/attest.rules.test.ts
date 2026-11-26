@@ -1,13 +1,57 @@
 import { expect, test } from 'vitest'
 import { FLAGS } from '@sealflare/shared/rules'
 import { parseShortProof } from '@sealflare/shared/schemas'
-import { addFlag, canReview, chooseVerdict, emptyChoice, provedFlags, setQuote, shortProofOf } from '../components/attest/choice'
+import {
+  addFlag,
+  canReview,
+  chooseVerdict,
+  emptyChoice,
+  provedFlags,
+  setQuote,
+  shortProofOf,
+  statementFits,
+  statementOf,
+} from '../components/attest/choice'
 import { attestAvailability } from '../components/attest/availability'
 import { bundleChanged, targetWordOf } from '../server/target'
 import { contractWord } from '../lib/targetWord'
 import { address, bundle, contractScan, hiddenMint, skillScan, targetId, unverified, word } from './attest.fixtures'
 
 const proved = (choice: ReturnType<typeof chooseVerdict>, flagsScan = contractScan()) => provedFlags(choice, flagsScan, targetId)
+
+test('a quote is never cut, and the statement waits until the quotes fit', () => {
+  let choice = chooseVerdict('CAUTION', FLAGS.UNVERIFIED_SOURCE)
+  choice = setQuote(choice, 'UNVERIFIED_SOURCE', 'x'.repeat(10_000))
+  // The quote the Guardian wrote is kept whole.
+  expect(choice.quotes.UNVERIFIED_SOURCE).toHaveLength(10_000)
+  // The statement is too long for the report, so the vote may not be written yet.
+  expect(statementFits(choice.flags, choice.quotes)).toBe(false)
+  expect(canReview(choice, 0, 'SMART_CONTRACT')).toBe(false)
+  // A quote that fits makes the statement fit again.
+  const short = setQuote(choice, 'UNVERIFIED_SOURCE', 'x'.repeat(100))
+  expect(statementFits(short.flags, short.quotes)).toBe(true)
+  expect(canReview(short, 0, 'SMART_CONTRACT')).toBe(true)
+})
+
+test('a flag added later keeps the quotes, and the vote waits until they fit', () => {
+  let choice = chooseVerdict('CAUTION', FLAGS.UNVERIFIED_SOURCE)
+  choice = setQuote(choice, 'UNVERIFIED_SOURCE', 'y'.repeat(10_000))
+  const before = choice.quotes.UNVERIFIED_SOURCE!.length
+  choice = addFlag(choice, 'HIDDEN_MINT')
+  // The quote is not cut to make room for the new flag.
+  expect(choice.quotes.UNVERIFIED_SOURCE!.length).toBe(before)
+  // The statement no longer fits, so the vote waits for the Guardian to shorten a quote.
+  expect(statementFits(choice.flags, choice.quotes)).toBe(false)
+})
+
+test('the cap never splits a surrogate pair, wherever the limit falls', () => {
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+  for (const prefix of ['', 'a']) {
+    const choice = setQuote(chooseVerdict('CAUTION', FLAGS.UNVERIFIED_SOURCE), 'UNVERIFIED_SOURCE', `${prefix}${'😀'.repeat(5_000)}`)
+    expect(lone.test(choice.quotes.UNVERIFIED_SOURCE!)).toBe(false)
+    expect(lone.test(statementOf(choice.flags, choice.quotes) as string)).toBe(false)
+  }
+})
 
 test('Safe with a flag cannot be submitted', () => {
   const choice = { ...addFlag(chooseVerdict('SAFE', 0), 'UNVERIFIED_SOURCE'), verdict: 'SAFE' as const }

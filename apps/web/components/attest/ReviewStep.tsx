@@ -2,7 +2,7 @@
 import type { Verdict } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { flagLabel, targetLabel } from '../../lib/format'
+import { flagLabel, shortAddress } from '../../lib/format'
 import { AttestButton } from './AttestButton'
 import { flagsOf, type Choice } from './choice'
 import { isWorking, type AttestState } from './useAttest'
@@ -23,6 +23,8 @@ export type ReviewStepProps = {
   onSubmit: () => void
   onBack: () => void
   onRetry: () => void
+  /** Starts the attempt over, for a wallet prompt that never answers. */
+  onStartAgain: () => void
 }
 
 const reward: Record<Verdict, string> = {
@@ -43,6 +45,11 @@ const verdictName: Record<Verdict, string> = {
   DANGER: copy.attest.danger,
 }
 
+/** An address is shortened, a repository name is not. */
+function labelOf(label: string): string {
+  return /^0x[0-9a-fA-F]{40}$/.test(label) ? shortAddress(label) : label
+}
+
 function Row({ name, value }: { name: string; value: React.ReactNode }) {
   return (
     <div className="sf-rows__row">
@@ -60,7 +67,7 @@ function OnChainSection({ label, choice }: { label: string; choice: Choice }) {
     <section className="sf-stack">
       <span className="sf-mono">{copy.attest.onChain}</span>
       <div className="sf-rows">
-        <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{targetLabel(label)}</span>} />
+        <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{labelOf(label)}</span>} />
         <Row name={copy.attest.rowVerdict} value={verdictName[verdict]} />
         <Row
           name={copy.attest.rowFlag}
@@ -131,8 +138,10 @@ export function ReviewStep(props: ReviewStepProps) {
           txHash={props.txHash}
           onSubmit={props.onSubmit}
           onRetry={props.onRetry}
+          onStartAgain={props.onStartAgain}
         />
-        <Button variant="secondary" disabled={isWorking(props.state)} onClick={props.onBack}>
+        {/* After the vote was cast the summary describes it, so another choice cannot be made from here. */}
+        <Button variant="secondary" disabled={isWorking(props.state) || props.state === 'done'} onClick={props.onBack}>
           {copy.attest.back}
         </Button>
       </footer>
