@@ -56,6 +56,8 @@ export interface ChainReader {
   attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
   /** The evidence of the event log, read from the block the target was created in. Rejects when the log cannot be read in full. */
   evidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]>
+  /** The evidence of the event log above a block, for the votes that are not final yet. */
+  evidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]>
   bond(targetId: Hex, publisher: Address): Promise<BondState | null>
   /** How the target was bound, read from the event log. Null when the log does not say. */
   binding(targetId: Hex, createdAt: number): Promise<Binding | null>
@@ -257,7 +259,7 @@ async function readEvidence(targetId: Hex, createdAt: number, count: number): Pr
   const cached = evidenceCache.get(key)
   const fromBlock = cached === undefined ? await createdBlock(targetId, createdAt, head) : cached.block + 1n
   // Nothing new since the last read of this target.
-  if (fromBlock > head) return completeRows(key, cached?.rows ?? [], count)
+  if (fromBlock > head) return checkedRows(key, cached?.rows ?? [], count)
   const event = eventItem<AttestedEvent>('Attested')
   const logs = await collectLogs(
     (from, to) => getRpcClient().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
@@ -277,20 +279,54 @@ async function readEvidence(targetId: Hex, createdAt: number, count: number): Pr
   const rows = [...byIndex.values()].sort((left, right) => left.index - right.index)
   const confirmed = head > CONFIRMATIONS ? head - CONFIRMATIONS : 0n
   evidenceCache.set(key, { block: confirmed, rows })
-  return completeRows(key, rows, count)
+  return checkedRows(key, rows, count)
+}
+
+/**
+ * The rows are only shown when they cover every attestation of the target. A hole drops the cache,
+ * so the next view reads the history of the target again.
+ */
+function checkedRows(key: string, rows: readonly EvidenceRow[], count: number): EvidenceRow[] {
+  try {
+    return completeEvidence(rows, count)
+  } catch (error) {
+    evidenceCache.delete(key)
+    throw error
+  }
+}
+
+/**
+ * The Attested logs of a target above a block, in bounded ranges.
+ *
+ * The rows are not checked for holes here: the caller joins them with the rows of the internal
+ * service, and only the joined set has to cover every attestation of the target.
+ */
+async function readEvidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]> {
+  const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
+  if (fromBlock > head) return []
+  const event = eventItem<AttestedEvent>('Attested')
+  const logs = await collectLogs(
+    (from, to) => getRpcClient().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
+    fromBlock,
+    head,
+  )
+  return logs.map(log => ({
+    index: Number(log.args.index),
+    shortProof: proofText(log.args.shortProof),
+    evidenceURI: log.args.evidenceURI ?? '',
+    txHash: log.transactionHash,
+  }))
 }
 
 /**
  * The rows have to cover every attestation of the target. A log that is missing leaves a hole, and
- * a list with a hole is never shown as the complete list of the evidence. The cache is dropped, so
- * the next view reads the history of the target again.
+ * a list with a hole is never shown as the complete list of the evidence.
  */
-function completeRows(key: string, rows: readonly EvidenceRow[], count: number): EvidenceRow[] {
+export function completeEvidence(rows: readonly EvidenceRow[], count: number): EvidenceRow[] {
   const found = new Set(rows.map(row => row.index))
   const missing: number[] = []
   for (let index = 0; index < count; index += 1) if (!found.has(index)) missing.push(index)
   if (missing.length === 0) return [...rows]
-  evidenceCache.delete(key)
   throw new Error(`The event log of the target is not complete: the attestations ${missing.join(', ')} are missing.`)
 }
 
@@ -367,6 +403,7 @@ export function getChainReader(): ChainReader {
     },
     attestations: readAttestations,
     evidence: readEvidence,
+    evidenceFrom: readEvidenceFrom,
     bond: readBond,
     binding: readBinding,
   }

@@ -168,17 +168,40 @@ describe('the evidence of a target, read through a public-RPC-like node', () => 
     const chain = await reader()
     const target = `0x${'56'.repeat(32)}` as Hex
     await chain.evidence(target, timestampOf(CREATED_BLOCK), 0)
+    // The head moves, so a cursor that advanced on the failure would start somewhere else.
+    state.head = HEAD + 1_000n
     state.failRangeStartingAt = HEAD - 11n
     await expect(chain.evidence(target, timestampOf(CREATED_BLOCK), 0)).rejects.toThrow()
     state.failRangeStartingAt = null
+    const before = state.logRanges.length
     await chain.evidence(target, timestampOf(CREATED_BLOCK), 0)
     // The failed range is read again, because the cursor never moved past it.
-    expect(state.logRanges.at(-1)![0]).toBe(HEAD - 11n)
+    expect(state.logRanges[before]![0]).toBe(HEAD - 11n)
+    expect(state.logRanges[before]![1]).toBe(HEAD + 1_000n)
   })
 
   test('a log that is missing leaves a hole, and the page is told the log is not complete', async () => {
     state.logs = [attestedLog(CREATED_BLOCK + 10n, 0, 'ipfs://old')]
     await expect((await reader()).evidence(TARGET, timestampOf(CREATED_BLOCK), 2)).rejects.toThrow(/not complete/)
+  })
+
+  test('a hole heals: the next read starts at the creation block again, because the cache was dropped', async () => {
+    const chain = await reader()
+    state.logs = [attestedLog(CREATED_BLOCK + 10n, 0, 'ipfs://old')]
+    await expect(chain.evidence(TARGET, timestampOf(CREATED_BLOCK), 2)).rejects.toThrow(/not complete/)
+    state.logs = [...LOGS]
+    const before = state.logRanges.length
+    const rows = await chain.evidence(TARGET, timestampOf(CREATED_BLOCK), 2)
+    expect(rows.map(row => row.evidenceURI)).toEqual(['ipfs://old', 'ipfs://new'])
+    // The whole history is read again, so the log that was missing is found this time.
+    expect(state.logRanges[before]![0]).toBe(CREATED_BLOCK)
+  })
+
+  test('the tail above a block is read on its own, for the votes that are not final yet', async () => {
+    const rows = await (await reader()).evidenceFrom(TARGET, HEAD - 100n)
+    expect(rows.map(row => row.evidenceURI)).toEqual(['ipfs://new'])
+    expect(state.logRanges[0]![0]).toBe(HEAD - 100n)
+    expect(state.logRanges.at(-1)![1]).toBe(HEAD)
   })
 
   test('a target too old to be read this way is refused, not read halfway', async () => {

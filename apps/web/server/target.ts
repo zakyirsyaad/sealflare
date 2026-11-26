@@ -2,7 +2,8 @@ import 'server-only'
 import type { Hex } from 'viem'
 import { Bytes32Schema, decodeSrc, encodeSrc, TargetDetail, type AttestationRow, type ScanReport, type SignalGroup } from '@sealflare/shared/schemas'
 import { ZERO_ADDRESS, targetIdOfContract, type TrustTier } from '@sealflare/shared/rules'
-import { getChainReader, type ChainReader, type CoreAttestation, type CoreTarget, type EvidenceRow } from './chain'
+import { getChainReader, completeEvidence, type ChainReader, type CoreAttestation, type CoreTarget, type EvidenceRow } from './chain'
+import { readIndexedEvidence } from './indexedEvidence'
 import { getScan, getScanForSource, putScan, putScanForSource } from './scanStore'
 import { getScanEnvironment } from './scanner'
 import type { Binding } from '../lib/publish/binding'
@@ -83,7 +84,6 @@ export type DetailInput = {
   attestations: readonly CoreAttestation[]
   scan: ScanReport | null
   bond: bigint
-  src: string | null
 }
 
 /** Builds the read model of a target. The tier is the one Core returned, never a recomputed one. */
@@ -99,9 +99,9 @@ export function buildDetail(input: DetailInput): TargetDetail {
     ? target
       ? addressOf(target)
       : (scan?.source.kind === 'contract' ? scan.source.address : null)
-    : (scan
-        ? encodeSrc(scan.source)
-        : (decodeSrc(input.src ?? '')?.kind === 'skill' ? input.src : null))
+    : // The source of a skill is only the one a scan of this very target found. A link that names
+      // another bundle is never shown as the source of the rated skill.
+      (scan ? encodeSrc(scan.source) : null)
   const counts = voteCounts(input.attestations)
   return {
     targetId: input.targetId,
@@ -180,13 +180,8 @@ export type TargetPageData = {
   /** Always null until the indexer reports its finalized block. The scan's age is not the lag of the data. */
   blocksBehind: number | null
   unbondingAt: number | null
-  /** A skill source that names a version other than the rated one. The page then offers that version. */
-  versionChanged: boolean
-  currentVersionId: string | null
-  /** The link names another bundle than the registry rated. */
+  /** The link names another bundle than the one the registry rated. */
   differentBundle: boolean
-  /** The link names another bundle, and the registry has no verified publisher to compare it with. */
-  uncheckedBundle: boolean
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
   failed: boolean
@@ -194,6 +189,26 @@ export type TargetPageData = {
   binding: Binding | null
   /** The bond of the publisher, as the vault holds it. */
   publisherBond: PublisherBond | null
+}
+
+/**
+ * The evidence of a target: the proof and the transaction of every attestation.
+ *
+ * The votes that are final come from the internal service, so the cost of a page does not depend
+ * on the age of the target. The votes that are not final yet are read from the chain. Without the
+ * internal service, or when the tail cannot be read, the whole log is read from the chain.
+ */
+async function readEvidence(reader: ChainReader, targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]> {
+  const indexed = await readIndexedEvidence(targetId)
+  if (indexed === null) return reader.evidence(targetId, createdAt, count)
+  try {
+    const tail = await reader.evidenceFrom(targetId, indexed.finalizedBlock + 1n)
+    return completeEvidence([...indexed.rows, ...tail], count)
+  } catch {
+    // The tail could not be read, or the rows do not cover every vote, so the whole log of the
+    // target is read from the chain instead.
+    return reader.evidence(targetId, createdAt, count)
+  }
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
@@ -205,7 +220,7 @@ async function readChain(reader: ChainReader, targetId: Hex) {
   // A target without attestations has no event to read. The log is never walked for nothing.
   if (target && target.attestationCount > 0) {
     try {
-      evidence = await reader.evidence(targetId, target.createdAt, target.attestationCount)
+      evidence = await readEvidence(reader, targetId, target.createdAt, target.attestationCount)
     } catch {
       // The votes and the tier come from contract reads and stay. Only the links are unknown.
       evidenceFailed = true
@@ -233,10 +248,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     src,
     blocksBehind: null,
     unbondingAt: null,
-    versionChanged: false,
-    currentVersionId: null,
     differentBundle: false,
-    uncheckedBundle: false,
     evidenceFailed: false,
     failed: false,
     binding: null,
@@ -253,26 +265,15 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   const candidate = await loadScan(id, src, chain.target?.targetType ?? null)
   // Only the scan of this very target is shown. Another target's findings never appear under this tier.
   const scan = candidate !== null && candidate.targetId.toLowerCase() === id.toLowerCase() ? candidate : null
-  // A skill source may only claim to be a newer version of the rated skill when it names the same
-  // publisher. Only a verified publisher can be compared: for a sponsored skill the registry
-  // holds the sponsor and not the author of the bundle, and an unclaimed skill has no publisher at
-  // all. Without a verified publisher the link is neither a new version nor a foreign bundle, and
-  // the page says nothing that it cannot know.
-  const verifiedPublisher =
-    chain.target !== null &&
-    chain.target.publisherRole === 'VERIFIED_PUBLISHER' &&
-    chain.target.publisher !== ZERO_ADDRESS
-  const samePublisher =
-    verifiedPublisher &&
-    candidate !== null &&
-    candidate.source.kind === 'skill' &&
-    candidate.source.manifestPublisher.toLowerCase() === chain.target!.publisher.toLowerCase()
   const isSkillTarget = chain.target?.targetType === 'AI_SKILL_BUNDLE'
   const otherSkill =
     candidate !== null && scan === null && isSkillTarget && candidate.targetType === 'AI_SKILL_BUNDLE'
-  const newerSkill = otherSkill && samePublisher
-  const foreignBundle = otherSkill && verifiedPublisher && !samePublisher
-  const uncheckedBundle = otherSkill && !verifiedPublisher
+  // The publisher of a bundle is written by the bundle itself, so it is never a proof that a link
+  // names a new version of the rated skill: a bundle that copies the address of a verified
+  // publisher would otherwise pass for one, and that is exactly the skill worth impersonating.
+  // Without a verified publisher signature every link that names another bundle is a different
+  // bundle, and the page never offers it as a version of the rated one.
+  const differentBundle = otherSkill
   const rows = attestationRows(chain.attestations, chain.evidence)
   const built = buildDetail({
     targetId: id,
@@ -281,8 +282,6 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     attestations: chain.attestations,
     scan,
     bond: chain.bond?.amount ?? 0n,
-    // A bundle that cannot be tied to this target never becomes the source of the page.
-    src: foreignBundle || uncheckedBundle ? null : src,
   })
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
@@ -304,10 +303,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     src,
     blocksBehind: null,
     unbondingAt,
-    versionChanged: newerSkill,
-    currentVersionId: newerSkill && candidate !== null ? candidate.targetId : null,
-    differentBundle: foreignBundle,
-    uncheckedBundle,
+    differentBundle,
     evidenceFailed: chain.evidenceFailed,
     failed: false,
     binding: chain.binding,

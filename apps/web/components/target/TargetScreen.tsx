@@ -21,10 +21,7 @@ export type TargetScreenProps = {
   src: string | null
   blocksBehind: number | null
   unbondingAt: number | null
-  versionChanged: boolean
-  currentVersionId: string | null
   differentBundle: boolean
-  uncheckedBundle: boolean
   evidenceFailed: boolean
   failed: boolean
   /** How the target was bound, read from the event log of Core. */
@@ -38,26 +35,6 @@ function ForeignNotice() {
   return (
     <div className="sf-version">
       <p>{copy.target.differentBundle}</p>
-    </div>
-  )
-}
-
-/** The link names another bundle, and the registry has no publisher to compare it with. */
-function UncheckedNotice() {
-  return (
-    <div className="sf-version">
-      <p>{copy.target.uncheckedBundle}</p>
-    </div>
-  )
-}
-
-function VersionNotice({ targetId, src }: { targetId: string; src: string | null }) {
-  return (
-    <div className="sf-version">
-      <p>{copy.target.modifiedText}</p>
-      <a className="sf-btn sf-btn--primary" href={`/app/t/${targetId}?src=${encodeURIComponent(src ?? '')}`}>
-        {copy.target.currentVersion}
-      </a>
     </div>
   )
 }
@@ -80,9 +57,7 @@ export function TargetScreen(props: TargetScreenProps) {
         hash={detail.pinnedCodehash === `0x${'0'.repeat(64)}` ? null : detail.pinnedCodehash}
         version={props.scan?.source.kind === 'skill' ? props.scan.source.commit : null}
       />
-      {props.versionChanged && props.currentVersionId !== null && <VersionNotice targetId={props.currentVersionId} src={props.src} />}
       {props.differentBundle && <ForeignNotice />}
-      {props.uncheckedBundle && <UncheckedNotice />}
       <Banners detail={detail} scan={props.scan} unbondingAt={props.unbondingAt} />
       <StaleNotice blocksBehind={props.blocksBehind} />
       <div className="sf-target__body">

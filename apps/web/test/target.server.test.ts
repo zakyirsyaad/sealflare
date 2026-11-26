@@ -7,7 +7,12 @@ import type { ChainReader, CoreAttestation, CoreTarget } from '../server/chain'
 
 const { reader } = vi.hoisted(() => ({ reader: { current: null as unknown } }))
 
-vi.mock('../server/chain', () => ({ getChainReader: () => reader.current }))
+vi.mock('../server/chain', async () => {
+  const actual = await vi.importActual<typeof import('../server/chain')>('../server/chain')
+  return { ...actual, getChainReader: () => reader.current }
+})
+
+vi.mock('../server/indexedEvidence', () => ({ readIndexedEvidence: async () => null }))
 
 const { scanner } = vi.hoisted(() => ({ scanner: { scanContract: vi.fn(), scanSkill: vi.fn() } }))
 vi.mock('../server/scanner', () => ({
@@ -62,6 +67,7 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
       { index: 0, shortProof: 'source verified', evidenceURI: 'https://example.org/1', txHash: `0x${'33'.repeat(32)}` },
       { index: 1, shortProof: 'owner can mint', evidenceURI: '', txHash: `0x${'44'.repeat(32)}` },
     ],
+    evidenceFrom: async () => [],
     bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0, lockedByChallengeId: 0n }),
     binding: async () => null,
     ...overrides,
@@ -151,7 +157,6 @@ test('the detail of a target matches the read model schema', () => {
     attestations: [attestation()],
     scan: null,
     bond: 5_000_000_000_000_000n,
-    src: null,
   })
   expect(TargetDetail.safeParse(detail).success).toBe(true)
   expect(detail.bond).toBe('5000000000000000')
@@ -188,7 +193,7 @@ test('a source for another contract neither runs a scan nor shows its findings, 
   const data = await loadTarget(targetId, otherAddress)
   expect(scanner.scanContract).not.toHaveBeenCalled()
   expect(data.scan).toBeNull()
-  expect(data.versionChanged).toBe(false)
+  expect(data.differentBundle).toBe(false)
   expect(data.detail?.tier).toBe('CAUTION_FLAGGED')
 })
 
@@ -212,10 +217,10 @@ test('a scan of the same target is attached', async () => {
   scanner.scanContract.mockResolvedValue(contractReport(address))
   const data = await loadTarget(targetId, address)
   expect(data.scan?.targetId).toBe(targetId)
-  expect(data.versionChanged).toBe(false)
+  expect(data.differentBundle).toBe(false)
 })
 
-test('a newer version of a skill is not attached, and the page offers the current version instead', async () => {
+test('a link that names another bundle is never a new version of the rated skill, not even with the same publisher', async () => {
   const audited = skillReport(`0x${'55'.repeat(32)}`)
   const current = skillReport(`0x${'66'.repeat(32)}`)
   reader.current = fakeReader({
@@ -225,11 +230,10 @@ test('a newer version of a skill is not attached, and the page offers the curren
   scanner.scanSkill.mockResolvedValue(current)
   const data = await loadTarget(audited.targetId, SKILL_SRC)
   expect(data.scan).toBeNull()
-  expect(data.versionChanged).toBe(true)
-  expect(data.differentBundle).toBe(false)
-  expect(data.uncheckedBundle).toBe(false)
-  expect(data.currentVersionId).toBe(current.targetId)
+  expect(data.differentBundle).toBe(true)
   expect(data.detail?.tier).toBe('COMMUNITY_SAFE')
+  // The source of the link is not attached, so the page never offers to scan it again.
+  expect(data.detail?.src).toBeNull()
 })
 
 test('a skill link that names another publisher is a different bundle, not a new version', async () => {
@@ -243,25 +247,21 @@ test('a skill link that names another publisher is a different bundle, not a new
   scanner.scanSkill.mockResolvedValue(other)
   const data = await loadTarget(audited.targetId, SKILL_SRC)
   expect(data.scan).toBeNull()
-  expect(data.versionChanged).toBe(false)
   expect(data.differentBundle).toBe(true)
-  expect(data.uncheckedBundle).toBe(false)
   // The foreign source is not attached, so the page never offers to scan it again.
   expect(data.detail?.src).toBeNull()
 })
 
-test('a skill target without a publisher on chain never claims a link as a new version', async () => {
+test('a skill target without a publisher on chain says the link names another bundle', async () => {
   const audited = skillReport(`0x${'55'.repeat(32)}`)
   reader.current = fakeReader({ target: async () => skillTarget(audited), tier: async () => 'COMMUNITY_SAFE' })
   scanner.scanSkill.mockResolvedValue(skillReport(`0x${'66'.repeat(32)}`))
   const data = await loadTarget(audited.targetId, SKILL_SRC)
-  expect(data.versionChanged).toBe(false)
-  expect(data.differentBundle).toBe(false)
-  expect(data.uncheckedBundle).toBe(true)
+  expect(data.differentBundle).toBe(true)
   expect(data.detail?.src).toBeNull()
 })
 
-test('a sponsored skill never claims that a link names another bundle, because the sponsor is not the author', async () => {
+test('a sponsored skill says the link names another bundle, because the sponsor is not the author', async () => {
   const audited = skillReport(`0x${'55'.repeat(32)}`)
   reader.current = fakeReader({
     target: async () =>
@@ -270,10 +270,18 @@ test('a sponsored skill never claims that a link names another bundle, because t
   })
   scanner.scanSkill.mockResolvedValue(skillReport(`0x${'66'.repeat(32)}`))
   const data = await loadTarget(audited.targetId, SKILL_SRC)
-  expect(data.versionChanged).toBe(false)
-  expect(data.differentBundle).toBe(false)
-  expect(data.uncheckedBundle).toBe(true)
+  expect(data.differentBundle).toBe(true)
   expect(data.detail?.src).toBeNull()
+})
+
+test('a skill whose own bundle was scanned keeps the source of that scan', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  reader.current = fakeReader({ target: async () => skillTarget(audited), tier: async () => 'COMMUNITY_SAFE' })
+  scanner.scanSkill.mockResolvedValue(audited)
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.scan?.targetId).toBe(audited.targetId)
+  expect(data.differentBundle).toBe(false)
+  expect(data.detail?.src).toBe(SKILL_SRC)
 })
 
 test('the same mismatched skill source is scanned once, not on every request', async () => {
@@ -288,8 +296,7 @@ test('the same mismatched skill source is scanned once, not on every request', a
 test('a contract page never claims a changed version, because its id does not depend on its code', async () => {
   scanner.scanContract.mockResolvedValue(contractReport(address))
   const data = await loadTarget(targetId, address)
-  expect(data.versionChanged).toBe(false)
-  expect(data.currentVersionId).toBeNull()
+  expect(data.differentBundle).toBe(false)
 })
 
 test('the lag is never measured from the age of a scan, because the tier and votes were read live', async () => {
