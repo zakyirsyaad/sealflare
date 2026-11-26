@@ -13,7 +13,8 @@ import {
   type PublicClient,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { coreAbi, vaultAbi } from '@sealflare/shared/abi'
+import { coreAbi, courtAbi, vaultAbi } from '@sealflare/shared/abi'
+import { targetIdOfContract } from '@sealflare/shared/rules'
 import { migrate, type Db } from '@sealflare/internal/db'
 
 export const RPC_URL = 'http://127.0.0.1:8546'
@@ -31,6 +32,9 @@ export const ACCOUNTS = [
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
   '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
   '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a',
+  '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6',
+  '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a',
+  '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba',
 ] as const
 
 export function account(index: number): { address: Address; key: Hex } {
@@ -110,6 +114,11 @@ export interface AttestOptions {
   evidenceURI?: string
 }
 
+/** The id the contract gives to a target. It is a hash, not the address itself. */
+export function targetIdOf(address: Address): Hex {
+  return targetIdOfContract(address)
+}
+
 /** The contract stores an address as a bytes32 with the address in the low bytes. */
 export function asBytes32(address: Address): Hex {
   return `0x${address.slice(2).padStart(64, '0')}` as Hex
@@ -153,15 +162,39 @@ export async function adjustScore(options: {
   return publicClient().waitForTransactionReceipt({ hash })
 }
 
-/** Deposits a bond on the stub Vault, which emits an event of its own on another address. */
-export async function depositBond(options: { from?: number; targetId?: Hex }) {
+/** How many bonds the tests posted. Every bond gets a target of its own. */
+let bondsPosted = 0
+
+/**
+ * Deposits a bond on the stub Vault, which emits an event of its own on another address.
+ *
+ * The Core knows a target before a bond can be posted for it, so the vote comes first. The
+ * target is one of its own for every call, so the vote never clashes with the vote of another
+ * test. A target that is given is one the caller made the indexer hear of already.
+ */
+export async function depositBond(options: { from?: number; targetId?: Hex; value?: bigint }) {
+  bondsPosted += 1
+  const contract = `0x${bondsPosted.toString(16).padStart(2, '0').repeat(20)}` as Address
+  if (!options.targetId) await attest({ from: 5, contract })
   const client = wallet(options.from ?? 0)
   const hash = await client.writeContract({
     address: addresses().vault,
     abi: vaultAbi,
     functionName: 'depositBond',
-    args: [options.targetId ?? (`0x${'11'.repeat(32)}` as Hex)],
-    value: 0n,
+    args: [options.targetId ?? targetIdOf(contract)],
+    value: options.value ?? 0n,
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** Asks the stub Vault for the bond of a target back. */
+export async function requestBondWithdrawal(options: { from?: number; targetId: Hex }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().vault,
+    abi: vaultAbi,
+    functionName: 'requestBondWithdrawal',
+    args: [options.targetId],
   })
   return publicClient().waitForTransactionReceipt({ hash })
 }
@@ -281,4 +314,138 @@ export async function createTestDb(): Promise<{ db: Db; close: () => Promise<voi
   const db = pgliteDb(client)
   await migrate(db)
   return { db, close: () => client.close() }
+}
+
+/** Opens a dispute on the stub Court, which reports it with a ChallengeOpened event. */
+export async function openChallenge(options: {
+  from?: number
+  targetId: Hex
+  flags?: number
+  shortProof?: Hex
+  evidenceURI?: string
+  value?: bigint
+}) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().court,
+    abi: courtAbi,
+    functionName: 'openChallenge',
+    args: [
+      options.targetId,
+      options.flags ?? 0,
+      `0x${'00'.repeat(32)}` as Hex,
+      options.shortProof ?? '0x',
+      options.evidenceURI ?? '',
+    ],
+    value: options.value ?? 0n,
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** The dispute that is open on a target. The stub Court keeps it in a public mapping. */
+export async function activeChallengeOf(targetId: Hex): Promise<bigint> {
+  const client = getContract({ abi: courtAbi, address: addresses().court, client: publicClient() })
+  return client.read.activeChallengeOf([targetId])
+}
+
+/** A juror joins the jury of a dispute, which the stub Court reports with a VoteCommitted event. */
+export async function commitVote(options: { from?: number; challengeId: bigint; value?: bigint }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().court,
+    abi: courtAbi,
+    functionName: 'commitVote',
+    args: [options.challengeId, `0x${'00'.repeat(32)}` as Hex],
+    value: options.value ?? 0n,
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** A juror reveals the direction of its vote. */
+export async function revealVote(options: { from?: number; challengeId: bigint; uphold: boolean }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().court,
+    abi: courtAbi,
+    functionName: 'revealVote',
+    args: [options.challengeId, options.uphold, `0x${'00'.repeat(32)}` as Hex],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** The dispute is closed with a verdict. */
+export async function resolveChallenge(options: { from?: number; challengeId: bigint }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().court,
+    abi: courtAbi,
+    functionName: 'resolve',
+    args: [options.challengeId],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** The dispute ran out of time. */
+export async function expireChallenge(options: { from?: number; challengeId: bigint }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().court,
+    abi: courtAbi,
+    functionName: 'expire',
+    args: [options.challengeId],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** The publisher answers a dispute. */
+export async function submitCounterEvidence(options: { from?: number; challengeId: bigint; uri: string }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().court,
+    abi: courtAbi,
+    functionName: 'submitCounterEvidence',
+    args: [options.challengeId, options.uri],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** A bounty is made for a target, which the stub Vault reports with a BountyCreated event. */
+export async function createBounty(options: { from?: number; targetId: Hex; slots?: number; value?: bigint }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().vault,
+    abi: vaultAbi,
+    functionName: 'createBounty',
+    args: [options.targetId, options.slots ?? 3],
+    value: options.value ?? 0n,
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** The escrow of a dispute pays its recipients, which the stub Vault reports one row at a time. */
+export async function distribute(options: {
+  from?: number
+  challengeId: bigint
+  recipients: Address[]
+  amounts: bigint[]
+}) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().vault,
+    abi: vaultAbi,
+    functionName: 'distribute',
+    args: [options.challengeId, options.recipients, options.amounts],
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
+}
+
+/** An account takes its balance out of the Vault. */
+export async function withdraw(options: { from?: number }) {
+  const client = wallet(options.from ?? 0)
+  const hash = await client.writeContract({
+    address: addresses().vault,
+    abi: vaultAbi,
+    functionName: 'withdraw',
+  })
+  return publicClient().waitForTransactionReceipt({ hash })
 }

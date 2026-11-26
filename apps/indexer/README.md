@@ -1,7 +1,8 @@
 # Indexer
 
-The indexer copies the chain into Postgres. It reads the `Core` events of the last final blocks
-and writes them into the tables the internal service and the public API read.
+The indexer copies the chain into Postgres. It reads the `Core`, the `Court` and the `Vault`
+events of the last final blocks and writes them into the tables the internal service and the
+public API read.
 
 It reads only. It never sends a transaction and it never holds a key.
 
@@ -42,7 +43,8 @@ The raw log keeps the cleaned string too.
 
 The `events` table is keyed by `(tx_hash, log_index)`, which is what makes a re-read range write
 nothing twice. Two Core contracts in one database would put the same key on two different logs, so
-a database holds one Core.
+a database holds one Core. The same holds for the Court and the Vault: one of each, named by
+`COURT_ADDRESS` and `VAULT_ADDRESS`.
 
 ### The RPC endpoint must be one consistent node
 
@@ -63,6 +65,8 @@ DATABASE_URL=postgres://sealflare:secret@127.0.0.1:5432/sealflare \
 RPC_URL=https://bsc-dataseed.bnbchain.org \
 CHAIN_ID=56 \
 CORE_ADDRESS=0x... \
+COURT_ADDRESS=0x... \
+VAULT_ADDRESS=0x... \
 START_BLOCK=<the block Core was deployed in> \
 pnpm --filter @sealflare/indexer start
 ```
@@ -73,6 +77,8 @@ pnpm --filter @sealflare/indexer start
 | `RPC_URL` | One consistent RPC node (see above) |
 | `CHAIN_ID` | The chain the node must serve. The indexer exits if it does not |
 | `CORE_ADDRESS` | The Core contract |
+| `COURT_ADDRESS` | The Court contract |
+| `VAULT_ADDRESS` | The Vault contract |
 | `START_BLOCK` | The block Core was deployed in. Digits only. Required unless `CHAIN_ID` is 31337, where it defaults to 0, so a deploy never walks the chain from block 0 by accident |
 | `BATCH_SIZE` | How many blocks one range holds (1 to 2000, default 2000) |
 | `POLL_INTERVAL_MS` | How long the indexer waits when it is caught up (default 5000) |

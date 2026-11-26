@@ -17,7 +17,7 @@ const chain = defineChain({
   rpcUrls: { default: { http: [env.RPC_URL] } },
 })
 const client = createPublicClient({ chain, transport: http(env.RPC_URL) })
-const addresses = { core: env.CORE_ADDRESS }
+const addresses = { core: env.CORE_ADDRESS, court: env.COURT_ADDRESS, vault: env.VAULT_ADDRESS }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
