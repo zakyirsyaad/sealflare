@@ -66,7 +66,8 @@ export interface ChainReader {
   evidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]>
   /** The evidence of the event log above a block, for the votes that are not final yet. */
   evidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]>
-  bond(targetId: Hex, publisher: Address): Promise<BondState | null>
+  /** The bond of the publisher. A page passes the block it reads everything at. */
+  bond(targetId: Hex, publisher: Address, blockNumber?: bigint): Promise<BondState | null>
   /**
    * How the target was bound, read from the event log. Null when the log does not say. The
    * publisher the target reports now is passed in, so a cached binding of a publisher that has
@@ -361,7 +362,7 @@ export function completeEvidence(rows: readonly EvidenceRow[], count: number): E
   throw new Error(`The event log of the target is not complete: the attestations ${missing.join(', ')} are missing.`)
 }
 
-async function readBond(targetId: Hex, publisher: Address): Promise<BondState | null> {
+async function readBond(targetId: Hex, publisher: Address, blockNumber?: bigint): Promise<BondState | null> {
   const vault = vaultAddress()
   if (vault === null) return null
   try {
@@ -370,6 +371,7 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
       abi: vaultAbi,
       functionName: 'bondOf',
       args: [targetId, publisher],
+      ...(blockNumber === undefined ? {} : { blockNumber }),
     })
     return {
       amount: raw.amount,
@@ -411,7 +413,7 @@ async function readBinding(targetId: Hex, createdAt: number, current: CurrentPub
     bindings.delete(key)
   }
   try {
-    const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
+    const head = await getRpcClient().getBlockNumber()
     const from = await createdBlock(targetId, createdAt, head)
     if (from > head) return null
     const event = eventItem<PublisherBoundEvent>('PublisherBound')
@@ -457,8 +459,16 @@ async function readTier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier>
  * The head of one node is not the head of the next one. A node that is a few blocks behind
  * cannot answer for a block it does not have, and a tier of the exact head is not worth an answer
  * that fails. Three blocks are enough for a node that lags a little.
+ *
+ * The local chain is the exception. It is one node that mines a block for every transaction, so it
+ * never lags behind itself, and three blocks there are three transactions: after the seed, the
+ * target of the last two would not exist yet at that block.
  */
-const TIER_MARGIN = 3n
+const LOCAL_CHAIN_ID = 31337
+
+export function tierMarginFor(chainId: number): bigint {
+  return chainId === LOCAL_CHAIN_ID ? 0n : 3n
+}
 
 /**
  * The block the tiers are read at.
@@ -468,7 +478,8 @@ const TIER_MARGIN = 3n
  */
 async function tierBlockNumber(): Promise<bigint> {
   const head = await getRpcClient().getBlockNumber()
-  return head > TIER_MARGIN ? head - TIER_MARGIN : 0n
+  const margin = tierMarginFor(expectedChainId)
+  return head > margin ? head - margin : 0n
 }
 
 /** The reader used by the target page. Every call goes out over a public RPC. */

@@ -212,7 +212,9 @@ async function readEvidence(reader: ChainReader, targetId: Hex, createdAt: numbe
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
-  // One block for the whole page, so the votes and the tier next to them come from the same moment.
+  // One block for the target, its votes, its tier and the bond of its publisher, so they come from
+  // the same moment. The event log (the evidence and the binding) is read up to the head: it holds
+  // links and the way the target was bound, not a number that can disagree with the votes.
   const block = await reader.tierBlockNumber()
   const target = await reader.target(targetId, block)
   const tier = target ? await reader.tier(targetId, block) : 'UNRATED'
@@ -229,7 +231,7 @@ async function readChain(reader: ChainReader, targetId: Hex) {
     }
   }
   const bond =
-    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher) : null
+    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher, block) : null
   // A target with no publisher has no PublisherBound event, so the log is not walked for it.
   const binding =
     target === null || target.publisher === ZERO_ADDRESS
