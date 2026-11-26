@@ -165,17 +165,15 @@ function parseTree(listing: string, prefix: string): TreeFile[] {
     if (tab < 0) continue
     const [mode, , oid, size] = record.slice(0, tab).split(/ +/)
     const path = record.slice(tab + 1)
+    // The folder is chosen before the size is read: a blob outside the folder may be missing, as in
+    // a sparse partial clone, and it has no bearing on the bundle.
+    if (prefix !== '' && !path.startsWith(`${prefix}/`)) continue
     if (mode === undefined || oid === undefined || size === undefined) continue
     const bytes = size === '-' ? 0 : Number(size)
-    // A blob that git cannot read has the size BAD. A file is never dropped for that, because the
-    // bundle would then look smaller than it is.
+    // A blob that git cannot read has the size BAD. A file of the folder is never dropped for that,
+    // because the bundle would then look smaller than it is.
     if (!Number.isSafeInteger(bytes)) throw new Error(`A committed file could not be read: ${path} has no size.`)
-    if (prefix === '') {
-      files.push({ path, mode, oid, size: bytes })
-      continue
-    }
-    if (!path.startsWith(`${prefix}/`)) continue
-    files.push({ path: path.slice(prefix.length + 1), mode, oid, size: bytes })
+    files.push({ path: prefix === '' ? path : path.slice(prefix.length + 1), mode, oid, size: bytes })
   }
   return files
 }
@@ -220,10 +218,10 @@ export function untrackedFiles(repository: Repository, ignored: boolean): Listin
 }
 
 /** The files that are in the index of the repository but not in its committed tree. */
-export function stagedFiles(repository: Repository): string[] {
+export function stagedFiles(repository: Repository): Listing {
   const result = git(repository.root, ['ls-files', '--cached', '-z'])
   if (!result.ok) throw new Error(`The files in the index could not be listed: ${result.why}`)
-  return pathsOf(result.out, repository.prefix).paths
+  return pathsOf(result.out, repository.prefix)
 }
 
 /**
@@ -236,9 +234,25 @@ export function stagedFiles(repository: Repository): string[] {
 function pathsOf(out: Buffer, prefix: string): Listing {
   const paths: string[] = []
   let nested = 0
-  for (const path of out.toString('utf8').split('\0')) {
-    if (path.length === 0) continue
-    if (prefix !== '' && !path.startsWith(`${prefix}/`)) continue
+  const folder = Buffer.from(prefix === '' ? '' : `${prefix}/`)
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let start = 0
+  while (start < out.length) {
+    let end = out.indexOf(0, start)
+    if (end < 0) end = out.length
+    const record = out.subarray(start, end)
+    start = end + 1
+    if (record.length === 0) continue
+    if (!record.subarray(0, folder.length).equals(folder)) continue
+    let path: string
+    try {
+      path = decoder.decode(record)
+    } catch {
+      // A name that is not valid UTF-8 cannot be opened under the name that was decoded from it, so
+      // the file could never be read. It is counted instead of being lost.
+      nested += 1
+      continue
+    }
     if (path.endsWith('/')) {
       nested += 1
       continue

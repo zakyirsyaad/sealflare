@@ -32,7 +32,10 @@ const GIT_METADATA = '.git'
 /**
  * How many files outside the bundle are read. The files outside the bundle are never hashed, so a
  * folder with a large dependency tree does not drown the report. The files that are left out are
- * counted and shown, so nothing is hidden.
+ * counted and shown, so nothing is hidden, and every file that was left out makes every check
+ * fail. An ignored dependency tree above this count (`node_modules`, say) therefore fails the
+ * checks as well, so a skill under development is never suggested as safe while a tree that big
+ * sits next to it.
  */
 const MAX_EXTRA_FILES = 500
 
@@ -185,10 +188,11 @@ async function extraFiles(
     const working = await modifiedEntry(folder, entry)
     if (working !== null) ordered.push(entry.path)
   }
-  for (const path of stagedFiles(repository)) {
+  const staged = stagedFiles(repository)
+  let unread = staged.nested
+  for (const path of staged.paths) {
     if (!inBundle.has(path)) ordered.push(path)
   }
-  let unread = 0
   for (const ignored of [false, true]) {
     const listing = untrackedFiles(repository, ignored)
     unread += listing.nested
@@ -200,8 +204,8 @@ async function extraFiles(
   let bytes = 0
   for (const path of ordered) {
     const size = await sizeOf(folder, path)
-    // A file that is listed but no longer on disk holds nothing that could be read or hidden.
-    if (size === 'gone') continue
+    // A file that git lists and the disk does not have is counted too. Nothing says it holds
+    // nothing: a name that could not be opened under the name that was read is the same thing.
     if (size === null || entries.length >= MAX_EXTRA_FILES || bytes + size > MAX_EXTRA_BYTES) {
       unread += 1
       continue
@@ -218,18 +222,18 @@ async function extraFiles(
 }
 
 /**
- * The size of a file in bytes, `gone` when it is not on disk any more, or null when it is not a
- * file that can be read.
+ * The size of a file in bytes, or null when it is not a file that can be read: a folder, or a path
+ * that is not on the disk.
  *
  * A folder is not a file, so it is never read. The size comes from the directory entry, so the
  * bytes of a file are not held in memory before it is known that it fits.
  */
-async function sizeOf(folder: string, path: string): Promise<number | 'gone' | null> {
+async function sizeOf(folder: string, path: string): Promise<number | null> {
   try {
     const info = await lstat(join(folder, path))
     if (info.isDirectory()) return null
     return info.size
-  } catch (failure) {
-    return (failure as NodeJS.ErrnoException).code === 'ENOENT' ? 'gone' : null
+  } catch {
+    return null
   }
 }

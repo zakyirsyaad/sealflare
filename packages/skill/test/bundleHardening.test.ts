@@ -301,7 +301,7 @@ describe('a file that was not read is never a pass', () => {
     expect(output).not.toContain('Suggested verdict: SAFE')
   })
 
-  test('a file that is listed but no longer on disk is nothing to read', async () => {
+  test('a file that git lists and the disk does not have is counted, so the report cannot say Safe', async () => {
     const folder = await gitSkillIn(await temp())
     await writeFile(join(folder, 'gone.txt'), 'x\n')
     gitIn(folder, ['add', '--', 'gone.txt'])
@@ -309,6 +309,46 @@ describe('a file that was not read is never a pass', () => {
 
     const bundle = await readBundle(folder)
 
+    expect(bundle.unread).toBe(1)
+    expect(await scanSkillReport({ folder, guard: fakeGuard() })).not.toContain('Suggested verdict: SAFE')
+  })
+
+  test('a name that is not valid UTF-8 is counted and never dropped', async () => {
+    const folder = await gitSkillIn(await temp())
+    // The index holds bytes, so the entry is written with raw bytes: a disk may refuse such a name.
+    const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: folder, input: `${PIPE_TO_SHELL}\n` })
+      .toString()
+      .trim()
+    const record = Buffer.concat([Buffer.from(`100644 ${blob}\tpayload`), Buffer.from([0xff]), Buffer.from('.sh\0')])
+    execFileSync('git', ['update-index', '--add', '-z', '--index-info'], { cwd: folder, input: record })
+
+    const bundle = await readBundle(folder)
+
+    expect(bundle.unread).toBe(1)
+    expect(await scanSkillReport({ folder, guard: fakeGuard() })).not.toContain('Suggested verdict: SAFE')
+  })
+})
+
+describe('a missing blob outside the folder does not stop the scan of the folder', () => {
+  test('a sparse partial clone scans the folder whose blobs are all there', async () => {
+    const origin = await temp()
+    await mkdir(join(origin, 'skill'), { recursive: true })
+    await mkdir(join(origin, 'other'), { recursive: true })
+    await writeFile(join(origin, 'skill', 'SKILL.md'), MANIFEST)
+    await writeFile(join(origin, 'other', 'big.txt'), 'x'.repeat(2048))
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: origin })
+    execFileSync('git', ['config', 'uploadpack.allowFilter', 'true'], { cwd: origin })
+    execFileSync('git', ['config', 'uploadpack.allowAnySHA1InWant', 'true'], { cwd: origin })
+    execFileSync('git', ['add', '--', '.'], { cwd: origin })
+    execFileSync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'first'], { cwd: origin })
+
+    const clone = join(await temp(), 'clone')
+    execFileSync('git', ['clone', '-q', '--filter=blob:none', '--sparse', `file://${origin}`, clone])
+    execFileSync('git', ['sparse-checkout', 'set', 'skill'], { cwd: clone })
+
+    const bundle = await readBundle(join(clone, 'skill'))
+
+    expect(bundle.hashed.map(entry => entry.path)).toEqual(['SKILL.md'])
     expect(bundle.unread).toBe(0)
   })
 })
