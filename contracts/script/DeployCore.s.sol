@@ -7,8 +7,9 @@ import {Core} from "../src/Core.sol";
 /// Release step 1: deploys Core alone to BSC mainnet (56) or BSC testnet (97) and writes its
 /// address to shared/abi/addresses.bsc.json (mainnet) or addresses.bsc-testnet.json (testnet).
 ///
-/// Run with a hardware wallet, never a private key:
-///   forge script DeployCore --root contracts --rpc-url $BSC_RPC_URL --ledger --sender <address> --broadcast --verify
+/// Run with the founder's encrypted Foundry keystore (`cast wallet new ~/.foundry/keystores
+/// deployer`), never a raw private key:
+///   forge script DeployCore --root contracts --rpc-url $BSC_RPC_URL --account deployer --sender <address> --broadcast --verify
 /// On testnet set AGENT_ID to the TestnetAgentID address from DeployTestnetAgentID.
 contract DeployCore is Script {
     uint256 internal constant BSC_MAINNET = 56;

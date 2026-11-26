@@ -6,7 +6,7 @@ import {DeployCore} from "../script/DeployCore.s.sol";
 import {TestnetAgentID} from "../script/DeployTestnetAgentID.s.sol";
 
 /// The chain guards of the release scripts. The broadcasts themselves run on testnet in the
-/// Task 12 rehearsal, with a hardware wallet.
+/// Task 12 rehearsal, signed by the founder's encrypted deployer keystore.
 contract DeployTest is Test {
     DeployCore internal script;
 

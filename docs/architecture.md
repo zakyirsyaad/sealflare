@@ -106,7 +106,7 @@ Urutan deploy: `Core`, lalu `Vault(core)`, lalu `Court(core, vault)`, lalu `Core
 - `Core` tidak mewarisi `Ownable`. Ia menyimpan `immutable deployer` dan satu flag sekali pakai.
 - `setModules(court, vault)` hanya bisa dipanggil `deployer`, hanya sekali, dan memeriksa `ICourt(court).core() == this`, `IVault(vault).core() == this`, serta `ICourt(court).vault() == vault`.
 - Fungsi yang sama mematikan wewenang `deployer` di akhir. Tidak ada transaksi pelepasan terpisah yang bisa terlupa atau terbalik urutannya.
-- Kunci `deployer` disimpan di hardware wallet selama jendela antara rilis `Core` dan `setModules`.
+- Kunci `deployer` adalah akun baru khusus deploy, disimpan sebagai keystore Foundry terenkripsi password di mesin founder, selama jendela antara rilis `Core` dan `setModules` (keputusan D25 di rencana on-chain).
 
 ### 4.3 Identitas target
 
@@ -358,7 +358,7 @@ Tiga aturan tambahan:
 | Kunci Pinata | ya | ya |
 | Kunci LLM | tidak | ya |
 | Kunci antarlayanan Vercel ke VPS | ya | ya |
-| Kunci `deployer` kontrak | tidak | tidak, hanya hardware wallet |
+| Kunci `deployer` kontrak | tidak | tidak, hanya keystore terenkripsi di mesin founder |
 
 Tidak ada kunci berbayar yang memakai awalan `NEXT_PUBLIC_`. Tidak ada rahasia di repositori.
 
