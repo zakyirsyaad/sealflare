@@ -26,8 +26,17 @@ export const MAX_READ_FAILURES = 3
 /** How long a run may go without a new probe run before it fails. */
 export const RUN_DEADLINE_MS = 20 * 60_000
 
-/** How long a run that failed its deadline is still read, waiting for the worker. */
-export const LATE_DEADLINE_MS = 20 * 60_000
+/**
+ * How long a run that failed its deadline is still read, waiting for the worker.
+ *
+ * The window is short, because the slot of the quota of the run is only given back when the
+ * following ends. A caller waits for the slot of a run it already sees as failed, so the window
+ * is kept small: a worker that is alive but stuck does not hold the slot of the day for long.
+ */
+export const LATE_DEADLINE_MS = 5 * 60_000
+
+/** The reason of a run that took longer than it may take. */
+export const LATE_REASON = 'The sandbox run took longer than it may take.'
 
 /** How long the transcript of a finished run is waited for. The worker uploads it after the run. */
 export const EVIDENCE_DEADLINE_MS = 2 * 60_000
@@ -85,7 +94,7 @@ export async function advanceLateRun(deps: RunDeps, row: RunRow): Promise<void> 
     await completeLateRun(deps, row, status)
     return
   }
-  if (overDeadline(row.late_since, deps.now(), LATE_DEADLINE_MS)) await stopFollowing(deps, row)
+  if (overDeadline(row.late_since, deps.now(), LATE_DEADLINE_MS)) await stopFollowing(deps, row, LATE_REASON)
 }
 
 /**
@@ -125,7 +134,7 @@ async function countFailure(deps: RunDeps, row: RunRow, message: string): Promis
     return
   }
   if (row.late_since !== null) {
-    await stopFollowing(deps, row)
+    await stopFollowing(deps, row, message)
     return
   }
   await failRun(deps, row, 'infrastructure', message)
@@ -134,18 +143,21 @@ async function countFailure(deps: RunDeps, row: RunRow, message: string): Promis
 /**
  * Stops following a run that failed its deadline.
  *
- * The worker may not be waited for any longer, so the run ends here. Its slot of the quota comes
- * back, unless the run already ended with a verdict about the skill. The result the run reached
- * is stored, so a violation the worker found before it went away is still shown.
+ * The worker may not be waited for any longer, so the run ends here. The reason comes from the
+ * caller, because a run whose window ended is not a run whose worker went away: it keeps the
+ * reason of the deadline it missed. Its slot of the quota comes back, unless the run already
+ * ended with a verdict about the skill. The result the run reached is stored, so a violation the
+ * worker found before it went away is still shown.
  */
-async function stopFollowing(deps: RunDeps, row: RunRow): Promise<void> {
+async function stopFollowing(deps: RunDeps, row: RunRow, message: string): Promise<void> {
   const fresh = await freshRow(deps, row.run_id)
-  const result = failureResult(deps, row, readProbes(fresh?.probes), 'The sandbox worker could not be reached.')
+  const result = failureResult(deps, row, readProbes(fresh?.probes), message)
   const ending = endingOf(result, 'infrastructure')
   const rows = await deps.sql.query<{ run_id: string }>(
-    `UPDATE sandbox_runs SET late_since = NULL, read_failures = 0, failure_cause = $2, result = COALESCE($3, result)
+    `UPDATE sandbox_runs SET late_since = NULL, read_failures = 0, failure_cause = $2, failure_message = $4,
+       result = COALESCE($3, result)
      WHERE run_id = $1 AND late_since IS NOT NULL RETURNING run_id`,
-    [row.run_id, ending.cause, result === null ? null : JSON.stringify(result)],
+    [row.run_id, ending.cause, result === null ? null : JSON.stringify(result), message],
   )
   if (rows.length === 0) return
   if (ending.refund) await refundQuota(deps, row.run_id)
@@ -160,7 +172,7 @@ async function stopFollowing(deps: RunDeps, row: RunRow): Promise<void> {
 async function checkDeadline(deps: RunDeps, row: RunRow, moved: boolean): Promise<void> {
   const last = moved ? deps.now() : (row.progress_at ?? row.started_at)
   if (!overDeadline(last, deps.now(), RUN_DEADLINE_MS)) return
-  await failLate(deps, row, 'The sandbox run took longer than it may take.')
+  await failLate(deps, row, LATE_REASON)
 }
 
 /**
@@ -181,15 +193,16 @@ async function completeRun(deps: RunDeps, row: RunRow, status: WorkerRunStatus):
  *
  * The run stays failed, because it did miss its deadline. Its slot of the quota comes back now,
  * unless the run ended with a verdict about the skill: a run that caught a forbidden tool call
- * did its job, so nothing is blamed and the slot is not given back. A violation the worker found
- * at the end is still stored and cached, because a violation is never hidden. A run that finished
- * cleanly keeps no result, because the frozen schema has no incomplete result whose probes are
- * all clean.
+ * did its job, so nothing is blamed and the slot is not given back. The blame of the run is the
+ * one the worker reports, so a run that ended because of the skill keeps its slot as well. A
+ * violation the worker found at the end is still stored and cached, because a violation is never
+ * hidden. A run that finished cleanly keeps no result, because the frozen schema has no
+ * incomplete result whose probes are all clean.
  */
 async function completeLateRun(deps: RunDeps, row: RunRow, status: WorkerRunStatus): Promise<void> {
   const fresh = await freshRow(deps, row.run_id)
-  const result = failureResult(deps, row, readProbes(fresh?.probes), 'The sandbox run took longer than it may take.')
-  const ending = endingOf(result, 'infrastructure')
+  const result = failureResult(deps, row, readProbes(fresh?.probes), LATE_REASON)
+  const ending = endingOf(result, status.failure?.cause ?? 'infrastructure')
   const rows = await deps.sql.query<{ run_id: string }>(
     `UPDATE sandbox_runs SET result = $2, evidence_uri = $3, evidence_since = $4, late_since = NULL, read_failures = 0,
        failure_cause = $5

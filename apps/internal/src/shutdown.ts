@@ -6,8 +6,15 @@
  * worker that never answers does not keep the service alive.
  */
 
-/** How long the service waits for the pass of the queue that is in flight. */
-export const SHUTDOWN_GRACE_MS = 15_000
+/**
+ * How long the service waits for the pass of the queue that is in flight.
+ *
+ * The grace is shorter than the ten seconds a `docker stop` waits before it kills the container,
+ * so the service is gone before the container is killed. The service that runs in Docker should
+ * also get a `stop_grace_period` of its own, so the pass of the queue is never cut off in the
+ * middle of a refund.
+ */
+export const SHUTDOWN_GRACE_MS = 8_000
 
 /**
  * Waits for the queue to finish the pass it is in.

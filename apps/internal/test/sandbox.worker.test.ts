@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import type { ProbeResult, SandboxResult, WorkerRunStatus } from '@sealflare/shared/schemas'
 import { PROBE_IDS } from '@sealflare/shared/schemas'
 import { pollOnce, runQueue, type PollerDeps } from '../src/sandbox/poller'
+import { refundQuota } from '../src/sandbox/quota'
 import { body, createTestDb, get, post } from './helpers'
 import {
   NOW,
@@ -392,6 +393,97 @@ test('a run that failed its deadline is still read, and a violation at the end r
   await close()
 })
 
+test('a run whose follow-up ends keeps the reason of the deadline it missed', async () => {
+  const { db, close } = await createTestDb()
+  const violation: ProbeResult = {
+    probeId: 'indirect_injection',
+    runs: [
+      { index: 0, outcome: 'violation', violations: [{ tool: 'transfer', args: { to: '0x0' }, rule: 'no-transfer' }] },
+    ],
+  }
+  const worker = fakeWorker({ answer: runId => ({ runId, state: 'running', probes: [violation] }) })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  // The worker shows a violation, so the run has a result, and then it stops moving.
+  const moving = new Date(NOW.getTime() + 21 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => moving))
+  const stuck = new Date(NOW.getTime() + 42 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => stuck))
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+
+  // The worker keeps answering that the run is going, so the window of the following ends.
+  const end = new Date(NOW.getTime() + 63 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => end))
+
+  // The run ended because it took longer than it may take, so it keeps that reason and not the
+  // reason of a worker that could not be reached.
+  const ended = await db.query<{ failure_message: string | null; result: unknown }>(
+    'SELECT failure_message, result FROM sandbox_runs',
+  )
+  const result = ended[0]?.result as SandboxResult
+  expect(result.incompleteReason).toBe('The sandbox run took longer than it may take.')
+  expect(ended[0]?.failure_message).toBe('The sandbox run took longer than it may take.')
+  await close()
+})
+
+test('a late run that the worker ends with the blame of the skill keeps its slot', async () => {
+  const { db, close } = await createTestDb()
+  let reads = 0
+  const worker = fakeWorker({
+    answer: runId => {
+      reads += 1
+      if (reads === 1) return { runId, state: 'running', probes: [] }
+      return doneStatus(runId, 'skill_content')
+    },
+  })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  // The run stops moving, so it fails its deadline and is still read.
+  const later = new Date(NOW.getTime() + 21 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => later))
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+  expect(await used(db)).toBe(1)
+
+  // The worker ends the run and blames the skill of the run, so the slot does not come back.
+  await pollOnce(pollerAt(db, worker, () => later))
+  const ended = await runs(db)
+  expect(ended[0]?.failure_cause).toBe('skill_content')
+  expect(await used(db)).toBe(1)
+  await close()
+})
+
+test('a run that failed its deadline gives its slot back when the follow-up ends', async () => {
+  const { db, close } = await createTestDb()
+  const worker = fakeWorker({ answer: runId => ({ runId, state: 'running', probes: [] }) })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  // The run stops moving, so it fails its deadline. Its slot is not given back yet, because the
+  // worker may still be going with it.
+  const later = new Date(NOW.getTime() + 21 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => later))
+  expect(await used(db)).toBe(1)
+
+  // The following of the run ends a few minutes later, and the slot comes back then. A caller
+  // does not wait for the slot of a run it already sees as failed for long.
+  const end = new Date(NOW.getTime() + 27 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => end))
+  const ended = await runs(db)
+  expect(ended[0]?.status).toBe('incomplete')
+  expect(await used(db)).toBe(0)
+  await close()
+})
+
 test('the quota of a failed run comes back only once', async () => {
   const { db, close } = await createTestDb()
   const worker = fakeWorker({ unreachable: true })
@@ -413,6 +505,13 @@ test('the quota of a failed run comes back only once', async () => {
   // The run is read again and again, but the slot of the quota comes back only once.
   await pollOnce(poller(db, worker))
   await pollOnce(poller(db, worker))
+  expect(await used(db)).toBe(1)
+
+  // A second refund of the same run is refused by the guard of the run, so the count stays at one.
+  const runId = failed[0]?.run_id
+  expect(runId).toBeDefined()
+  const second = await refundQuota(poller(db, worker), String(runId))
+  expect(second).toBe(false)
   expect(await used(db)).toBe(1)
   await close()
 })
