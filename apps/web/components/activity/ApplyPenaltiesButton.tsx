@@ -1,0 +1,65 @@
+'use client'
+import { useEffect, useRef, useState } from 'react'
+import type { Address, Hex } from 'viem'
+import { coreAbi } from '@sealflare/shared/abi'
+import { coreAddress } from '../../lib/chain/addresses'
+import { expectedChainId, modulesLive } from '../../lib/chain/config'
+import { useWriteTx } from '../../lib/chain/useWriteTx'
+import { copy } from '../../lib/copy'
+import { ActionButton } from './ActionButton'
+
+export type ApplyPenaltiesButtonProps = {
+  account: Address
+  targetId: string
+  /** The penalties that are still waiting on this target, as the chain counts them. */
+  pending: number
+  /** Called once a page of penalties was applied, so the rest is read again. */
+  onApplied: () => void
+  /** The one button of the view that carries the accent. */
+  primary?: boolean
+}
+
+/** How many attestations one call of applyPenalties covers. */
+export const PENALTY_CHUNK = 50
+
+/**
+ * The button that applies the penalties of a confirmed danger.
+ *
+ * The contract takes a range of attestations, so the penalties are applied one page at a time.
+ * Every page is a transaction of its own, and the number that is left is read from the chain
+ * again after every page, because the chain alone knows how many penalties a page held.
+ */
+export function ApplyPenaltiesButton({ account, targetId, pending, onApplied, primary = false }: ApplyPenaltiesButtonProps) {
+  const tx = useWriteTx()
+  const core = coreAddress()
+  const [start, setStart] = useState(0)
+  const mined = useRef<string | null>(null)
+  const { state, txHash, reset } = tx
+  useEffect(() => {
+    if (state !== 'done' || txHash === null || mined.current === txHash) return
+    mined.current = txHash
+    setStart(value => value + PENALTY_CHUNK)
+    // The number that is left is read from the chain, so the next page may start right away.
+    reset()
+    onApplied()
+  }, [state, txHash, reset, onApplied])
+  const send = () => {
+    if (core === null) return
+    void tx.send({ account, address: core, abi: coreAbi, functionName: 'applyPenalties', args: [targetId as Hex, start, PENALTY_CHUNK] })
+  }
+  return (
+    <div className="sf-stack">
+      <ActionButton
+        label={copy.activity.penaltiesAction}
+        state={tx.state}
+        error={tx.error}
+        txHash={tx.txHash}
+        disabled={core === null || !modulesLive}
+        primary={primary}
+        onSubmit={send}
+      />
+      <p className="sf-lead">{copy.activity.penaltiesRemain.replace('{count}', String(pending))}</p>
+      <p className="sf-lead">{copy.activity.penaltiesGas}</p>
+    </div>
+  )
+}

@@ -1,5 +1,6 @@
 import { getAddress, zeroAddress, type Address } from 'viem'
 import { z } from 'zod'
+import { expectedChainId } from './config'
 
 export type SupportedChainId = 56 | 97 | 31337
 export type ContractAddresses = { agentId: Address; core: Address; court: Address | null; vault: Address | null }
@@ -43,4 +44,22 @@ export function addresses(chainId: SupportedChainId, sources: AddressSources = d
   }
   if (parsed.chainId !== undefined && parsed.chainId !== chainId) throw invalid
   return { agentId: parsed.agentId, core: parsed.core, court: parsed.court, vault: parsed.vault }
+}
+
+/** The address of the registry, or null when the deployment names none. */
+export function coreAddress(): Address | null {
+  try {
+    return addresses(expectedChainId).core
+  } catch {
+    return null
+  }
+}
+
+/** The address of the vault, or null when the deployment names none. */
+export function vaultAddress(): Address | null {
+  try {
+    return addresses(expectedChainId).vault
+  } catch {
+    return null
+  }
 }

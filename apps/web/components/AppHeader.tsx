@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { WalletButton } from './wallet/WalletButton'
+import { useNeedsActionCount } from '../lib/activity/useNeedsActionCount'
+import { useUserState } from '../lib/chain/userState'
 import { copy } from '../lib/copy'
 
 const links = [
@@ -15,6 +17,9 @@ const links = [
 export function AppHeader() {
   const pathname = usePathname()
   const [light, setLight] = useState(false)
+  const user = useUserState()
+  // The mark on the wallet button says how many things wait on the account.
+  const pendingCount = useNeedsActionCount('address' in user ? user.address : null)
   useEffect(() => { document.documentElement.dataset.theme = light ? 'light' : 'dark' }, [light])
   return <header className="sf-app-header"><div className="sf-app-header__inner">
     <Link className="sf-wordmark" href="/app" aria-label="Sealflare">seal<span>flare</span></Link>
@@ -23,7 +28,7 @@ export function AppHeader() {
     </nav>
     <div className="sf-header-actions">
       <label className="sf-theme"><input type="checkbox" checked={light} onChange={event => setLight(event.target.checked)} />{copy.nav.theme}</label>
-      <WalletButton />
+      <WalletButton pendingCount={pendingCount} />
     </div>
   </div></header>
 }

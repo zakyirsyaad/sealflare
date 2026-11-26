@@ -316,3 +316,31 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-rows__row { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
 .sf-rows__name { color: var(--muted-foreground); }
 .sf-rows__value { text-align: right; }
+
+/* My activity */
+.sf-activity { display: grid; gap: var(--space-6); }
+.sf-activity__body { display: grid; gap: var(--space-6); grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; }
+.sf-activity__main, .sf-activity__side { display: grid; gap: var(--space-6); min-width: 0; }
+.sf-panel__head { padding: var(--space-4) var(--space-6); border-bottom: var(--hairline) solid var(--border); }
+.sf-panel__head h2 { margin: 0; font-size: 18px; font-weight: 500; line-height: 26px; }
+.sf-panel__head--row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: baseline; justify-content: space-between; }
+.sf-scroll { overflow-x: auto; }
+.sf-todos { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.sf-todo { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: center; padding: var(--space-4) var(--space-6); border-bottom: var(--hairline) solid var(--border); }
+.sf-todo:last-child { border-bottom: 0; }
+.sf-todo__body { flex: 1 1 260px; min-width: 0; }
+.sf-todo__title { margin: 0; font-size: 15px; font-weight: 500; line-height: 24px; }
+.sf-todo__detail { margin: var(--space-1) 0 0; color: var(--muted-foreground); font-size: 13px; line-height: 20px; }
+.sf-todo__when { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+.sf-balance { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-6); }
+.sf-balance__amount { font-family: var(--font-mono); font-size: 28px; line-height: 34px; }
+.sf-balance__unit { margin-left: var(--space-2); font-size: 14px; color: var(--muted-foreground); }
+.sf-standing { display: grid; gap: var(--space-4); padding: var(--space-4) var(--space-6); }
+.sf-standing__weight { display: grid; gap: var(--space-2); }
+.sf-standing__headline { font-size: 15px; font-weight: 500; line-height: 24px; }
+.sf-weight { display: flex; gap: var(--space-1); }
+.sf-weight__step { width: 28px; height: 4px; background: var(--muted); }
+.sf-weight__step--on { background: var(--positive); }
+@media (max-width: 900px) {
+  .sf-activity__body { grid-template-columns: minmax(0, 1fr); }
+}

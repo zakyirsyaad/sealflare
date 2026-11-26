@@ -1,0 +1,114 @@
+'use client'
+import type { Address } from 'viem'
+import type { NeedsAction as NeedsActionItem } from '@sealflare/shared/schemas'
+import { copy } from '../../lib/copy'
+import { shortAddress } from '../../lib/format'
+import { dueText, rowOf, sortByUrgency, type ActionRow } from '../../lib/activity/needsAction'
+import { useNow } from '../../lib/activity/useNow'
+import { ApplyPenaltiesButton } from './ApplyPenaltiesButton'
+import { SettleXpButton } from './SettleXpButton'
+
+/** A target of the account on which a penalty is still waiting. */
+export type PendingPenalty = { targetId: string; pending: number }
+
+export type NeedsActionProps = {
+  account: Address
+  /** The actions the indexer found for the account. */
+  items: readonly NeedsActionItem[]
+  /** The penalties that are still waiting on the targets of the account. */
+  penalties: readonly PendingPenalty[]
+  /** Called once a page of penalties was applied, so the rest is read again. */
+  onApplied: () => void
+}
+
+/**
+ * The panel of the things that wait on the account.
+ *
+ * The rows come from the indexed rows of the account and from the chain, and they are ordered by
+ * how urgent they are: the action that is due first comes first.
+ */
+export function NeedsAction({ account, items, penalties, onApplied }: NeedsActionProps) {
+  const now = useNow()
+  const rows = sortByUrgency(items).map(rowOf)
+  const total = rows.length + penalties.length
+  if (total === 0) return null
+  return (
+    <section className="sf-frame sf-frame--crop" aria-label={copy.activity.needsAction}>
+      <div className="sf-panel__head sf-panel__head--row">
+        <h2>{copy.activity.needsAction}</h2>
+        <span className="sf-mono">{total}</span>
+      </div>
+      <ul className="sf-todos">
+        {rows.map((row, index) => (
+          <Row key={row.key} row={row} account={account} now={now} primary={index === 0} />
+        ))}
+        {penalties.map(penalty => (
+          <PenaltyRow key={penalty.targetId} penalty={penalty} account={account} onApplied={onApplied} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** One action that waits on the account. */
+function Row({ row, account, now, primary }: { row: ActionRow; account: Address; now: Date; primary: boolean }) {
+  const when = dueText(row.dueAt, now)
+  return (
+    <li className="sf-todo">
+      <div className="sf-todo__body">
+        <h3 className="sf-todo__title">{row.title}</h3>
+        <p className="sf-todo__detail">{row.detail}</p>
+      </div>
+      {when !== null && <span className="sf-todo__when" suppressHydrationWarning>{when}</span>}
+      <Control row={row} account={account} primary={primary} />
+    </li>
+  )
+}
+
+/** The control of a row: the page where the action happens, or the button that starts it. */
+function Control({ row, account, primary }: { row: ActionRow; account: Address; primary: boolean }) {
+  const variant = primary ? 'sf-btn--primary' : 'sf-btn--secondary'
+  if (row.kind === 'claim') return <SettleXpButton account={account} targetId={row.targetId} primary={primary} />
+  if (row.kind === 'reveal' || row.kind === 'reply' || row.kind === 'close') {
+    return (
+      <a className={`sf-btn ${variant}`} href={`/app/disputes/${row.challengeId ?? ''}`}>
+        {labelOf(row.kind)}
+      </a>
+    )
+  }
+  return (
+    <a className={`sf-btn ${variant}`} href={`/app/t/${row.targetId}`}>
+      {labelOf(row.kind)}
+    </a>
+  )
+}
+
+/** The word on the button of a row. */
+function labelOf(kind: ActionRow['kind']): string {
+  if (kind === 'reveal') return copy.activity.revealAction
+  if (kind === 'reply') return copy.activity.replyAction
+  if (kind === 'close') return copy.activity.closeAction
+  if (kind === 'bond') return copy.activity.bondAction
+  return copy.activity.bountyAction
+}
+
+/** A target of the account on which a penalty is still waiting. */
+function PenaltyRow({
+  penalty,
+  account,
+  onApplied,
+}: {
+  penalty: PendingPenalty
+  account: Address
+  onApplied: () => void
+}) {
+  return (
+    <li className="sf-todo">
+      <div className="sf-todo__body">
+        <h3 className="sf-todo__title">{copy.activity.penaltiesTitle.replace('{target}', shortAddress(penalty.targetId))}</h3>
+        <p className="sf-todo__detail">{copy.activity.penaltiesDetail}</p>
+      </div>
+      <ApplyPenaltiesButton account={account} targetId={penalty.targetId} pending={penalty.pending} onApplied={onApplied} />
+    </li>
+  )
+}
