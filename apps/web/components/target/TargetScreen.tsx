@@ -2,6 +2,7 @@ import type { AttestationRow, ScanReport, TargetDetail } from '@sealflare/shared
 import { ActionColumn } from './ActionColumn'
 import { Banners } from './Banners'
 import { Identity } from './Identity'
+import { PendingVoteProvider } from './pendingVote'
 import { StaleNotice } from './StaleNotice'
 import { StatusCard } from './StatusCard'
 import { TargetError } from './TargetError'
@@ -23,6 +24,10 @@ export type TargetScreenProps = {
   unbondingAt: number | null
   differentBundle: boolean
   evidenceFailed: boolean
+  /** The word `Core.attest` takes for this target. Null when the target is not known yet. */
+  targetWord: string | null
+  /** The scanned bundle is another bundle than the one the registry sealed. */
+  bundleChanged: boolean
   failed: boolean
   /** How the target was bound, read from the event log of Core. */
   binding?: Binding | null
@@ -60,10 +65,24 @@ export function TargetScreen(props: TargetScreenProps) {
       {props.differentBundle && <ForeignNotice />}
       <Banners detail={detail} scan={props.scan} unbondingAt={props.unbondingAt} />
       <StaleNotice blocksBehind={props.blocksBehind} />
-      <div className="sf-target__body">
-        <StatusCard detail={detail} />
-        <ActionColumn tier={detail.tier} targetType={detail.targetType} currentVersionHref={scanCurrentVersionHref(detail.src)} />
-      </div>
+      <PendingVoteProvider signal={detail.signal}>
+        <div className="sf-target__body">
+          <StatusCard detail={detail} />
+          <ActionColumn
+            tier={detail.tier}
+            targetType={detail.targetType}
+            currentVersionHref={scanCurrentVersionHref(detail.src)}
+            targetId={detail.targetId}
+            targetWord={props.targetWord}
+            bundleChanged={props.bundleChanged}
+            evidenceFailed={props.evidenceFailed}
+            label={detail.label}
+            scan={props.scan}
+            attestations={props.attestations}
+            underDispute={detail.activeChallengeId !== null}
+          />
+        </div>
+      </PendingVoteProvider>
       <section className="sf-frame sf-target__tabs">
         <TargetTabs
           detail={detail}
