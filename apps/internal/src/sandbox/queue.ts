@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { ProbeId, SandboxResult } from '@sealflare/shared/schemas'
+import { SandboxResult, type ProbeId } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
 import { utcDay } from './quota'
 
@@ -178,9 +178,13 @@ function readJsonColumn(value: unknown): unknown {
   }
 }
 
-/** The stored result of a run, or null when it cannot be read. */
+/**
+ * The stored result of a run, or null when it cannot be read.
+ *
+ * The frozen schema is the judge, as in the cache: a result whose status does not follow from its
+ * probes is not a result, so it can never be shown as a clean one.
+ */
 export function readResult(value: unknown): SandboxResult | null {
-  const parsed = readJsonColumn(value)
-  if (parsed === null || typeof parsed !== 'object') return null
-  return parsed as SandboxResult
+  const parsed = SandboxResult.safeParse(readJsonColumn(value))
+  return parsed.success ? parsed.data : null
 }

@@ -278,3 +278,21 @@ test('the source of the run is kept with the run', async () => {
   expect(runs[0]?.skill_md).toBe(SKILL_TEXT)
   await close()
 })
+
+test('a stored result that contradicts its own probes is not a result', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = sandboxFixture(db)
+
+  const created = await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  const run = (await body<RunAnswer>(created)).data
+  // A result that says "clean" while one of its probes caught a violation must never be shown.
+  const forged = { ...failedResult(BUNDLE_HASH), status: 'NO_VIOLATION_OBSERVED' }
+  await db.query(`UPDATE sandbox_runs SET status = 'done', result = $2 WHERE run_id = $1`, [
+    run.runId,
+    JSON.stringify(forged),
+  ])
+  const state = (await body<StatusAnswer>(await get(app, `/sandbox/runs/${run.runId}`))).data
+  expect(state.status).toBe('done')
+  expect(state.result).toBeUndefined()
+  await close()
+})

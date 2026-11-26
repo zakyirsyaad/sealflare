@@ -4,6 +4,8 @@ import { useSignTypedData } from 'wagmi'
 import { API_EIP712 } from '@sealflare/shared/schemas'
 import { api, ApiError, type RunState } from '../api/client'
 import { expectedChainId } from '../chain/config'
+import { isUserRejection } from '../chain/errors'
+import { copy } from '../copy'
 
 /** How often the state of a run is read while it is not finished. */
 const POLL_MS = 2_000
@@ -25,11 +27,11 @@ export type UseSandboxRun = {
   start: (input: SandboxRunInput) => Promise<void>
 }
 
-/** A nonce nobody else can guess, so a signed request cannot be replayed. */
+/** A nonce nobody else can guess, as the decimal string the API reads. */
 function newNonce(): string {
-  const bytes = new Uint8Array(32)
+  const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
-  return `0x${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`
+  return BigInt(`0x${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`).toString()
 }
 
 /**
@@ -45,13 +47,21 @@ export function useSandboxRun(): UseSandboxRun {
   const [error, setError] = useState<string | null>(null)
   const [paused, setPaused] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // A read that is still on its way when the page is left must not arm the next one.
+  const alive = useRef(true)
 
   const stop = useCallback(() => {
     if (timer.current !== null) clearTimeout(timer.current)
     timer.current = null
   }, [])
 
-  useEffect(() => stop, [stop])
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+      stop()
+    }
+  }, [stop])
 
   /** Reads the state of the run and asks for the next read when it is not finished. */
   const follow = useCallback(
@@ -61,10 +71,13 @@ export function useSandboxRun(): UseSandboxRun {
         void api
           .sandboxRunStatus(runId)
           .then(state => {
+            if (!alive.current) return
             setRun(state)
             if (state.status === 'queued' || state.status === 'running') follow(runId)
           })
-          .catch(() => setError('The sandbox run could not be read.'))
+          .catch(() => {
+            if (alive.current) setError('The sandbox run could not be read.')
+          })
       }, POLL_MS)
     },
     [stop],
@@ -92,16 +105,19 @@ export function useSandboxRun(): UseSandboxRun {
           expiry,
           signature,
         })
+        if (!alive.current) return
         setRun({ runId: created.runId, status: 'queued', queuePosition: created.queuePosition })
         follow(created.runId)
       } catch (caught) {
+        if (!alive.current) return
         if (caught instanceof ApiError && caught.code === 'SANDBOX_PAUSED') {
           setPaused(true)
-        } else {
-          setError(caught instanceof Error ? caught.message : 'The sandbox run could not be started.')
+        } else if (!isUserRejection(caught)) {
+          // Only the text of the API is shown. The text of a wallet or a network error is not ours.
+          setError(caught instanceof ApiError ? caught.message : copy.errors.unknown)
         }
       } finally {
-        setBusy(false)
+        if (alive.current) setBusy(false)
       }
     },
     [follow, signTypedDataAsync],

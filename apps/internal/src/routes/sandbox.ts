@@ -67,8 +67,9 @@ export function sandboxRoutes(deps: SandboxRouteDeps): Hono {
 /**
  * Queues a run of a skill.
  *
- * The order of the checks is the order of the cost: the cheap ones come first, and the ones that
- * cost something, the fetch of the skill and a slot of the quota, come last.
+ * The cheap checks come first: the pause, the signature, the Agent ID and the nonce. The ones that
+ * cost the most, the fetch of the skill and a slot of the quota, come last. The Agent ID is a read
+ * of the chain, so it runs before the nonce, which only reads the database.
  */
 async function createRun(c: Context, deps: SandboxRouteDeps): Promise<Response> {
   const body = await readJson(c)

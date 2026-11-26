@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type { SandboxResult, WorkerRunStatus } from '@sealflare/shared/schemas'
 import { pollOnce, type PollerDeps } from '../src/sandbox/poller'
-import { body, createTestDb, post } from './helpers'
+import { body, createTestDb, get, post } from './helpers'
 import {
   NOW,
   bundle,
@@ -129,6 +129,14 @@ test('a violation seen in a poll is stored before the run ends, and survives the
 
   const cacheAfterFailure = await db.query<{ status: string }>('SELECT status FROM sandbox_cache')
   expect(cacheAfterFailure[0]?.status).toBe('SANDBOX_FUZZ_FAILED')
+
+  // The API still shows what was caught, so a run that ended early never hides a violation.
+  const shown = await db.query<{ run_id: string }>('SELECT run_id FROM sandbox_runs')
+  const state = (await body<{ data: { status: string; result?: SandboxResult } }>(
+    await get(app, `/sandbox/runs/${shown[0]?.run_id}`),
+  )).data
+  expect(state.status).toBe('incomplete')
+  expect(state.result?.status).toBe('SANDBOX_FUZZ_FAILED')
   await close()
 })
 

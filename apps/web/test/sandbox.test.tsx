@@ -140,3 +140,34 @@ test('the daily limit closes the button and says so', async () => {
   expect(await screen.findByText('You have used all 5 sandbox runs for today.')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Run sandbox' })).toBeDisabled()
 })
+
+test('a violation that repeats in every run of a probe is listed once', () => {
+  stubQuota()
+  const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const repeated = structuredClone(fixture(fuzzFailed))
+  const probe = repeated.probes.find(item => item.runs.some(run => run.violations.length > 0))!
+  const violation = probe.runs.find(run => run.violations.length > 0)!.violations[0]!
+  for (const run of probe.runs) {
+    run.outcome = 'violation'
+    run.violations = [violation]
+  }
+  render(<SandboxSection targetType="AI_SKILL_BUNDLE" src={SRC} bundleHash={BUNDLE} sandbox={repeated} />)
+  const line = copy.sandbox.call.replace('{tool}', violation.tool).replace('{rule}', violation.rule)
+  expect(screen.getAllByText(line)).toHaveLength(1)
+  expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key|unique "key"/)
+  errors.mockRestore()
+})
+
+test('the state of a run is announced to a screen reader', () => {
+  stubQuota()
+  hook.value = { ...hook.value, run: { runId: 'run_1', status: 'queued', queuePosition: 2 } }
+  render(<SandboxSection targetType="AI_SKILL_BUNDLE" src={SRC} bundleHash={BUNDLE} sandbox={null} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Position 2 in the queue.')
+})
+
+test('a failed start is announced as an alert', () => {
+  stubQuota()
+  hook.value = { ...hook.value, error: 'You have used all 5 sandbox runs for today.' }
+  render(<SandboxSection targetType="AI_SKILL_BUNDLE" src={SRC} bundleHash={BUNDLE} sandbox={null} />)
+  expect(screen.getByRole('alert')).toHaveTextContent('You have used all 5 sandbox runs for today.')
+})
