@@ -27,26 +27,31 @@ const chain = vi.hoisted(() => ({
   attestationIndexOf: [true, 52] as [boolean, number],
   pendingSettlement: 5,
   penalties: {} as Record<string, number>,
+  targets: {} as Record<string, { attestationCount: number }>,
+  readsFailed: false,
   write: vi.fn(),
-  receipt: { isSuccess: true, isError: false, data: { status: 'success' }, error: null },
+  receipt: { isSuccess: true, isError: false, data: { status: 'success' } as { status: string } | null, error: null as Error | null },
 }))
 
 vi.mock('wagmi', async () => {
   const react = await import('react')
   return {
-    useReadContract: (config: { functionName: string }) => ({
-      data: (chain as unknown as Record<string, unknown>)[config.functionName],
-      refetch: vi.fn(),
-      isLoading: false,
-      isError: false,
-    }),
     // The chain reads again after a refetch, and the screen is drawn again with the new answer.
+    useReadContract: (config: { functionName: string }) => {
+      const [, bump] = react.useState(0)
+      const data = chain.readsFailed ? undefined : (chain as unknown as Record<string, unknown>)[config.functionName]
+      return { data, refetch: () => bump(value => value + 1), isLoading: false, isError: chain.readsFailed }
+    },
     useReadContracts: (config: { contracts: { functionName: string; args: readonly unknown[] }[] }) => {
       const [, bump] = react.useState(0)
-      const data = config.contracts.map(contract =>
-        contract.functionName === 'pendingPenalties' ? (chain.penalties[String(contract.args[0])] ?? 0) : undefined,
-      )
-      return { data, refetch: () => bump(value => value + 1), isLoading: false, isError: false }
+      const data = chain.readsFailed
+        ? undefined
+        : config.contracts.map(contract => {
+            if (contract.functionName === 'pendingPenalties') return chain.penalties[String(contract.args[0])] ?? 0
+            if (contract.functionName === 'getTarget') return chain.targets[String(contract.args[0])] ?? null
+            return undefined
+          })
+      return { data, refetch: () => bump(value => value + 1), isLoading: false, isError: chain.readsFailed }
     },
     useWriteContract: () => ({ writeContractAsync: chain.write }),
     useWaitForTransactionReceipt: () => chain.receipt,
@@ -141,6 +146,9 @@ beforeEach(() => {
   chain.attestationIndexOf = [true, 52]
   chain.pendingSettlement = 5
   chain.penalties = {}
+  chain.targets = { [TARGET]: { attestationCount: 120 } }
+  chain.readsFailed = false
+  chain.receipt = { isSuccess: true, isError: false, data: { status: 'success' }, error: null }
   chain.write.mockResolvedValue(TX_HASH)
   account.state = { kind: 'holder', address: ACCOUNT, isLoading: false, isError: false, recheck: () => {} }
   answer = activity()
@@ -241,7 +249,7 @@ test('Apply penalties pages through in chunks and shows how many remain', async 
     ),
   )
   expect(await screen.findByText('70 penalties remain')).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: copy.activity.penaltiesAction }))
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
   await waitFor(() =>
     expect(chain.write).toHaveBeenLastCalledWith(
       expect.objectContaining({ functionName: 'applyPenalties', args: [TARGET, 50, 50] }),
@@ -273,4 +281,86 @@ test('this page asks for a wallet and shows nothing personal without one', async
   expect(screen.queryByRole('heading', { name: copy.activity.balanceToWithdraw })).toBeNull()
   expect(screen.queryByRole('heading', { name: copy.activity.standing })).toBeNull()
   expect(fetch).not.toHaveBeenCalled()
+})
+
+test('the rows of the previous account are not shown while the next one loads', async () => {
+  let current = activity({ needsAction: [need()], history: [historyItem()] })
+  let calls = 0
+  const pending: { release: (() => void) | null } = { release: null }
+  vi.stubGlobal('fetch', vi.fn(() => {
+    calls += 1
+    if (calls === 1) return Promise.resolve({ json: async () => current })
+    return new Promise(resolve => {
+      pending.release = () => resolve({ json: async () => current })
+    })
+  }))
+  const { rerender } = render(<MyActivityPage />)
+  expect(await screen.findByRole('heading', { level: 3, name: /Reveal your vote/ })).toBeInTheDocument()
+  account.state = { kind: 'holder', address: OTHER, isLoading: false, isError: false, recheck: () => {} }
+  current = activity({ history: [historyItem()] })
+  rerender(<MyActivityPage />)
+  expect(screen.queryByRole('heading', { level: 3, name: /Reveal your vote/ })).toBeNull()
+  pending.release?.()
+  expect(await screen.findByRole('heading', { name: copy.activity.history })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { level: 3, name: /Reveal your vote/ })).toBeNull()
+})
+
+test('a chain read that fails shows the failed state and no balance', async () => {
+  chain.readsFailed = true
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  expect(await screen.findByText(copy.activity.balanceFailed)).toBeInTheDocument()
+  expect(screen.getByText(copy.activity.standingFailed)).toBeInTheDocument()
+  expect(screen.queryByText('0.015')).toBeNull()
+  expect(screen.queryByText('Vote weight 2 of 5')).toBeNull()
+})
+
+test('a waiting transaction shows the link to the transaction', async () => {
+  chain.receipt = { isSuccess: false, isError: false, data: null, error: null }
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.withdraw }))
+  expect(await screen.findByRole('button', { name: copy.common.waitingConfirmation })).toBeDisabled()
+  const link = await screen.findByRole('link', { name: copy.target.transaction })
+  expect(link).toHaveAttribute('href', `https://bscscan.com/tx/${TX_HASH}`)
+})
+
+test('the withdrawal can be used again once the chain shows the new balance', async () => {
+  // Every transaction has a hash of its own, and the chain shows the balance that is left.
+  let calls = 0
+  chain.write.mockImplementation(async () => {
+    calls += 1
+    chain.balanceOf = 30_000_000_000_000_000n
+    return `0x${calls.toString(16).padStart(64, '0')}`
+  })
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.withdraw }))
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.withdraw }))
+  await waitFor(() => expect(chain.write).toHaveBeenCalledTimes(2))
+})
+
+test('the last page of penalties covers only the attestations that are left', async () => {
+  // Every transaction has a hash of its own, so the button is free again after each page.
+  let pages = 0
+  chain.write.mockImplementation(async () => {
+    pages += 1
+    return `0x${pages.toString(16).padStart(64, '0')}`
+  })
+  chain.penalties = { [TARGET]: 120 }
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  await waitFor(() =>
+    expect(chain.write).toHaveBeenLastCalledWith(expect.objectContaining({ args: [TARGET, 0, 50] })),
+  )
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  await waitFor(() =>
+    expect(chain.write).toHaveBeenLastCalledWith(expect.objectContaining({ args: [TARGET, 50, 50] })),
+  )
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  await waitFor(() =>
+    expect(chain.write).toHaveBeenLastCalledWith(expect.objectContaining({ args: [TARGET, 100, 20] })),
+  )
+  expect(await screen.findByText(copy.activity.penaltiesCovered)).toBeInTheDocument()
 })

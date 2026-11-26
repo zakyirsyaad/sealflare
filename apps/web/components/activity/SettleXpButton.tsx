@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useRef } from 'react'
 import { useReadContract } from 'wagmi'
 import type { Address, Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
@@ -13,6 +14,8 @@ export type SettleXpButtonProps = {
   targetId: string
   /** The one button of the view that carries the accent. */
   primary?: boolean
+  /** Called once the settlement was mined, so the rows of the account are read again. */
+  onSettled?: () => void
 }
 
 /** How many attestations one call of settle covers. */
@@ -24,9 +27,9 @@ export const SETTLE_PAGE = 50
  * The contract settles a range of attestations, so the call names the page of attestations that
  * holds the vote of the account. The page is the one the index of the vote falls in, so the
  * reputation of that vote is always inside the range. A target that has nothing to settle offers
- * no button at all.
+ * no button at all. Once the chain has nothing left to settle, the button is free again.
  */
-export function SettleXpButton({ account, targetId, primary = false }: SettleXpButtonProps) {
+export function SettleXpButton({ account, targetId, primary = false, onSettled }: SettleXpButtonProps) {
   const tx = useWriteTx()
   const core = coreAddress()
   const enabled = core !== null
@@ -47,6 +50,21 @@ export function SettleXpButton({ account, targetId, primary = false }: SettleXpB
     query: { enabled },
   })
   const position = indexOf(index.data)
+  const { state, txHash, reset } = tx
+  const mined = useRef<string | null>(null)
+  const refetch = useRef(pending.refetch)
+  refetch.current = pending.refetch
+  useEffect(() => {
+    if (state !== 'done' || txHash === null || mined.current === txHash) return
+    mined.current = txHash
+    onSettled?.()
+    void refetch.current()
+  }, [state, txHash, onSettled])
+  useEffect(() => {
+    // The chain has nothing left to settle, so the claim has landed and the button is free.
+    if (state !== 'done' || pendingCount(pending.data) !== 0) return
+    reset()
+  }, [state, pending.data, reset])
   const send = () => {
     if (core === null || position === null) return
     const start = pageStart(position)

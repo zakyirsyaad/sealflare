@@ -44,6 +44,19 @@ export function ActionButton({ label, state, error, txHash, disabled = false, pr
     )
   }
   const busy = state === 'signing' || state === 'pending'
+  if (busy && txHash !== null) {
+    // The wallet is still working, so the button is locked and the transaction can be followed.
+    return (
+      <div className="sf-stack">
+        <Button variant={primary ? 'primary' : 'secondary'} disabled={disabled || busy} onClick={onSubmit}>
+          {copy.common.waitingConfirmation}
+        </Button>
+        <a className="sf-btn sf-btn--ghost" href={`https://bscscan.com/tx/${txHash}`} target="_blank" rel="noreferrer">
+          {copy.target.transaction}
+        </a>
+      </div>
+    )
+  }
   return (
     <Button variant={primary ? 'primary' : 'secondary'} disabled={disabled || busy} onClick={onSubmit}>
       {busy ? copy.common.waitingConfirmation : label}

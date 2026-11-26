@@ -59,8 +59,13 @@ export function History({ items }: HistoryProps) {
     <section className="sf-frame" aria-label={copy.activity.history}>
       <div className="sf-panel__head"><h2>{copy.activity.history}</h2></div>
       <div className="sf-scroll">
-        <Table caption={copy.activity.history} columns={COLUMNS} rows={items.map(rowOf)} />
+        <Table caption={copy.activity.history} columns={COLUMNS} rows={newestFirst(items).map(rowOf)} />
       </div>
     </section>
   )
+}
+
+/** The events of the account, the newest one first. */
+function newestFirst(items: readonly ActivityItem[]): ActivityItem[] {
+  return [...items].sort((left, right) => Date.parse(right.at) - Date.parse(left.at))
 }

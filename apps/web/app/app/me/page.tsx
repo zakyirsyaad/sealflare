@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Balance } from '../../../components/activity/Balance'
 import { History } from '../../../components/activity/History'
 import { NeedsAction } from '../../../components/activity/NeedsAction'
@@ -14,6 +14,9 @@ import { useActivity } from '../../../lib/activity/useActivity'
 import { usePendingPenalties, useStanding, useVaultBalance } from '../../../lib/activity/useChainReads'
 import { useUserState } from '../../../lib/chain/userState'
 import { copy } from '../../../lib/copy'
+
+/** How many targets of the account are read for the penalties that wait on them. */
+const MAX_PENALTY_TARGETS = 20
 
 /**
  * My activity: what waits on the account, what it may withdraw and what it did.
@@ -31,11 +34,14 @@ export default function MyActivityPage() {
   const penalties = usePendingPenalties(targets)
   const [prompt, setPrompt] = useState(false)
 
+  const onApplied = useCallback(() => penalties.refetch(), [penalties.refetch])
+  const onSettled = useCallback(() => activity.reload(), [activity.reload])
+
   if (user.kind === 'wrong-network') {
     return (
       <div className="sf-stack">
         <h1 className="sf-identity__label">{copy.activity.title}</h1>
-        <p className="sf-lead">{copy.activity.needWallet}</p>
+        <p className="sf-lead">{copy.activity.wrongNetwork}</p>
         <WrongNetwork />
       </div>
     )
@@ -52,8 +58,12 @@ export default function MyActivityPage() {
   }
 
   const pending = targets
-    .filter(target => (penalties.pending[target] ?? 0) > 0)
-    .map(target => ({ targetId: target, pending: penalties.pending[target] ?? 0 }))
+    .filter(target => (penalties.pending[target]?.pending ?? 0) > 0)
+    .map(target => ({
+      targetId: target,
+      pending: penalties.pending[target]?.pending ?? 0,
+      attestations: penalties.pending[target]?.attestations ?? null,
+    }))
 
   return (
     <div className="sf-activity">
@@ -65,8 +75,12 @@ export default function MyActivityPage() {
               account={address}
               items={activity.needsAction}
               penalties={pending}
-              onApplied={penalties.refetch}
+              onApplied={onApplied}
+              onSettled={onSettled}
             />
+          )}
+          {penalties.failed && targets.length > 0 && (
+            <ErrorState what={copy.activity.penaltiesFailed} onChainSafe onRetry={penalties.refetch} />
           )}
           <HistoryPanel
             history={activity.history}
@@ -76,8 +90,21 @@ export default function MyActivityPage() {
           />
         </div>
         <div className="sf-activity__side">
-          <Balance account={address} balance={balance.wei} onWithdrawn={balance.refetch} />
-          <Standing {...standing} />
+          <Balance
+            account={address}
+            balance={balance.wei}
+            failed={balance.failed}
+            onWithdrawn={balance.refetch}
+            onRetry={balance.refetch}
+          />
+          <Standing
+            score={standing.score}
+            weight={standing.weight}
+            toNextWeight={standing.toNextWeight}
+            attestationsLeft={standing.attestationsLeft}
+            failed={standing.failed}
+            onRetry={standing.refetch}
+          />
         </div>
       </div>
     </div>
@@ -124,5 +151,5 @@ function attestedTargets(history: ReturnType<typeof useActivity>['history']): st
     if (item.kind !== 'attestation') continue
     if (!targets.includes(item.targetId)) targets.push(item.targetId)
   }
-  return targets.slice(0, 20)
+  return targets.slice(0, MAX_PENALTY_TARGETS)
 }

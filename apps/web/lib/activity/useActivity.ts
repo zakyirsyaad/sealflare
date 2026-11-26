@@ -7,7 +7,8 @@ import { loadActivity } from './api'
  * The activity of the connected account.
  *
  * Without a wallet there is nothing to read, so no request is made at all: the page must not
- * show anything personal before the reader has connected one.
+ * show anything personal before the reader has connected one. The reading belongs to the account
+ * it was read for, so the rows of another account are never left on the screen.
  */
 export type ActivityState = {
   needsAction: NeedsAction[]
@@ -17,10 +18,13 @@ export type ActivityState = {
   reload: () => void
 }
 
-const empty = { needsAction: [] as NeedsAction[], history: [] as ActivityItem[] }
+/** What was read, and the account it was read for. */
+type Reading = { address: string | null; needsAction: NeedsAction[]; history: ActivityItem[] }
+
+const empty: Reading = { address: null, needsAction: [], history: [] }
 
 export function useActivity(address: string | null): ActivityState {
-  const [reading, setReading] = useState({ needsAction: empty.needsAction, history: empty.history })
+  const [reading, setReading] = useState<Reading>(empty)
   const [failed, setFailed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [round, setRound] = useState(0)
@@ -37,13 +41,13 @@ export function useActivity(address: string | null): ActivityState {
     void loadActivity(address).then(
       data => {
         if (!live) return
-        setReading(data)
+        setReading({ address, needsAction: data.needsAction, history: data.history })
         setFailed(false)
         setLoading(false)
       },
       () => {
         if (!live) return
-        setReading(empty)
+        setReading({ address, needsAction: [], history: [] })
         setFailed(true)
         setLoading(false)
       },
@@ -52,5 +56,13 @@ export function useActivity(address: string | null): ActivityState {
   }, [address, round])
 
   const reload = useCallback(() => setRound(value => value + 1), [])
-  return { ...reading, loading, failed, reload }
+  // A reading of another account is not the reading of this one, so it is never shown.
+  const mine = reading.address === address
+  return {
+    needsAction: mine ? reading.needsAction : [],
+    history: mine ? reading.history : [],
+    loading: address !== null && (!mine || loading),
+    failed: mine && failed,
+    reload,
+  }
 }
