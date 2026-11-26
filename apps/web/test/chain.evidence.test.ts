@@ -183,6 +183,8 @@ describe('the evidence of a target, read through a public-RPC-like node', () => 
 
   test('a target too old to be read this way is refused, not read halfway', async () => {
     const old = `0x${'cd'.repeat(32)}` as Hex
+    // The head is far enough that the span from the first block is wider than the window.
+    state.head = 20_000_000n
     await expect((await reader()).evidence(old, T0, 0)).rejects.toThrow(RangeError)
   })
 })

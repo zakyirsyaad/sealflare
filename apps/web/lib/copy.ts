@@ -216,7 +216,7 @@ export const copy = {
     "proxyFlagNote": "The flag is written from your own wallet.",
     "proxyTextUnmarked": "Its code can be replaced without changing its address. Until the on-chain proxy flag is set, the registry can still show a safe verdict that later upgrades do not follow.",
     "unavailable": "Unavailable",
-    "evidenceUnavailable": "The evidence and transaction links could not be read right now. The votes shown come straight from the chain.",
+    "evidenceUnavailable": "The evidence and transaction links could not be read from the event log. The votes shown come straight from the chain.",
     "historyVote": "{verdict} attestation",
     "challengeOpen": "Challenge {id} is open.",
     "unbondingText": "The publisher is unbonding. The bond becomes available on {date}.",

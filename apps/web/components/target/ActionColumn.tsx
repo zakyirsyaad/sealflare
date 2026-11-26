@@ -3,6 +3,8 @@ import { CONSTANTS, type TrustTier } from '@sealflare/shared/rules'
 import { useUserState } from '../../lib/chain/userState'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
+import { expectedChainId } from '../../lib/chain/config'
+import { chainName } from '../../lib/chain/chains'
 
 export type ActionColumnProps = {
   tier: TrustTier
@@ -15,7 +17,8 @@ export type ActionColumnProps = {
 function blockedReason(kind: string, attestationsLeft: number | null, codeChanged: boolean): string | null {
   if (codeChanged) return copy.errors.CodeChangedSincePin
   if (kind === 'no-wallet') return copy.target.attestHint
-  if (kind === 'wrong-network') return copy.wallet.switchNetwork
+  // The name of the chain is filled in, so the page never shows a placeholder.
+  if (kind === 'wrong-network') return copy.wallet.switchNetwork.replace('{chain}', chainName(expectedChainId))
   if (kind === 'no-agent-id') return copy.wallet.agentRequired
   if (kind === 'holder' && attestationsLeft === 0) return copy.wallet.quotaExhausted
   return null

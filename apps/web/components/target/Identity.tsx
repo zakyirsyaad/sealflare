@@ -19,8 +19,10 @@ export type IdentityProps = {
 export function Identity({ label, targetType, address, repo, hash, version }: IdentityProps) {
   const [copied, setCopied] = useState(false)
   const value = address ?? repo ?? label
+  // The button says "Copy link" for a skill, so the clipboard gets the link and not the bare name.
+  const copiedValue = address !== null ? address : repo !== null ? `https://github.com/${repo}` : value
   function onCopy() {
-    void Promise.resolve(navigator.clipboard?.writeText(value)).then(
+    void Promise.resolve(navigator.clipboard?.writeText(copiedValue)).then(
       () => setCopied(true),
       () => setCopied(false),
     )

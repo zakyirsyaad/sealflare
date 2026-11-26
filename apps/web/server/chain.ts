@@ -153,7 +153,7 @@ function targetExists(target: CoreTarget): boolean {
 }
 
 async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
-  const raw = await client().readContract({
+  const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getTarget',
@@ -180,7 +180,7 @@ async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
 }
 
 async function readAttestation(targetId: Hex, index: number): Promise<CoreAttestation> {
-  const raw = await client().readContract({
+  const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getAttestation',
@@ -225,7 +225,7 @@ async function createdBlock(targetId: Hex, createdAt: number, head: bigint): Pro
   const known = createdBlocks.get(targetId.toLowerCase())
   if (known !== undefined) return known
   const block = await firstBlockAtOrAfter(createdAt, head, async number =>
-    Number((await client().getBlock({ blockNumber: number })).timestamp),
+    Number((await getRpcClient().getBlock({ blockNumber: number })).timestamp),
   )
   createdBlocks.set(targetId.toLowerCase(), block)
   return block
@@ -260,7 +260,8 @@ const CONFIRMATIONS = 12n
  * stays one row.
  */
 async function readEvidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]> {
-  const head = await client().getBlockNumber()
+  // The head is read without the cache of the client: the confirmed block below depends on it.
+  const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
   const key = targetId.toLowerCase()
   const cached = evidenceCache.get(key)
   const fromBlock = cached === undefined ? await createdBlock(targetId, createdAt, head) : cached.block + 1n
@@ -268,7 +269,7 @@ async function readEvidence(targetId: Hex, createdAt: number, count: number): Pr
   if (fromBlock > head) return completeRows(key, cached?.rows ?? [], count)
   const event = eventItem<AttestedEvent>('Attested')
   const logs = await collectLogs(
-    (from, to) => client().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
+    (from, to) => getRpcClient().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: from, toBlock: to }),
     fromBlock,
     head,
   )
@@ -306,7 +307,7 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
   const vault = vaultAddress()
   if (vault === null) return null
   try {
-    const raw = await client().readContract({
+    const raw = await getRpcClient().readContract({
       address: vault,
       abi: vaultAbi,
       functionName: 'bondOf',
