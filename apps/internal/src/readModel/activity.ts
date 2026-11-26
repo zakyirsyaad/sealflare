@@ -1,7 +1,7 @@
 import { XP, weightOf } from '@sealflare/shared/rules'
 import { Bytes32Schema, type ActivityItem } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
-import { decimalString } from './targets'
+import { decimalString } from './values'
 import { needsActionFor } from './needsAction'
 
 /**

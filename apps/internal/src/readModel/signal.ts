@@ -44,9 +44,9 @@ function keyOf(verdict: string): 'safe' | 'caution' | 'danger' {
 /**
  * The community signal of a target, split into the two rows the interface shows.
  *
- * A new Agent ID holder votes with weight 1 and an experienced Guardian votes with weight 2 or
- * more. A vote with weight 0 counts as a new holder: it carries no standing, so it does not
- * belong to the experienced Guardians, and it stays visible in the counts.
+ * A new Agent ID holder votes with weight 1, and every other weight belongs to the experienced
+ * Guardians. A vote with weight 0 is a vote whose score went negative, so it is counted with
+ * the Guardians, the same way the SDK counts it.
  *
  * The signal is never collapsed into one number, and it never says a target is safe.
  */
@@ -66,7 +66,7 @@ export function signalOf(rows: readonly SignalVote[]): { newIds: SignalGroup; gu
  * The same signal, from votes the database already counted.
  *
  * The grouping is by verdict and weight, so the two rows of the signal are put together again
- * here. A group of weight 0 belongs to the new holders, like a single vote of weight 0 does.
+ * here. A group of weight 0 belongs to the Guardians, like a single vote of weight 0 does.
  */
 export function signalOfTallies(tallies: readonly SignalTally[]): { newIds: SignalGroup; guardians: SignalGroup } {
   return splitOf(tallies)
@@ -75,13 +75,14 @@ export function signalOfTallies(tallies: readonly SignalTally[]): { newIds: Sign
 /**
  * The one rule that puts every vote in its row.
  *
- * Both answers go through here, so the two can never drift apart.
+ * Both answers go through here, so the two can never drift apart. The rule is the one the SDK
+ * uses, so the target page, the Companion Skill and the SDK always show the same breakdown.
  */
 function splitOf(groups: readonly SignalTally[]): { newIds: SignalGroup; guardians: SignalGroup } {
   const newIds = emptyTally()
   const guardians = emptyTally()
   for (const group of groups) {
-    const tally = group.weight >= 2 ? guardians : newIds
+    const tally = group.weight === 1 ? newIds : guardians
     const key = keyOf(group.verdict)
     tally.votes[key] += group.votes
     tally.weight[key] += group.totalWeight

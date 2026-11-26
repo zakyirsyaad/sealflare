@@ -1,6 +1,6 @@
 import { AddressSchema, Bytes32Schema, type ChallengeSummary } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
-import { decimalString } from './targets'
+import { decimalString } from './values'
 
 /**
  * The read model of the disputes the Court brought.
