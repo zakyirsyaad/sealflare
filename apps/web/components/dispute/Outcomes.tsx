@@ -1,6 +1,11 @@
+import { CONSTANTS, XP } from '@sealflare/shared/rules'
 import { copy } from '../../lib/copy'
+import { listWithOr } from '../../lib/format'
 
 type Row = { word: string; challenger: string; jurors: string; target: string }
+
+/** The share of the stake that comes back when a dispute expires, from the schedule of the rules. */
+const STAKE_BACK = listWithOr(CONSTANTS.EXPIRE_FORFEIT_BPS.map(bps => `${100 - bps / 100}%`))
 
 const ROWS: readonly Row[] = [
   {
@@ -11,7 +16,7 @@ const ROWS: readonly Row[] = [
   },
   {
     word: copy.dispute.outcomeRejected,
-    challenger: copy.dispute.rejectedChallenger,
+    challenger: copy.dispute.rejectedChallenger.replace('{xp}', String(Math.abs(XP.CHALLENGER_LOST))),
     jurors: copy.dispute.rejectedJurors,
     target: copy.dispute.backToTier,
   },
@@ -23,7 +28,7 @@ const ROWS: readonly Row[] = [
   },
   {
     word: copy.dispute.outcomeExpired,
-    challenger: copy.dispute.expiredChallenger,
+    challenger: copy.dispute.expiredChallenger.replace('{percentages}', STAKE_BACK),
     jurors: copy.dispute.expiredJurors,
     target: copy.dispute.backToTier,
   },

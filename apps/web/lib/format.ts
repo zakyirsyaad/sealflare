@@ -5,6 +5,16 @@ import { copy } from './copy'
 export function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
+/** An address is shortened, the name of a repository is not. */
+export function targetLabel(label: string): string {
+  return /^0x[0-9a-fA-F]{40}$/.test(label) ? shortAddress(label) : label
+}
+/** A list in words: "a, b or c". */
+export function listWithOr(items: readonly string[]): string {
+  if (items.length === 0) return ''
+  if (items.length === 1) return items[0] as string
+  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1] as string}`
+}
 export function formatBnb(wei: string | bigint): string {
   if (!/^\d+$/.test(String(wei))) throw new RangeError('Wei must be a non-negative integer.')
   const amount = BigInt(wei)

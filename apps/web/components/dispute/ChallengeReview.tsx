@@ -2,10 +2,9 @@
 import { CONSTANTS, XP, type FlagName } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { flagLabel, formatBnb } from '../../lib/format'
+import { flagLabel, formatBnb, targetLabel } from '../../lib/format'
 import { AttestButton } from '../attest/AttestButton'
 import { isWorking, type AttestState } from '../attest/useAttest'
-import { targetLabel } from './labels'
 
 export type ChallengeReviewProps = {
   /** The name of the target, as the page shows it. */

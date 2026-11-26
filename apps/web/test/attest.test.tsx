@@ -12,11 +12,19 @@ const wagmi = vi.hoisted(() => ({
   switchChain: vi.fn(),
   connectors: [{ uid: '1', id: 'injected', name: 'Browser wallet' }],
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } },
+  receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
 }))
 vi.mock('wagmi', () => ({
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
-  useWaitForTransactionReceipt: () => wagmi.receipt.current,
+  useWaitForTransactionReceipt: (params: {
+    hash?: string
+    chainId?: number
+    onReplaced?: (replacement: { reason: string }) => void
+  }) => {
+    wagmi.receiptParams.push(params)
+    return wagmi.receipt.current
+  },
   useConnect: () => ({ mutate: wagmi.connect, isPending: false, error: null }),
   useConnectors: () => wagmi.connectors,
   useDisconnect: () => ({ mutate: wagmi.disconnect }),
@@ -74,6 +82,7 @@ async function toReview(verdict: 'Safe' | 'Caution' | 'Danger' = 'Safe') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  wagmi.receiptParams.length = 0
   process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({
     chainId: 56,
     agentId: '0x2000000000000000000000000000000000000002',

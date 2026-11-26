@@ -2,17 +2,25 @@
 import { useState } from 'react'
 import { useDisconnect } from 'wagmi'
 import { Panel } from '../ui/Panel'
+import type { ChallengePhase } from '../../lib/chain/court'
 import { useUserState } from '../../lib/chain/userState'
 import { copy } from '../../lib/copy'
+import type { PublisherRole } from '../../server/disputes'
 import { AttestButton } from '../attest/AttestButton'
 import { walletGate } from '../attest/AttestPanel'
-import { isWorking } from '../attest/useAttest'
+import { isLocked } from '../attest/useAttest'
 import { StatementField } from './ChallengeSteps'
 import { useReply } from './useReply'
 
 export type ReplyPanelProps = {
   challengeId: string
   targetId: string
+  /** The phase the Court names. Null when the chain has not answered. */
+  phase: ChallengePhase | null
+  /** What the registry says about the publisher. Null when it could not be read. */
+  publisherRole: PublisherRole | null
+  /** The address of the verified publisher. Null when there is none. */
+  publisher: string | null
   onClose: () => void
 }
 
@@ -37,6 +45,9 @@ export function ReplyPanel(props: ReplyPanelProps) {
     challengeId: props.challengeId,
     targetId: props.targetId,
     address: 'address' in user ? user.address : null,
+    phase: props.phase,
+    publisherRole: props.publisherRole,
+    publisher: props.publisher,
   })
   const submit = () => void reply.submit(statement)
   const body = (
@@ -68,7 +79,7 @@ export function ReplyPanel(props: ReplyPanelProps) {
     </>
   )
   return (
-    <Panel title={copy.dispute.submitReply} onClose={props.onClose} closeDisabled={isWorking(reply.state)}>
+    <Panel title={copy.dispute.submitReply} onClose={props.onClose} closeDisabled={isLocked(reply.state)}>
       {walletGate(user, () => disconnect()) ?? body}
     </Panel>
   )

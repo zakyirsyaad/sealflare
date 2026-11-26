@@ -52,23 +52,76 @@ export function isTxWorking(state: TxState): boolean {
   return state === 'signing' || state === 'pending'
 }
 
-/** Follows the receipt of a sent transaction. A mined transaction that reverted is a failure. */
-function useReceiptOutcome(
-  state: TxState,
+/** What the wallet did to a transaction that was on its way. */
+export type Replacement = 'cancelled' | 'replaced' | 'repriced'
+
+/**
+ * Follows the receipt of a sent transaction.
+ *
+ * The chain is named, so a wallet that switched network after the signature cannot make the wait
+ * read another chain. A transaction the wallet cancelled or replaced is a failure, and so is a
+ * receipt of a transaction that is not the one that was sent.
+ */
+export function useReceiptOutcome(
+  state: string,
   txHash: Hex | null,
   settle: (state: 'done' | 'failed', error: string | null) => void,
 ) {
-  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
+  const [replacement, setReplacement] = useState<Replacement | null>(null)
+  const onReplaced = useCallback((response: { reason: Replacement }) => setReplacement(response.reason), [])
+  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined, chainId: expectedChainId, onReplaced })
   useEffect(() => {
     if (state !== 'pending') return
+    // A transaction the wallet cancelled or replaced never became the one that was sent.
+    if (replacement !== null && replacement !== 'repriced') {
+      settle('failed', copy.errors.txReplaced)
+      return
+    }
     if (receipt.isSuccess) {
+      const mined = receipt.data?.transactionHash
       // A transaction that was mined and reverted still resolves the wait, so its status is read.
-      if (receipt.data?.status === 'reverted') settle('failed', copy.errors.unknown)
-      else settle('done', null)
+      if (receipt.data?.status === 'reverted') {
+        settle('failed', copy.errors.unknown)
+        return
+      }
+      // A receipt of another transaction is not the one that was sent. A repriced transaction is
+      // the same intent with another hash, so it is not a failure.
+      if (mined !== undefined && txHash !== null && mined.toLowerCase() !== txHash.toLowerCase() && replacement !== 'repriced') {
+        settle('failed', copy.errors.txReplaced)
+        return
+      }
+      settle('done', null)
       return
     }
     if (receipt.isError) settle('failed', translateContractError(receipt.error)?.message ?? copy.errors.unknown)
-  }, [state, receipt.isSuccess, receipt.data?.status, receipt.isError, receipt.error, settle])
+  }, [
+    state,
+    replacement,
+    receipt.isSuccess,
+    receipt.data?.status,
+    receipt.data?.transactionHash,
+    receipt.isError,
+    receipt.error,
+    settle,
+    txHash,
+  ])
+}
+
+/** Watches the receipt of a sent transaction and says where it ended. */
+export function useReceipt(
+  state: string,
+  txHash: Hex | null,
+  done: () => void,
+  fail: (message: string) => void,
+) {
+  const settle = useCallback(
+    (next: 'done' | 'failed', message: string | null) => {
+      if (next === 'done') done()
+      else fail(message ?? copy.errors.unknown)
+    },
+    [done, fail],
+  )
+  useReceiptOutcome(state, txHash, settle)
 }
 
 /** One transaction from the user's wallet, with the four states of ux.md Section 5. */

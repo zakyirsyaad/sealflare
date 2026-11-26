@@ -11,7 +11,7 @@ import { courtAddress } from '../../lib/chain/court'
 import { copy } from '../../lib/copy'
 import { walletGate } from '../attest/AttestPanel'
 import { flagsOf } from '../attest/choice'
-import { isWorking } from '../attest/useAttest'
+import { isLocked } from '../attest/useAttest'
 import { ChallengeReview } from './ChallengeReview'
 import { EvidenceStep, FlagsStep } from './ChallengeSteps'
 import { useChallenge } from './useChallenge'
@@ -127,7 +127,7 @@ export function ChallengePanel({ scan: offered, ...props }: ChallengePanelProps)
       title={TITLE[step]}
       marker={copy.dispute.step[STEP_INDEX[step]]}
       onClose={props.onClose}
-      closeDisabled={isWorking(challenge.state)}
+      closeDisabled={isLocked(challenge.state)}
     >
       {walletGate(user, () => disconnect()) ?? (
         <Body step={step} onStep={setStep} props={props} draft={draft} forfeit={forfeit} challenge={challenge} submit={submit} />

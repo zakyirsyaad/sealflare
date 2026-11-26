@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '../ui/Button'
 import type { ChallengePhase } from '../../lib/chain/court'
 import { useUserState } from '../../lib/chain/userState'
@@ -64,6 +64,17 @@ function Submitted({ uri }: { uri: string }) {
 export function ReplyBox(props: ReplyBoxProps) {
   const user = useUserState()
   const [open, setOpen] = useState(false)
+  const committing = props.phase === 'COMMIT'
+  const mine =
+    'address' in user &&
+    props.publisherRole === 'VERIFIED_PUBLISHER' &&
+    props.publisher !== null &&
+    props.publisher.toLowerCase() === user.address.toLowerCase()
+  // The panel is left when the Court leaves the commit phase, or when the wallet is no longer the
+  // verified publisher. The Court would refuse the reply, so nothing may be signed for it.
+  useEffect(() => {
+    if (!committing || !mine) setOpen(false)
+  }, [committing, mine])
   if (props.counterEvidenceURI !== null) return <Submitted uri={props.counterEvidenceURI} />
   if (props.publisherRole === 'NONE') {
     return (
@@ -72,12 +83,6 @@ export function ReplyBox(props: ReplyBoxProps) {
       </Frame>
     )
   }
-  const committing = props.phase === 'COMMIT'
-  const mine =
-    'address' in user &&
-    props.publisherRole === 'VERIFIED_PUBLISHER' &&
-    props.publisher !== null &&
-    props.publisher.toLowerCase() === user.address.toLowerCase()
   const closes = copy.dispute.replyCloses.replace('{time}', timeLeft(new Date(props.commitEndsAt), props.now))
   return (
     <Frame aside={committing ? closes : undefined}>
@@ -86,7 +91,16 @@ export function ReplyBox(props: ReplyBoxProps) {
       {committing && props.publisherRole === 'THIRD_PARTY_SPONSOR' && <p className="sf-lead">{copy.dispute.sponsorCannotReply}</p>}
       {committing && props.publisherRole !== 'THIRD_PARTY_SPONSOR' && <p className="sf-lead">{copy.dispute.replyHelp}</p>}
       {committing && mine && <Button onClick={() => setOpen(true)}>{copy.dispute.submitReply}</Button>}
-      {open && <ReplyPanel challengeId={props.challengeId} targetId={props.targetId} onClose={() => setOpen(false)} />}
+      {open && committing && mine && (
+        <ReplyPanel
+          challengeId={props.challengeId}
+          targetId={props.targetId}
+          phase={props.phase}
+          publisherRole={props.publisherRole}
+          publisher={props.publisher}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </Frame>
   )
 }
