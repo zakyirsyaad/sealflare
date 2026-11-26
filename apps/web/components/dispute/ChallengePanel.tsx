@@ -126,7 +126,11 @@ export function ChallengePanel({ scan: offered, ...props }: ChallengePanelProps)
     <Panel
       title={TITLE[step]}
       marker={copy.dispute.step[STEP_INDEX[step]]}
-      onClose={props.onClose}
+      onClose={() => {
+        // The attempt stops at its next step, so a late signature sends no stake.
+        challenge.cancel()
+        props.onClose()
+      }}
       closeDisabled={isLocked(challenge.state)}
     >
       {walletGate(user, () => disconnect()) ?? (

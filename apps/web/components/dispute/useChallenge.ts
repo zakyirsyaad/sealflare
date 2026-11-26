@@ -71,5 +71,5 @@ export function useChallenge(target: ChallengeTarget) {
     })
   }
 
-  return { state: flow.state, error: flow.error, txHash: flow.txHash, reset: flow.reset, submit }
+  return { state: flow.state, error: flow.error, txHash: flow.txHash, reset: flow.reset, submit, cancel: flow.cancel }
 }

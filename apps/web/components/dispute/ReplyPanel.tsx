@@ -79,7 +79,15 @@ export function ReplyPanel(props: ReplyPanelProps) {
     </>
   )
   return (
-    <Panel title={copy.dispute.submitReply} onClose={props.onClose} closeDisabled={isLocked(reply.state)}>
+    <Panel
+      title={copy.dispute.submitReply}
+      onClose={() => {
+        // The attempt stops at its next step, so a late signature pins nothing.
+        reply.cancel()
+        props.onClose()
+      }}
+      closeDisabled={isLocked(reply.state)}
+    >
       {walletGate(user, () => disconnect()) ?? body}
     </Panel>
   )

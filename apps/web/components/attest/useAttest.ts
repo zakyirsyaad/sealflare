@@ -3,24 +3,16 @@ import { useCallback, useState } from 'react'
 import { useSignTypedData, useWriteContract } from 'wagmi'
 import { toHex, type Address, type Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
-import {
-  API_EIP712,
-  EVIDENCE_MAX_BYTES,
-  EvidenceReport,
-  evidenceHashOf,
-  parseShortProof,
-  utf8Length,
-  type ScanReport,
-} from '@sealflare/shared/schemas'
-import { isValidFlags, targetIdOfContract, targetIdOfSkill, type TargetType, type TrustTier, type Verdict } from '@sealflare/shared/rules'
+import { API_EIP712 } from '@sealflare/shared/schemas'
+import { type TargetType, type Verdict } from '@sealflare/shared/rules'
 import { ApiError, api } from '../../lib/api/client'
 import { expectedChainId } from '../../lib/chain/config'
 import { coreAddress } from '../../lib/chain/court'
 import { isUserRejection, translateContractError } from '../../lib/chain/errors'
 import { useReceipt } from '../../lib/chain/useWriteTx'
 import { copy } from '../../lib/copy'
-import { isBytes32, isContractWord } from '../../lib/targetWord'
-import { shortProofOf, statementOf, travellingScan, trimScan } from './choice'
+import { useCancel, type Cancelled } from './cancel'
+import { blockerOf, prepare, wordOf, type AttestInput, type AttestTarget, type Prepared } from './report'
 
 /** The states of an attestation, from the summary to the vote on the chain. */
 export type AttestState = 'idle' | 'signing-evidence' | 'uploading' | 'signing-tx' | 'pending' | 'failed' | 'done'
@@ -31,33 +23,15 @@ export function isWorking(state: AttestState): boolean {
 }
 
 /**
- * The panel is locked only while the work is the app's own.
+ * The panel is locked while the work may not be left behind.
  *
- * While the wallet is asking, the user may leave: a prompt that never settles must not keep the
- * panel on the screen for ever. The upload and the wait for the receipt are the app's own work,
- * and those keep the panel where it is.
+ * While the evidence is signed, the user may leave: the attempt stops before the evidence is
+ * pinned and before the transaction is sent, so a prompt that never settles cannot keep the panel
+ * on the screen for ever. From the moment the transaction is asked for, the hash may arrive at any
+ * time, so the panel stays until the receipt is read and the hash is tracked.
  */
 export function isLocked(state: AttestState): boolean {
-  return state === 'uploading' || state === 'pending'
-}
-
-export type AttestInput = {
-  verdict: Verdict
-  flags: number
-  /** The quote the Guardian wrote for every flag the scanner did not find. */
-  quotes: Record<string, string>
-}
-
-export type AttestTarget = {
-  targetId: string
-  targetType: TargetType
-  /** The word `Core.attest` takes. Null when the target is not known yet. */
-  targetWord: string | null
-  tier: TrustTier
-  /** The scan of this very target, when the page has one. */
-  scan: ScanReport | null
-  /** The address that votes. Null when no wallet is connected. */
-  address: Address | null
+  return state === 'uploading' || state === 'signing-tx' || state === 'pending'
 }
 
 export type SignTypedDataAsync = ReturnType<typeof useSignTypedData>['signTypedDataAsync']
@@ -66,123 +40,8 @@ export type WriteContractAsync = ReturnType<typeof useWriteContract>['writeContr
 const TARGET_TYPE_NUMBER: Record<TargetType, number> = { SMART_CONTRACT: 0, AI_SKILL_BUNDLE: 1 }
 const VERDICT_NUMBER: Record<Verdict, number> = { SAFE: 0, CAUTION: 1, DANGER: 2 }
 
-/** A signed request may live five minutes. The server refuses anything longer. */
-export const EXPIRY_SECONDS = 300
-
 /** The outcome of one step. A refusal in the wallet returns to the summary without an error. */
 export type Step<T> = { ok: true; value: T } | { ok: false; state: 'idle' | 'failed'; message?: string }
-
-/** A nonce that is never used twice, as a decimal string the server reads. */
-export function freshNonce(): string {
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  return BigInt(`0x${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`).toString()
-}
-
-/**
- * The word the registry takes.
- *
- * A contract is named by its address, a skill by the canonical hash of its bundle. The id of a
- * target is the hash of that word, so the id is never the word itself. The vote is permanent, so
- * a word that does not hash to the id of this page is refused before anything is signed.
- */
-function wordOf(target: AttestTarget): Hex | null {
-  const word = target.targetWord
-  if (word === null) return null
-  const fits = target.targetType === 'SMART_CONTRACT' ? isContractWord(word) : isBytes32(word)
-  if (!fits) return null
-  const id =
-    target.targetType === 'SMART_CONTRACT' ? targetIdOfContract(`0x${word.slice(26)}`) : targetIdOfSkill(word as Hex)
-  return id.toLowerCase() === target.targetId.toLowerCase() ? (word as Hex) : null
-}
-
-/**
- * The report that is signed, uploaded and hashed.
- *
- * The scan is only attached when the flags of the report hold every flag the scan found, because
- * a report may not leave out something the attached scan found. A Safe vote carries no flags, so
- * it carries no scan either.
- */
-export function buildReport(target: AttestTarget, input: AttestInput, trim = false): EvidenceReport {
-  const author = target.address
-  if (author === null) throw new Error('The report needs the address of the Guardian.')
-  const travelling = travellingScan({ verdict: input.verdict, flags: input.flags, quotes: input.quotes }, target.scan, target.targetId)
-  const scan = travelling !== null && trim ? trimScan(travelling) : travelling
-  const statement = statementOf(input.flags, input.quotes)
-  const report = {
-    schemaVersion: 1 as const,
-    kind: 'attestation' as const,
-    targetId: target.targetId as Hex,
-    author,
-    createdAt: new Date().toISOString(),
-    flags: input.flags,
-    shortProof: shortProofOf(input.flags, input.quotes, scan),
-    ...(statement === undefined ? {} : { statement }),
-  }
-  return scan === null ? report : { ...report, scan }
-}
-
-/** Everything the two approvals need, built before the wallet is asked for anything. */
-type Prepared = {
-  core: Address
-  reportJson: string
-  evidenceHash: Hex
-  nonce: string
-  expiry: string
-  shortProof: string
-}
-
-/**
- * The report is checked before it is signed, so a report the server would refuse never asks the
- * Guardian for a signature.
- */
-function prepare(target: AttestTarget, input: AttestInput, core: Address): Prepared | null {
-  const parsed = parseReport(target, input, false)
-  if (parsed === null) return null
-  let reportJson = JSON.stringify(parsed)
-  // The server refuses a report over the limit after the Guardian has signed it, and every retry
-  // fails the same way. A scan with a finding for every match is trimmed to one per flag first.
-  let report = parsed
-  if (utf8Length(reportJson) > EVIDENCE_MAX_BYTES) {
-    const trimmed = parseReport(target, input, true)
-    if (trimmed === null) return null
-    report = trimmed
-    reportJson = JSON.stringify(trimmed)
-    if (utf8Length(reportJson) > EVIDENCE_MAX_BYTES) return null
-  }
-  return {
-    core,
-    reportJson,
-    evidenceHash: evidenceHashOf(new TextEncoder().encode(reportJson)),
-    nonce: freshNonce(),
-    expiry: String(Math.floor(Date.now() / 1000) + EXPIRY_SECONDS),
-    shortProof: report.shortProof,
-  }
-}
-
-/** The report, checked against the shared schema. Null when the schema or the summary refuses it. */
-function parseReport(target: AttestTarget, input: AttestInput, trim: boolean): EvidenceReport | null {
-  let parsed: ReturnType<typeof EvidenceReport.safeParse>
-  try {
-    parsed = EvidenceReport.safeParse(buildReport(target, input, trim))
-  } catch {
-    return null
-  }
-  if (!parsed.success) return null
-  // A line of the evidence summary without a quote is no evidence at all.
-  if (parseShortProof(parsed.data.shortProof).some(item => item.excerpt.trim() === '')) return null
-  return parsed.data
-}
-
-/** Why the vote may not be written, or null when it may be written. */
-function blockerOf(target: AttestTarget, input: AttestInput, core: Address | null): string | null {
-  if (target.address === null) return copy.wallet.agentRequired
-  if (core === null) return copy.attest.noRegistry
-  if (target.tier === 'STALE_CODEHASH_DRIFT') return copy.errors.CodeChangedSincePin
-  if (wordOf(target) === null) return copy.attest.targetUnknown
-  if (!isValidFlags(target.targetType, input.verdict, input.flags)) return copy.attest.invalidFlags
-  return null
-}
 
 /** The first approval: the signature of the evidence, without gas. */
 export async function approveEvidence(
@@ -297,10 +156,14 @@ async function runAttestation(params: {
   sign: SignTypedDataAsync
   write: WriteContractAsync
   progress: (state: AttestState) => void
+  cancelled: Cancelled
 }): Promise<Step<Hex>> {
   params.progress('signing-evidence')
   const signed = await approveEvidence(params.sign, params.prepared, params.target.address as Address)
   if (!signed.ok) return signed
+  // The panel was left while the wallet was asking: the evidence is not pinned and no transaction
+  // is sent.
+  if (params.cancelled.current) return { ok: false, state: 'idle' }
 
   params.progress('uploading')
   const uploaded = await approveEvidenceUpload(
@@ -314,6 +177,8 @@ async function runAttestation(params: {
     params.prepared.evidenceHash,
   )
   if (!uploaded.ok) return uploaded
+  // The panel was left while the evidence was pinned: no transaction with a stake is sent.
+  if (params.cancelled.current) return { ok: false, state: 'idle' }
 
   params.progress('signing-tx')
   return approveTransaction(params.write, {
@@ -331,7 +196,12 @@ async function runAttestation(params: {
 
 type Outcome = { state: 'idle' } | { state: 'failed'; message: string } | { state: 'pending'; hash: Hex }
 
-type Wallet = { sign: SignTypedDataAsync; write: WriteContractAsync; progress: (state: AttestState) => void }
+type Wallet = {
+  sign: SignTypedDataAsync
+  write: WriteContractAsync
+  progress: (state: AttestState) => void
+  cancelled: Cancelled
+}
 
 /** Runs one attempt, from the checks to the transaction, and says where it ended. */
 async function attempt(target: AttestTarget, input: AttestInput, wallet: Wallet): Promise<Outcome> {
@@ -361,20 +231,27 @@ export function useAttest(target: AttestTarget) {
   const [txHash, setTxHash] = useState<Hex | null>(null)
   // The verdict that was sent, because the choice on the screen may change after the vote.
   const [verdict, setVerdict] = useState<Verdict | null>(null)
+  const { cancelled, cancel, resume } = useCancel()
   const fail = useCallback((message: string) => {
     setState('failed')
     setError(message)
   }, [])
-  const done = useCallback(() => setState('done'), [])
+  // A speed-up is mined under another hash, so the vote is registered under the mined one.
+  const done = useCallback((mined: Hex | null) => {
+    if (mined !== null) setTxHash(mined)
+    setState('done')
+  }, [])
   useReceipt(state, txHash, done, fail)
 
   const submit = async (input: AttestInput) => {
     setError(null)
     setVerdict(input.verdict)
+    resume()
     const outcome = await attempt(target, input, {
       sign: signTypedDataAsync,
       write: writeContractAsync,
       progress: setState,
+      cancelled,
     })
     if (outcome.state === 'failed') return fail(outcome.message)
     if (outcome.state === 'pending') setTxHash(outcome.hash)
@@ -388,5 +265,5 @@ export function useAttest(target: AttestTarget) {
     setVerdict(null)
   }, [])
 
-  return { state, error, txHash, verdict, submit, reset }
+  return { state, error, txHash, verdict, submit, reset, cancel }
 }

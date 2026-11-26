@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import type { Abi, Address, Hex } from 'viem'
 import { expectedChainId } from './config'
@@ -55,45 +55,56 @@ export function isTxWorking(state: TxState): boolean {
 /** What the wallet did to a transaction that was on its way. */
 export type Replacement = 'cancelled' | 'replaced' | 'repriced'
 
+/** A replacement, and the transaction it was reported for. */
+type ReplacementReport = { hash: string; reason: Replacement }
+
 /**
  * Follows the receipt of a sent transaction.
  *
  * The chain is named, so a wallet that switched network after the signature cannot make the wait
  * read another chain. A transaction the wallet cancelled or replaced is a failure, and so is a
- * receipt of a transaction that is not the one that was sent.
+ * receipt of a transaction that is not the one that was sent. The hash of the mined receipt is
+ * handed back, because a speed-up is mined under another hash than the one that was sent.
  */
 export function useReceiptOutcome(
   state: string,
   txHash: Hex | null,
-  settle: (state: 'done' | 'failed', error: string | null) => void,
+  settle: (state: 'done' | 'failed', error: string | null, mined: Hex | null) => void,
 ) {
-  const [replacement, setReplacement] = useState<Replacement | null>(null)
-  const onReplaced = useCallback((response: { reason: Replacement }) => setReplacement(response.reason), [])
+  // The replacement belongs to the transaction it was reported for, so a retry starts clean.
+  const [replacement, setReplacement] = useState<ReplacementReport | null>(null)
+  const watched = useRef<Hex | null>(txHash)
+  watched.current = txHash
+  const onReplaced = useCallback((response: { reason: Replacement }) => {
+    setReplacement({ hash: watched.current ?? '', reason: response.reason })
+  }, [])
   const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined, chainId: expectedChainId, onReplaced })
   useEffect(() => {
     if (state !== 'pending') return
+    // A replacement of another transaction says nothing about this one.
+    const reason = replacement !== null && replacement.hash === txHash ? replacement.reason : null
     // A transaction the wallet cancelled or replaced never became the one that was sent.
-    if (replacement !== null && replacement !== 'repriced') {
-      settle('failed', copy.errors.txReplaced)
+    if (reason !== null && reason !== 'repriced') {
+      settle('failed', copy.errors.txReplaced, null)
       return
     }
     if (receipt.isSuccess) {
       const mined = receipt.data?.transactionHash
       // A transaction that was mined and reverted still resolves the wait, so its status is read.
       if (receipt.data?.status === 'reverted') {
-        settle('failed', copy.errors.unknown)
+        settle('failed', copy.errors.unknown, null)
         return
       }
       // A receipt of another transaction is not the one that was sent. A repriced transaction is
       // the same intent with another hash, so it is not a failure.
-      if (mined !== undefined && txHash !== null && mined.toLowerCase() !== txHash.toLowerCase() && replacement !== 'repriced') {
-        settle('failed', copy.errors.txReplaced)
+      if (mined !== undefined && txHash !== null && mined.toLowerCase() !== txHash.toLowerCase() && reason !== 'repriced') {
+        settle('failed', copy.errors.txReplaced, null)
         return
       }
-      settle('done', null)
+      settle('done', null, mined ?? txHash)
       return
     }
-    if (receipt.isError) settle('failed', translateContractError(receipt.error)?.message ?? copy.errors.unknown)
+    if (receipt.isError) settle('failed', translateContractError(receipt.error)?.message ?? copy.errors.unknown, null)
   }, [
     state,
     replacement,
@@ -111,12 +122,12 @@ export function useReceiptOutcome(
 export function useReceipt(
   state: string,
   txHash: Hex | null,
-  done: () => void,
+  done: (mined: Hex | null) => void,
   fail: (message: string) => void,
 ) {
   const settle = useCallback(
-    (next: 'done' | 'failed', message: string | null) => {
-      if (next === 'done') done()
+    (next: 'done' | 'failed', message: string | null, mined: Hex | null) => {
+      if (next === 'done') done(mined)
       else fail(message ?? copy.errors.unknown)
     },
     [done, fail],
@@ -130,9 +141,11 @@ export function useWriteTx() {
   const [state, setState] = useState<TxState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<Hex | null>(null)
-  const settle = useCallback((next: 'done' | 'failed', message: string | null) => {
+  const settle = useCallback((next: 'done' | 'failed', message: string | null, mined: Hex | null) => {
     setState(next)
     setError(message)
+    // A speed-up is mined under another hash, so the link must name the transaction that was mined.
+    if (mined !== null) setTxHash(mined)
   }, [])
   useReceiptOutcome(state, txHash, settle)
 
@@ -147,7 +160,7 @@ export function useWriteTx() {
       } else if (step.rejected) {
         setState('idle')
       } else {
-        settle('failed', step.message)
+        settle('failed', step.message, null)
       }
     },
     [writeContractAsync, settle],

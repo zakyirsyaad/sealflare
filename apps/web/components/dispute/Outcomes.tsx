@@ -16,7 +16,7 @@ const ROWS: readonly Row[] = [
   },
   {
     word: copy.dispute.outcomeRejected,
-    challenger: copy.dispute.rejectedChallenger.replace('{xp}', String(Math.abs(XP.CHALLENGER_LOST))),
+    challenger: copy.dispute.rejectedChallenger.replace('{xp}', String(XP.CHALLENGER_LOST)),
     jurors: copy.dispute.rejectedJurors,
     target: copy.dispute.backToTier,
   },
