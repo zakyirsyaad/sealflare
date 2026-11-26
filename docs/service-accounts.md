@@ -15,11 +15,11 @@ VPS, or as GitHub Actions secrets, by the founder.
 
 | # | Service | What to create | Needed by |
 | :---: | :--- | :--- | :--- |
-| 1 | BSC RPC provider | Two providers with paid or generous plans, for fallback. At least one must serve archive state for the fork tests | 27 Nov (M1), CI any time |
-| 2 | BscScan (Etherscan API v2) | One API key, used to read verified source and creation data | 27 Nov (M1) |
-| 3 | GitHub | A fine-grained token with read access to public repositories only, no write scopes | 27 Nov (M1) |
-| 4 | Pinata | A scoped API key (JWT) limited to pinning JSON and files | 27 Nov (M1) |
-| 5 | WalletConnect (Reown) | A project, with the production domain on its allow list | 27 Nov (M1) |
+| 1 | BSC RPC provider | Done (26 Nov): NodeReal MegaNode, which serves archive state. A second provider for fallback is still open | 27 Nov (M1), CI any time |
+| 2 | BscScan (Etherscan API v2) | **Deferred (26 Nov).** The free Etherscan plan no longer covers BSC (chains 56 and 97), so a key needs a paid plan. Until decided, the scanner runs without it: source status is unknown and the verdict stops at CAUTION (architecture 9). Verifying our own contracts stays free through the bscscan.com web form. Decide before the release: pay, or add Sourcify as a fallback | 27 Nov (M1) |
+| 3 | GitHub | Done (26 Nov): fine-grained token, public repositories read-only; a write attempt returns 403 | 27 Nov (M1) |
+| 4 | Pinata | Done (26 Nov): JWT, set on Vercel and the VPS | 27 Nov (M1) |
+| 5 | WalletConnect (Reown) | Done (26 Nov): project id set on Vercel. Add the custom domain to its allow list when one is attached | 27 Nov (M1) |
 | 6 | Anthropic | An API key for the sandbox worker, with a monthly spend limit set in the console | 4 Dec (scanning Task 11) |
 | 7 | Vercel | Done: project `sealflare`, root `apps/web`, see [deploy/README.md](../deploy/README.md) | 1 Dec (release) |
 | 8 | VPS | Oracle VPS `vps-oracle`, set up in [deploy/README.md](../deploy/README.md): Postgres and daily `pg_dump` run; the internal service, indexer and worker are added when built. Copying dumps off the VPS is still to be decided | 1 Dec for the indexer and internal service, 4 Dec for the worker |
@@ -27,6 +27,9 @@ VPS, or as GitHub Actions secrets, by the founder.
 | 10 | Deployer | The hardware wallet that deploys `Core` and calls `setModules` once | testnet rehearsal |
 
 ## Variables
+
+Keys are set for the Production environment only. Preview deployments get the public variables,
+`INTERNAL_URL` and `INTERNAL_KEY`; add the others to Preview when a PR needs a working scan.
 
 | Variable | Filled from | Vercel | VPS | GitHub Actions | Public |
 | :--- | :--- | :---: | :---: | :---: | :---: |
