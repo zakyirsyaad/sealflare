@@ -4,7 +4,7 @@ import { expectedChainId } from '../../../lib/chain/config'
 import { fail, failUnexpected, ok } from '../../../server/respond'
 import { internalPost, InternalServiceError } from '../../../server/internal'
 import { getChainReader } from '../../../server/chain'
-import { pinEvidence, pinataKey, UploadFailedError } from '../../../server/pinata'
+import { pinEvidence, pinataKey, UploadFailedError, UploadOutcomeUnknownError } from '../../../server/pinata'
 import { takeRateLimit } from '../../../server/rate'
 
 /** A signed request may not live longer than ten minutes, and never further ahead than that. */
@@ -51,6 +51,11 @@ export async function POST(request: Request): Promise<Response> {
     if (error instanceof UploadFailedError) {
       // The upload was refused, so nothing was pinned and the request may be signed again.
       await releaseNonce(evidence.address, evidence.nonce)
+      return fail('UPLOAD_FAILED', 'The evidence could not be stored.', 502)
+    }
+    if (error instanceof UploadOutcomeUnknownError) {
+      // The file may be pinned, so the reservation stays. A blocked request can be signed again
+      // later, and a replay cannot be undone.
       return fail('UPLOAD_FAILED', 'The evidence could not be stored.', 502)
     }
     // The outcome of the upload is unknown, so the reservation stays. A blocked request can be
@@ -123,7 +128,8 @@ function checkStorage(): Response | null {
 /**
  * Reserves the nonce of the request. A nonce that was used before is refused here, so a replay
  * never reaches the storage.
- */async function reserveNonce(evidence: Evidence): Promise<Response | null> {
+ */
+async function reserveNonce(evidence: Evidence): Promise<Response | null> {
   let fresh: boolean
   try {
     const answer = await internalPost<{ fresh: boolean }>('/nonce/use', {

@@ -11,11 +11,12 @@ vi.mock('../server/internal', async importOriginal => {
 const reader = vi.hoisted(() => ({ isAgentIdHolder: vi.fn(), tierAt: vi.fn(), blockNumber: vi.fn() }))
 vi.mock('../server/chain', () => ({ getChainReader: () => reader }))
 
-const { pin, UploadFailedError, pinataKey } = vi.hoisted(() => {
+const { pin, UploadFailedError, UploadOutcomeUnknownError, pinataKey } = vi.hoisted(() => {
   class UploadFailedError extends Error {}
-  return { pin: vi.fn(), UploadFailedError, pinataKey: vi.fn() }
+  class UploadOutcomeUnknownError extends Error {}
+  return { pin: vi.fn(), UploadFailedError, UploadOutcomeUnknownError, pinataKey: vi.fn() }
 })
-vi.mock('../server/pinata', () => ({ pinEvidence: pin, UploadFailedError, pinataKey }))
+vi.mock('../server/pinata', () => ({ pinEvidence: pin, UploadFailedError, UploadOutcomeUnknownError, pinataKey }))
 
 const takeRateLimit = vi.hoisted(() => vi.fn())
 vi.mock('../server/rate', () => ({ takeRateLimit }))
@@ -202,6 +203,16 @@ describe('the evidence API', () => {
   test('an upload that failed in an unknown way keeps the reservation', async () => {
     pin.mockRejectedValue(new Error('the socket closed'))
     await postEvidence(request(await signedRequest()))
+    const paths = internalPost.mock.calls.map(call => call[0])
+    expect(paths).not.toContain('/nonce/release')
+  })
+
+  test('an upload with an unknown outcome keeps the reservation, because the file may be pinned', async () => {
+    pin.mockRejectedValue(new UploadOutcomeUnknownError())
+    const response = await postEvidence(request(await signedRequest()))
+    const body = await answer(response)
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('UPLOAD_FAILED')
     const paths = internalPost.mock.calls.map(call => call[0])
     expect(paths).not.toContain('/nonce/release')
   })

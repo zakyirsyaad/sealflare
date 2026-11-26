@@ -1,5 +1,5 @@
 import 'server-only'
-import { createPublicClient, fallback, hexToString, http, type Address, type Hex } from 'viem'
+import { createPublicClient, fallback, hexToString, http, type Address, type Hex, type PublicClient } from 'viem'
 import { bsc, bscTestnet, foundry } from 'viem/chains'
 import { z } from 'zod'
 import { coreAbi, vaultAbi } from '@sealflare/shared/abi'
@@ -53,8 +53,8 @@ export interface ChainReader {
   tier(targetId: Hex): Promise<TrustTier>
   /** The tier at a fixed block, so every tier of one answer comes from the same moment. */
   tierAt(targetId: Hex, blockNumber: bigint): Promise<TrustTier>
-  /** The head of the chain, read once so the tiers of one answer share a block. */
-  blockNumber(): Promise<bigint>
+  /** The block the tiers are read at, a few blocks below the head and shared by one answer. */
+  tierBlockNumber(): Promise<bigint>
   /** Whether the address holds an Agent ID, which every signed request needs. */
   isAgentIdHolder(address: Address): Promise<boolean>
   attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
@@ -100,11 +100,33 @@ function chainFor(chainId: number) {
   return foundry
 }
 
-function client() {
+/**
+ * How many calls the transport puts into one request, and how long it waits for the others.
+ *
+ * The calls of a list of targets come at the same time, so the transport sends them in one
+ * request instead of one request each.
+ */
+const BATCHING = { batch: { batchSize: 100, wait: 10 } } as const
+
+/**
+ * The client of the chain.
+ *
+ * The client is built once and kept, because the batching of the transport only works inside one
+ * client. A client of its own for every read would send every read in a request of its own.
+ */
+let cached: { key: string; client: PublicClient } | null = null
+
+function client(): PublicClient {
   const chain = chainFor(expectedChainId)
   const urls = rpcUrls()
-  const transport = urls.length === 0 ? http() : fallback(urls.map(url => http(url)))
-  return createPublicClient({ chain, transport })
+  const key = `${chain.id}|${urls.join(',')}`
+  if (cached !== null && cached.key === key) return cached.client
+  const transport = urls.length === 0 ? http(undefined, BATCHING) : fallback(urls.map(url => http(url, BATCHING)))
+  // The client is kept, so its cache is kept too. A block number that is cached would be read as
+  // the head of the chain for the rest of the life of the process.
+  const built = createPublicClient({ chain, transport, cacheTime: 0 })
+  cached = { key, client: built }
+  return built
 }
 
 function coreAddress(): Address {
@@ -297,8 +319,8 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
 }
 
 /**
- * The tier of a target, read from Core. The block is optional: without it the tier is read at the
- * head, and with it the tier is read at the moment the answer names.
+ * The tier of a target, read from Core. The block is optional: without it the tier is read a few
+ * blocks below the head, and with it the tier is read at the moment the answer names.
  */
 async function readTier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier> {
   const value = await client().readContract({
@@ -311,13 +333,33 @@ async function readTier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier>
   return pick(TRUST_TIERS, value, 'trust tier')
 }
 
+/**
+ * How many blocks below the head the tiers are read.
+ *
+ * The head of one node is not the head of the next one. A node that is a few blocks behind
+ * cannot answer for a block it does not have, and a tier of the exact head is not worth an answer
+ * that fails. Three blocks are enough for a node that lags a little.
+ */
+const TIER_MARGIN = 3n
+
+/**
+ * The block the tiers are read at.
+ *
+ * Every tier of one answer comes from this block, so the tiers of a list cannot disagree about
+ * how old they are.
+ */
+async function tierBlockNumber(): Promise<bigint> {
+  const head = await client().getBlockNumber()
+  return head > TIER_MARGIN ? head - TIER_MARGIN : 0n
+}
+
 /** The reader used by the target page. Every call goes out over a public RPC. */
 export function getChainReader(): ChainReader {
   return {
     target: readTarget,
-    tier: targetId => readTier(targetId),
+    tier: async targetId => readTier(targetId, await tierBlockNumber()),
     tierAt: (targetId, blockNumber) => readTier(targetId, blockNumber),
-    blockNumber: () => client().getBlockNumber(),
+    tierBlockNumber,
     isAgentIdHolder: async address => {
       const value = await client().readContract({
         address: coreAddress(),

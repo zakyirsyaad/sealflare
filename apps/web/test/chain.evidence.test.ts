@@ -71,13 +71,19 @@ beforeAll(async () => {
     let body = ''
     request.on('data', chunk => (body += chunk))
     request.on('end', () => {
-      const call = JSON.parse(body) as Request & { id: number }
-      try {
-        response.end(JSON.stringify({ jsonrpc: '2.0', id: call.id, result: answer(call) }))
-      } catch (error) {
-        const { rpc, message } = error as { rpc: number; message: string }
-        response.end(JSON.stringify({ jsonrpc: '2.0', id: call.id, error: { code: rpc, message } }))
-      }
+      const parsed = JSON.parse(body) as (Request & { id: number }) | Array<Request & { id: number }>
+      const calls = Array.isArray(parsed) ? parsed : [parsed]
+      // The transport of the chain puts the calls that come at the same time into one request, so
+      // the node answers a list of calls as well as a single one.
+      const answers = calls.map(call => {
+        try {
+          return { jsonrpc: '2.0', id: call.id, result: answer(call) }
+        } catch (error) {
+          const { rpc, message } = error as { rpc: number; message: string }
+          return { jsonrpc: '2.0', id: call.id, error: { code: rpc, message } }
+        }
+      })
+      response.end(JSON.stringify(Array.isArray(parsed) ? answers : answers[0]))
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
