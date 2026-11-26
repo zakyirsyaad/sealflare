@@ -100,13 +100,14 @@ export function signedRequest(options: {
 }
 
 /** The fake repository. It records every bundle that was asked for. */
-export function fakeFetcher(entries: BundleEntry[]): RepoFetcher & { asked: SkillRef[] } {
+export function fakeFetcher(entries: BundleEntry[], options: { hang?: boolean } = {}): RepoFetcher & { asked: SkillRef[] } {
   const asked: SkillRef[] = []
   return {
     asked,
     listSkillFolders: async () => ({ commit: 'a'.repeat(40), folders: [''] }),
     fetchBundle: async (ref: SkillRef) => {
       asked.push(ref)
+      if (options.hang === true) return new Promise<BundleEntry[]>(() => {})
       return entries
     },
   }
@@ -186,10 +187,12 @@ export function sandboxFixture(
     probeSetVersion?: string
     modelId?: string
     token?: string | null
+    hang?: boolean
+    deadlineMs?: number
   } = {},
 ): SandboxFixture {
   const worker = options.worker ?? fakeWorker()
-  const fetcher = fakeFetcher(options.entries ?? bundle())
+  const fetcher = fakeFetcher(options.entries ?? bundle(), { hang: options.hang === true })
   const { app } = testApp(db, {
     now: () => NOW,
     sandbox: {
@@ -199,6 +202,7 @@ export function sandboxFixture(
       skills: {
         fetcher,
         ...(options.token === null ? {} : { token: options.token ?? 'g'.repeat(32) }),
+        ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }),
       },
       probeSetVersion: options.probeSetVersion ?? 'v1',
       modelId: options.modelId ?? 'model-1',

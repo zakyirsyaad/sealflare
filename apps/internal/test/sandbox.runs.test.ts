@@ -233,6 +233,21 @@ test('a skill that is not the bundle the client signed is refused', async () => 
   await close()
 })
 
+test('a repository that answers too slowly is refused and takes no quota', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = sandboxFixture(db, { hang: true, deadlineMs: 20 })
+
+  const created = await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  expect(created.status).toBe(502)
+  expect((await body<ErrorAnswer>(created)).error.code).toBe('INTERNAL')
+
+  const runs = await db.query('SELECT * FROM sandbox_runs')
+  expect(runs).toHaveLength(0)
+  const quota = await db.query('SELECT * FROM sandbox_quota')
+  expect(quota).toHaveLength(0)
+  await close()
+})
+
 test('a run without a GitHub token is refused and takes no quota', async () => {
   const { db, close } = await createTestDb()
   const { app } = sandboxFixture(db, { token: null })

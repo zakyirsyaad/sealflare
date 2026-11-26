@@ -12,7 +12,18 @@ export interface SkillDeps {
   fetcher: RepoFetcher
   /** The GitHub token of the service. Without it the skill cannot be read at all. */
   token?: string
+  /** How long the fetch of the skill may take. A test may shorten it. */
+  deadlineMs?: number
 }
+
+/**
+ * How long the fetch of a skill may take.
+ *
+ * Every call of the repository has a timeout of its own, but a bundle of many files is many calls.
+ * The deadline of the fetch keeps the whole request inside the deadline of the caller, so a slow
+ * repository never leaves a run in the queue that nobody hears about.
+ */
+export const SKILL_DEADLINE_MS = 20_000
 
 /** The source of a skill, as it is named in a request. */
 export interface SkillReference {
@@ -86,8 +97,9 @@ export async function readSkillMd(deps: SkillDeps, reference: SkillReference, si
   if (deps.token === undefined) throw new NoGitHubToken()
   let entries
   try {
-    entries = await deps.fetcher.fetchBundle(reference)
-  } catch {
+    entries = await withDeadline(deps.fetcher.fetchBundle(reference), deps.deadlineMs ?? SKILL_DEADLINE_MS)
+  } catch (error) {
+    if (error instanceof SkillUnavailable) throw error
     throw new SkillUnavailable('The skill could not be fetched.')
   }
   let identity
@@ -108,4 +120,23 @@ export async function readSkillMd(deps: SkillDeps, reference: SkillReference, si
   }
   if (utf8Length(text) > CONSTANTS.MAX_SKILL_MD_BYTES) throw new SkillTooLarge()
   return text
+}
+
+/**
+ * Waits for a promise, but not longer than the deadline allows.
+ *
+ * The work that is left behind is not waited for. A fetch that answers after the deadline is
+ * never used, because the run it belongs to was already refused.
+ */
+async function withDeadline<T>(work: Promise<T>, limitMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new SkillUnavailable('The skill could not be read in time.')), limitMs)
+    timer.unref?.()
+  })
+  try {
+    return await Promise.race([work, deadline])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
