@@ -7,6 +7,8 @@ import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
 import { formatUtc, isZeroHash, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
+import { ChallengeAction } from '../dispute/ChallengeAction'
+import { modulesLive } from '../../lib/chain/config'
 import { attestAvailability, type AttestAvailability } from '../attest/availability'
 import { usePendingVote } from './pendingVote'
 
@@ -28,6 +30,8 @@ export type ActionColumnProps = {
   attestations: AttestationRow[]
   /** A challenge is open on this target. */
   underDispute: boolean
+  /** The id of the open challenge, as the registry names it. Null when none is open. */
+  activeChallengeId?: string | null
 }
 
 type Vote = { verdict: Verdict; txHash: string }
@@ -177,13 +181,19 @@ export function ActionColumn(props: ActionColumnProps) {
         linkKnown={onChain === null || !props.evidenceFailed}
         onOpen={() => setOpen(true)}
       />
-      <Button variant="secondary" className="sf-btn--block" disabled>
-        {copy.target.challenge}
-      </Button>
+      <ChallengeAction
+        targetId={props.targetId}
+        targetType={props.targetType}
+        label={props.label}
+        scan={props.scan}
+        tier={props.tier}
+        activeChallengeId={props.activeChallengeId ?? null}
+      />
       <Button variant="secondary" className="sf-btn--block" disabled>
         {copy.target.fundBounty}
       </Button>
-      <p className="sf-actions__note">{copy.common.modulesNotLive}</p>
+      {/* The challenge action says it itself, unless a confirmed danger leaves it without a button. */}
+      {!modulesLive && props.tier === 'CONFIRMED_DANGER' && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
       <Notes
         quota={limitText(left === null ? copy.target.quotaDefault : copy.target.quotaLeft, left)}
         reason={reason}

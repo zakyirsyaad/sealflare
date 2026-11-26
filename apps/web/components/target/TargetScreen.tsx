@@ -1,4 +1,4 @@
-import type { AttestationRow, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
+import type { AttestationRow, ChallengeSummary, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
 import { ActionColumn } from './ActionColumn'
 import { Banners } from './Banners'
 import { Identity } from './Identity'
@@ -27,6 +27,8 @@ export type TargetScreenProps = {
   /** The scanned bundle is another bundle than the one the registry sealed. */
   bundleChanged: boolean
   failed: boolean
+  /** The disputes of this target, or null when they could not be read. */
+  challenges?: readonly ChallengeSummary[] | null
 }
 
 /** The link names another bundle than the one the registry rated. */
@@ -74,11 +76,18 @@ export function TargetScreen(props: TargetScreenProps) {
             scan={props.scan}
             attestations={props.attestations}
             underDispute={detail.activeChallengeId !== null}
+            activeChallengeId={detail.activeChallengeId}
           />
         </div>
       </PendingVoteProvider>
       <section className="sf-frame sf-target__tabs">
-        <TargetTabs detail={detail} rows={props.attestations} scan={props.scan} evidenceFailed={props.evidenceFailed} />
+        <TargetTabs
+          detail={detail}
+          rows={props.attestations}
+          scan={props.scan}
+          evidenceFailed={props.evidenceFailed}
+          challenges={props.challenges}
+        />
       </section>
     </div>
   )

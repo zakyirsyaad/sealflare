@@ -31,7 +31,7 @@ export type AttestPanelProps = {
 }
 
 /** The wallet has to be connected before anything can be signed. */
-function ConnectSection() {
+export function ConnectSection() {
   const connectors = useConnectors()
   const { mutate, isPending, error } = useConnect()
   return (
@@ -57,7 +57,7 @@ type UserState = ReturnType<typeof useUserState>
 type Attestation = ReturnType<typeof useAttest>
 
 /** What stands between the user and the vote before the wallet may be used: a connection, the network or an Agent ID. */
-function walletGate(user: UserState, disconnect: () => void): React.ReactNode {
+export function walletGate(user: UserState, disconnect: () => void): React.ReactNode {
   if (user.kind === 'no-wallet') return <ConnectSection />
   if (user.kind === 'wrong-network') return <WrongNetwork />
   if (user.kind === 'checking') return <p className="sf-lead">{copy.wallet.checkingAgentId}</p>

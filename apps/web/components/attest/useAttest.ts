@@ -48,17 +48,17 @@ export type AttestTarget = {
   address: Address | null
 }
 
-type SignTypedDataAsync = ReturnType<typeof useSignTypedData>['signTypedDataAsync']
-type WriteContractAsync = ReturnType<typeof useWriteContract>['writeContractAsync']
+export type SignTypedDataAsync = ReturnType<typeof useSignTypedData>['signTypedDataAsync']
+export type WriteContractAsync = ReturnType<typeof useWriteContract>['writeContractAsync']
 
 const TARGET_TYPE_NUMBER: Record<TargetType, number> = { SMART_CONTRACT: 0, AI_SKILL_BUNDLE: 1 }
 const VERDICT_NUMBER: Record<Verdict, number> = { SAFE: 0, CAUTION: 1, DANGER: 2 }
 
 /** A signed request may live five minutes. The server refuses anything longer. */
-const EXPIRY_SECONDS = 300
+export const EXPIRY_SECONDS = 300
 
 /** The outcome of one step. A refusal in the wallet returns to the summary without an error. */
-type Step<T> = { ok: true; value: T } | { ok: false; state: 'idle' | 'failed'; message?: string }
+export type Step<T> = { ok: true; value: T } | { ok: false; state: 'idle' | 'failed'; message?: string }
 
 /** The address of the registry, or null when the deployment does not name one. */
 function coreAddress(): Address | null {
@@ -70,7 +70,7 @@ function coreAddress(): Address | null {
 }
 
 /** A nonce that is never used twice, as a decimal string the server reads. */
-function freshNonce(): string {
+export function freshNonce(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
   return BigInt(`0x${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`).toString()
@@ -182,9 +182,9 @@ function blockerOf(target: AttestTarget, input: AttestInput, core: Address | nul
 }
 
 /** The first approval: the signature of the evidence, without gas. */
-async function approveEvidence(
+export async function approveEvidence(
   sign: SignTypedDataAsync,
-  prepared: Prepared,
+  prepared: Pick<Prepared, 'evidenceHash' | 'nonce' | 'expiry'>,
   account: Address,
 ): Promise<Step<Hex>> {
   try {
@@ -228,7 +228,7 @@ async function uploadReport(
 }
 
 /** The upload of the report. Nothing was pinned when it fails, so no transaction follows. */
-async function approveEvidenceUpload(
+export async function approveEvidenceUpload(
   body: { reportJson: string; address: string; nonce: string; expiry: string; signature: string },
   evidenceHash: Hex,
 ): Promise<Step<string>> {
@@ -327,7 +327,7 @@ async function runAttestation(params: {
 }
 
 /** Watches the receipt of the vote. A reverted transaction names its own reason. */
-function useReceipt(
+export function useReceipt(
   state: AttestState,
   txHash: Hex | null,
   done: () => void,

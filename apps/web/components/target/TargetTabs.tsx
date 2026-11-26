@@ -1,6 +1,7 @@
-import type { AttestationRow, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
+import type { AttestationRow, ChallengeSummary, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
 import { Tabs } from '../ui/Tabs'
 import { AttestationsTab } from './AttestationsTab'
+import { DisputeTab } from './DisputeTab'
 import { FindingsTab } from './FindingsTab'
 import { HistoryTab } from './HistoryTab'
 import { copy } from '../../lib/copy'
@@ -10,6 +11,8 @@ export type TargetTabsProps = {
   rows: readonly AttestationRow[]
   scan: ScanReport | null
   evidenceFailed?: boolean
+  /** The disputes of this target, or null when they could not be read. */
+  challenges?: readonly ChallengeSummary[] | null
 }
 
 function publisherContent(detail: TargetDetail) {
@@ -23,13 +26,8 @@ function publisherContent(detail: TargetDetail) {
   )
 }
 
-function disputeContent(detail: TargetDetail) {
-  if (detail.activeChallengeId === null) return <p className="sf-tab__empty">{copy.target.noDisputes}</p>
-  return <p>{copy.target.challengeOpen.replace('{id}', detail.activeChallengeId)}</p>
-}
-
 /** The details of a target. The findings open first. */
-export function TargetTabs({ detail, rows, scan, evidenceFailed = false }: TargetTabsProps) {
+export function TargetTabs({ detail, rows, scan, evidenceFailed = false, challenges = [] }: TargetTabsProps) {
   const items = [
     { id: 'findings', label: copy.target.findings, content: <FindingsTab scan={scan} /> },
     {
@@ -38,7 +36,11 @@ export function TargetTabs({ detail, rows, scan, evidenceFailed = false }: Targe
       content: <AttestationsTab rows={rows} evidenceUnavailable={evidenceFailed} />,
     },
     { id: 'publisher', label: copy.target.publisher, content: publisherContent(detail) },
-    { id: 'dispute', label: copy.target.dispute, content: disputeContent(detail) },
+    {
+      id: 'dispute',
+      label: copy.target.dispute,
+      content: <DisputeTab challenges={challenges} activeChallengeId={detail.activeChallengeId} />,
+    },
     { id: 'bounty', label: copy.target.bounty, content: <p className="sf-tab__empty">{copy.target.noBounty}</p> },
     { id: 'history', label: copy.target.history, content: <HistoryTab rows={rows} /> },
   ]

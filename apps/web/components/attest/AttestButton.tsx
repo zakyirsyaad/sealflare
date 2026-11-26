@@ -9,6 +9,10 @@ export type AttestButtonProps = {
   txHash: string | null
   onSubmit: () => void
   onRetry: () => void
+  /** The text of the button before it is pressed. */
+  label?: string
+  /** The button cannot be pressed even when nothing is running, for example while a fact is unknown. */
+  disabled?: boolean
 }
 
 /** The link to the transaction of the vote, once there is one. */
@@ -27,7 +31,7 @@ export function TransactionLink({ txHash, children }: { txHash: string; children
  * A vote that landed is shown with the label "Waiting for finality", because the indexer reads it
  * only when the block is final.
  */
-export function AttestButton({ state, error, txHash, onSubmit, onRetry }: AttestButtonProps) {
+export function AttestButton({ state, error, txHash, onSubmit, onRetry, label = copy.attest.submit, disabled = false }: AttestButtonProps) {
   if (state === 'done') {
     return (
       <div className="sf-stack">
@@ -50,8 +54,8 @@ export function AttestButton({ state, error, txHash, onSubmit, onRetry }: Attest
   const busy = state !== 'idle'
   return (
     <div className="sf-stack">
-      <Button variant="primary" className="sf-btn--block" disabled={busy} onClick={onSubmit}>
-        {busy ? copy.attest.pending : copy.attest.submit}
+      <Button variant="primary" className="sf-btn--block" disabled={busy || disabled} onClick={onSubmit}>
+        {busy ? copy.attest.pending : label}
       </Button>
       {busy && txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
     </div>
