@@ -98,6 +98,8 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     differentBundle: false,
     uncheckedBundle: false,
     evidenceFailed: false,
+    targetWord: null,
+    bundleChanged: false,
     failed: false,
     ...overrides,
   }
