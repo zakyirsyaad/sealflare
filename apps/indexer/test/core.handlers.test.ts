@@ -12,11 +12,12 @@ const core = () => addresses().core
 const FIRST = targetAddress(0x21)
 const THIRD = targetAddress(0x23)
 const FOURTH = targetAddress(0x24)
+const FIFTH = targetAddress(0x25)
 
 test('an attestation becomes a row with its frozen weight, both ordinals and its short proof', async () => {
   const { db, close } = await createTestDb()
   const guardian = account(0).address.toLowerCase()
-  await attest({ from: 0, contract: FIRST, verdict: 0, shortProof: '0x1234', evidenceURI: 'ipfs://proof' })
+  await attest({ from: 0, contract: FIRST, verdict: 0, shortProof: '0x554e4558', evidenceURI: 'ipfs://proof' })
   await attest({ from: 1, contract: FIRST, verdict: 0 })
 
   const result = await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
@@ -43,7 +44,8 @@ test('an attestation becomes a row with its frozen weight, both ordinals and its
   expect(rows[0]?.weight).toBe(1)
   expect(rows[0]?.attestation_index).toBe(0)
   expect(rows[0]?.safe_ordinal).toBe(1)
-  expect(rows[0]?.short_proof).toBe('0x1234')
+  // The proof is bytes on chain and text in the row.
+  expect(rows[0]?.short_proof).toBe('UNEX')
   expect(rows[0]?.evidence_uri).toBe('ipfs://proof')
   expect(rows[1]?.attestation_index).toBe(1)
   expect(rows[1]?.safe_ordinal).toBe(2)
@@ -80,6 +82,22 @@ test('keeps the Attested row when the emitted evidence URI is empty', async () =
   )
   expect(rows).toHaveLength(1)
   expect(rows[0]?.evidence_uri).toBe('')
+  await close()
+})
+
+test('keeps the Attested row when the short proof holds a NUL byte', async () => {
+  const { db, close } = await createTestDb()
+  // Postgres refuses U+0000 in a text column, so the proof is cleaned before it is stored.
+  await attest({ from: 0, contract: FIFTH, shortProof: '0x550045' })
+
+  await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
+
+  const rows = await db.query<{ short_proof: string }>(
+    'SELECT short_proof FROM attestations WHERE target_id = (SELECT target_id FROM targets WHERE src = $1)',
+    [FIFTH],
+  )
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.short_proof).toBe('U\uFFFDE')
   await close()
 })
 

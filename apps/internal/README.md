@@ -45,6 +45,13 @@ line. Generate one with `openssl rand -base64 48`.
 | `GET /targets/tier-candidates` | The targets that still need their tier, at most 500 of them. |
 | `GET /targets/:targetId` | One target with its signal, its scan and its sandbox result. |
 | `GET /targets/:targetId/attestations` | The votes of a target, in the order the contract numbered them. |
+| `GET /guardians` | The list of guardians, the ones with the most votes first. `page` and `limit` narrow it. |
+| `GET /guardians/:address` | One guardian with its standing and its votes. |
+| `GET /challenges` | The list of disputes, the newest first. `page`, `limit` and `targetId` narrow it. |
+| `GET /challenges/:id` | One dispute with its jury and its payouts. The direction of a vote stays empty until the challenge leaves the commit phase. |
+| `GET /bounties` | The list of bounties, the open ones first. `page`, `limit`, `targetId` and `requester` narrow it. |
+| `GET /bounties/:id` | One bounty with the slots that filled it. |
+| `GET /activity/:address` | What an account has to do, what it may withdraw and what it did. |
 
 Every answer has the same shape: `{ success: true, data }` or `{ success: false, error }`.
 

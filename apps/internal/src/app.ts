@@ -6,6 +6,10 @@ import { rateRoutes } from './routes/rate'
 import { sandboxRoutes, type SandboxRouteDeps } from './routes/sandbox'
 import { scanRoutes } from './routes/scans'
 import { targetRoutes } from './routes/targets'
+import { guardianRoutes } from './routes/guardians'
+import { challengeRoutes } from './routes/challenges'
+import { bountyRoutes } from './routes/bounties'
+import { activityRoutes } from './routes/activity'
 import type { SandboxVersion } from './readModel/caches'
 import { fail } from './respond'
 
@@ -74,6 +78,10 @@ export function createApp(deps: AppDeps): Hono {
   app.route('/scans', scanRoutes({ sql: deps.sql }))
   app.route('/targets', targetRoutes({ sql: deps.sql, sandbox: sandboxVersion(deps.env) }))
   if (deps.sandbox !== undefined) app.route('/sandbox', sandboxRoutes(deps.sandbox))
+  app.route('/guardians', guardianRoutes({ sql: deps.sql }))
+  app.route('/challenges', challengeRoutes({ sql: deps.sql, now }))
+  app.route('/bounties', bountyRoutes({ sql: deps.sql }))
+  app.route('/activity', activityRoutes({ sql: deps.sql, now }))
 
   app.notFound((c) => c.json(fail('BAD_REQUEST', 'There is no such route.'), 404))
   app.onError((error, c) => {

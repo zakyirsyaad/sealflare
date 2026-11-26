@@ -20,6 +20,10 @@ export const IndexerEnv = z
     RPC_URL: z.string().min(1, 'the chain address is required'),
     CHAIN_ID: z.coerce.number().int().min(1),
     CORE_ADDRESS: AddressSchema,
+    /** The Court the indexer reads. */
+    COURT_ADDRESS: AddressSchema,
+    /** The Vault the indexer reads. */
+    VAULT_ADDRESS: AddressSchema,
     /** The block Core was deployed in. Required on a public chain, 0 on the local one. */
     START_BLOCK: BlockNumber.optional(),
     BATCH_SIZE: z.coerce.number().int().min(1).max(2000).default(2000),

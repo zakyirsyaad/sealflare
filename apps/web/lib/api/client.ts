@@ -26,7 +26,7 @@ const Answer = z.object({
   error: z.object({ code: z.string(), message: z.string(), details: z.unknown().optional() }).optional(),
 })
 
-async function post<T>(path: string, body: unknown, parse: (value: unknown) => T): Promise<T> {
+async function post<T>(path: string, body: unknown, parse: (value: unknown) => T, unreachable = 'The scan service could not be reached.'): Promise<T> {
   let response: Response
   try {
     response = await fetch(path, {
@@ -35,7 +35,7 @@ async function post<T>(path: string, body: unknown, parse: (value: unknown) => T
       body: JSON.stringify(body),
     })
   } catch {
-    throw new ApiError('INTERNAL', 'The scan service could not be reached.')
+    throw new ApiError('INTERNAL', unreachable)
   }
   const payload = await response.json().catch(() => null)
   const answer = Answer.safeParse(payload)
@@ -115,6 +115,8 @@ function quota(value: unknown): Quota {
   return parsed.data.data
 }
 
+const uploaded = z.object({ evidenceURI: z.string().min(1), evidenceHash: z.string().min(1) })
+
 /** The public API, called from the browser. Every answer arrives in an envelope. */
 export const api = {
   scanContract(address: string): Promise<ScanReport> {
@@ -134,5 +136,24 @@ export const api = {
   /** The runs an address has left today. */
   sandboxQuota(address: string): Promise<Quota> {
     return get(`/api/sandbox/quota/${address}`, quota)
+  },
+  /**
+   * Stores the evidence of an attestation.
+   *
+   * `reportJson` is the exact text that was signed and hashed, so the report behind the hash on
+   * the chain is the same document.
+   */
+  uploadEvidence(body: {
+    reportJson: string
+    address: string
+    nonce: string
+    expiry: string
+    signature: string
+  }): Promise<z.infer<typeof uploaded>> {
+    return post('/api/evidence', body, value => {
+      const parsed = uploaded.safeParse(value)
+      if (!parsed.success) throw new ApiError('INTERNAL', 'The evidence answer could not be read.')
+      return parsed.data
+    }, 'The evidence service could not be reached.')
   },
 }
