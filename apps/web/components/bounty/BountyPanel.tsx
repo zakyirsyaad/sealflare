@@ -102,7 +102,7 @@ export function BountyPanel({ targetId, label, open = true, onClose }: BountyPan
  */
 function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>) {
   const user = useUserState()
-  const [slots, setSlots] = useState(SLOT_RANGE.min)
+  const [slots, setSlots] = useState<number>(SLOT_RANGE.min)
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
   const { state, createBounty } = useBounty()

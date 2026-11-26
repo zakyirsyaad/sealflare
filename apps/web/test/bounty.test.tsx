@@ -15,7 +15,7 @@ const targetId = `0x${'11'.repeat(32)}`
 const label = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
 
 const mocks = vi.hoisted(() => ({
-  connection: { address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', isConnected: true, chainId: 56 },
+  connection: { address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as string | undefined, isConnected: true, chainId: 56 },
   modulesLive: true,
   holder: true,
   write: vi.fn(),
