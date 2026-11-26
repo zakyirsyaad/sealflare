@@ -14,7 +14,7 @@ import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
 import { flagLabel, verdictLabel } from '../../lib/format'
 import { pickableVerdicts } from './availability'
-import { flagsOf, missingQuotes, type Choice } from './choice'
+import { flagsOf, missingQuotes, quoteLimit, type Choice } from './choice'
 
 export type VerdictStepProps = {
   choice: Choice
@@ -216,6 +216,7 @@ function QuoteFields(props: VerdictStepProps) {
             id={`quote-${name}`}
             className="sf-input"
             value={choice.quotes[name] ?? ''}
+            maxLength={quoteLimit(choice.flags)}
             onChange={event => props.onQuote(name, event.target.value)}
           />
         </section>

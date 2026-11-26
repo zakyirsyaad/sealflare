@@ -21,16 +21,44 @@ export const emptyChoice: Choice = { verdict: null, flags: 0, quotes: {} }
  */
 export function chooseVerdict(verdict: Verdict, scanFlags: number, quotes: Record<string, string> = {}): Choice {
   if (verdict === 'SAFE') return { verdict, flags: 0, quotes }
-  return { verdict, flags: scanFlags, quotes }
+  return { verdict, flags: scanFlags, quotes: fitQuotes(scanFlags, quotes) }
+}
+
+/** The longest prefix of `text` of at most `max` UTF-16 units that does not split a surrogate pair. */
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text
+  let out = ''
+  for (const char of text) {
+    if (out.length + char.length > max) break
+    out += char
+  }
+  return out
+}
+
+/**
+ * How many characters each quote may hold, so the statement of the report always fits.
+ *
+ * The statement holds one line `FLAG: quote` for every flag, joined by line breaks, and the report
+ * refuses a statement above `STATEMENT_MAX_CHARS`. The inputs are capped to this length, so a long
+ * quote is stopped while it is written and never cut afterwards without the Guardian knowing.
+ */
+export function quoteLimit(flags: number): number {
+  const names = flagNames(flags)
+  if (names.length === 0) return STATEMENT_MAX_CHARS
+  const overhead = names.reduce((sum, name) => sum + name.length + 2, 0) + names.length - 1
+  return Math.floor((STATEMENT_MAX_CHARS - overhead) / names.length)
+}
+
+/** The quotes of the reported flags, each cut to the limit that the flags leave for it. */
+function fitQuotes(flags: number, quotes: Record<string, string>): Record<string, string> {
+  const limit = quoteLimit(flags)
+  return Object.fromEntries(Object.entries(quotes).map(([flag, quote]) => [flag, clip(quote, limit)]))
 }
 
 /** Adds a flag the Guardian reports. */
 export function addFlag(choice: Choice, flag: FlagName): Choice {
-  return {
-    ...choice,
-    flags: choice.flags | FLAGS[flag],
-    quotes: { ...choice.quotes, [flag]: choice.quotes[flag] ?? '' },
-  }
+  const flags = choice.flags | FLAGS[flag]
+  return { ...choice, flags, quotes: fitQuotes(flags, { ...choice.quotes, [flag]: choice.quotes[flag] ?? '' }) }
 }
 
 /** Takes a flag back out of the report. */
@@ -42,7 +70,7 @@ export function removeFlag(choice: Choice, flag: FlagName): Choice {
 
 /** The quote of a flag, as the Guardian wrote it. */
 export function setQuote(choice: Choice, flag: FlagName, quote: string): Choice {
-  return { ...choice, quotes: { ...choice.quotes, [flag]: quote } }
+  return { ...choice, quotes: { ...choice.quotes, [flag]: clip(quote, quoteLimit(choice.flags)) } }
 }
 
 /** The flags of the choice, in the order of the flag list. */
@@ -122,8 +150,7 @@ function cut(text: string, maxBytes: number): string {
 
 /** The lines of the proof, with the place each quote was read. */
 function proofItems(flags: number, quotes: Record<string, string>, scan: ScanReport | null): ShortProofItem[] {
-  const names = (Object.keys(FLAGS) as FlagName[]).filter(name => (flags & FLAGS[name]) !== 0)
-  return names.map(name => {
+  return flagNames(flags).map(name => {
     const finding = scan?.findings.find(item => item.flag === name)
     const excerpt = excerptOf(scan, name)
     if (excerpt !== '') return { flag: name, location: finding?.location ?? 'user report', excerpt }
@@ -178,7 +205,8 @@ export function statementOf(flags: number, quotes: Record<string, string>): stri
     .filter(([flag, quote]) => quote.trim() !== '' && (flags & (FLAGS[flag as FlagName] ?? 0)) !== 0)
     .map(([flag, quote]) => `${flag}: ${quote.trim()}`)
   if (lines.length === 0) return undefined
-  return lines.join('\n').slice(0, STATEMENT_MAX_CHARS)
+  // The inputs are capped (see `quoteLimit`), so this never cuts a statement the Guardian wrote.
+  return clip(lines.join('\n'), STATEMENT_MAX_CHARS)
 }
 
 /**

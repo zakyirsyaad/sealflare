@@ -1,13 +1,54 @@
 import { expect, test } from 'vitest'
-import { FLAGS } from '@sealflare/shared/rules'
-import { parseShortProof } from '@sealflare/shared/schemas'
-import { addFlag, canReview, chooseVerdict, emptyChoice, provedFlags, setQuote, shortProofOf } from '../components/attest/choice'
+import { FLAGS, flagNames } from '@sealflare/shared/rules'
+import { STATEMENT_MAX_CHARS, parseShortProof } from '@sealflare/shared/schemas'
+import {
+  addFlag,
+  canReview,
+  chooseVerdict,
+  emptyChoice,
+  provedFlags,
+  quoteLimit,
+  setQuote,
+  shortProofOf,
+  statementOf,
+} from '../components/attest/choice'
 import { attestAvailability } from '../components/attest/availability'
 import { bundleChanged, targetWordOf } from '../server/target'
 import { contractWord } from '../lib/targetWord'
 import { address, bundle, contractScan, hiddenMint, skillScan, targetId, unverified, word } from './attest.fixtures'
 
 const proved = (choice: ReturnType<typeof chooseVerdict>, flagsScan = contractScan()) => provedFlags(choice, flagsScan, targetId)
+
+const quotesOf = (choice: ReturnType<typeof chooseVerdict>) => flagNames(choice.flags).map(name => choice.quotes[name] ?? '')
+
+test('every quote is capped while it is written, so the statement always holds the full quotes', () => {
+  let choice = chooseVerdict('CAUTION', FLAGS.UNVERIFIED_SOURCE | FLAGS.HIDDEN_MINT)
+  for (const name of flagNames(choice.flags)) choice = setQuote(choice, name, 'x'.repeat(10_000))
+  const statement = statementOf(choice.flags, choice.quotes) as string
+  expect(statement.length).toBeLessThanOrEqual(STATEMENT_MAX_CHARS)
+  for (const name of flagNames(choice.flags)) expect(statement).toContain(`${name}: ${choice.quotes[name]}`)
+  expect(quotesOf(choice).every(quote => quote.length === quoteLimit(choice.flags))).toBe(true)
+})
+
+test('a flag added later shrinks the quotes that no longer fit', () => {
+  let choice = chooseVerdict('CAUTION', FLAGS.UNVERIFIED_SOURCE)
+  choice = setQuote(choice, 'UNVERIFIED_SOURCE', 'y'.repeat(10_000))
+  const before = choice.quotes.UNVERIFIED_SOURCE!.length
+  choice = setQuote(addFlag(choice, 'HIDDEN_MINT'), 'HIDDEN_MINT', 'z'.repeat(10_000))
+  expect(choice.quotes.UNVERIFIED_SOURCE!.length).toBeLessThan(before)
+  const statement = statementOf(choice.flags, choice.quotes) as string
+  expect(statement.length).toBeLessThanOrEqual(STATEMENT_MAX_CHARS)
+  expect(statement).toContain(`UNVERIFIED_SOURCE: ${choice.quotes.UNVERIFIED_SOURCE}`)
+})
+
+test('the cap never splits a surrogate pair, wherever the limit falls', () => {
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+  for (const prefix of ['', 'a']) {
+    const choice = setQuote(chooseVerdict('CAUTION', FLAGS.UNVERIFIED_SOURCE), 'UNVERIFIED_SOURCE', `${prefix}${'😀'.repeat(5_000)}`)
+    expect(lone.test(choice.quotes.UNVERIFIED_SOURCE!)).toBe(false)
+    expect(lone.test(statementOf(choice.flags, choice.quotes) as string)).toBe(false)
+  }
+})
 
 test('Safe with a flag cannot be submitted', () => {
   const choice = { ...addFlag(chooseVerdict('SAFE', 0), 'UNVERIFIED_SOURCE'), verdict: 'SAFE' as const }

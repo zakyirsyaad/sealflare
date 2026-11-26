@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { useSignTypedData, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
-import { toHex, type Address, type Hex } from 'viem'
+import { isAddressEqual, toHex, type Address, type Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
 import {
   API_EIP712,
@@ -326,6 +326,21 @@ async function runAttestation(params: {
   })
 }
 
+/**
+ * Whether a receipt is the receipt of the vote.
+ *
+ * When a transaction is replaced, the wait resolves with the receipt of the replacement. A Cancel in
+ * the wallet is a transfer of nothing to the account itself on the same nonce, and its receipt has
+ * the status success. Only a receipt that succeeded and went to the registry is a vote.
+ */
+function isVoteReceipt(receipt: { status: string; to: Address | null }): boolean {
+  const core = coreAddress()
+  return receipt.status === 'success' && core !== null && receipt.to !== null && isAddressEqual(receipt.to, core)
+}
+
+/** A replacement that is no speed-up is another transaction, so it is no proof of this vote. */
+type Replacement = { hash: Hex; reason: string }
+
 /** Watches the receipt of the vote. A reverted transaction names its own reason. */
 function useReceipt(
   state: AttestState,
@@ -333,18 +348,30 @@ function useReceipt(
   done: () => void,
   fail: (message: string) => void,
 ) {
-  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
+  const [replaced, setReplaced] = useState<Replacement | null>(null)
+  const receipt = useWaitForTransactionReceipt({
+    hash: txHash ?? undefined,
+    chainId: expectedChainId,
+    onReplaced: replacement => {
+      if (txHash !== null) setReplaced({ hash: txHash, reason: replacement.reason })
+    },
+  })
   useEffect(() => {
     if (state !== 'pending') return
+    if (replaced !== null && replaced.hash === txHash && replaced.reason !== 'repriced') {
+      fail(copy.attest.replaced)
+      return
+    }
     if (receipt.isSuccess) {
-      done()
+      if (receipt.data !== undefined && isVoteReceipt(receipt.data)) return done()
+      fail(receipt.data?.status === 'reverted' ? copy.attest.reverted : copy.attest.replaced)
       return
     }
     if (receipt.isError) {
       const translated = translateContractError(receipt.error)
       fail(translated?.message ?? copy.errors.unknown)
     }
-  }, [state, receipt.isSuccess, receipt.isError, receipt.error, done, fail])
+  }, [state, txHash, replaced, receipt.isSuccess, receipt.data, receipt.isError, receipt.error, done, fail])
 }
 
 type Outcome = { state: 'idle' } | { state: 'failed'; message: string } | { state: 'pending'; hash: Hex }
@@ -379,6 +406,8 @@ export function useAttest(target: AttestTarget) {
   const [txHash, setTxHash] = useState<Hex | null>(null)
   // The verdict that was sent, because the choice on the screen may change after the vote.
   const [verdict, setVerdict] = useState<Verdict | null>(null)
+  // The account that cast it, because the wallet may switch to another account afterwards.
+  const [account, setAccount] = useState<Address | null>(null)
   const fail = useCallback((message: string) => {
     setState('failed')
     setError(message)
@@ -389,6 +418,7 @@ export function useAttest(target: AttestTarget) {
   const submit = async (input: AttestInput) => {
     setError(null)
     setVerdict(input.verdict)
+    setAccount(target.address)
     const outcome = await attempt(target, input, {
       sign: signTypedDataAsync,
       write: writeContractAsync,
@@ -404,7 +434,8 @@ export function useAttest(target: AttestTarget) {
     setError(null)
     setTxHash(null)
     setVerdict(null)
+    setAccount(null)
   }, [])
 
-  return { state, error, txHash, verdict, submit, reset }
+  return { state, error, txHash, verdict, account, submit, reset }
 }

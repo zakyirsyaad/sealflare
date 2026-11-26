@@ -14,7 +14,7 @@ import { usePendingVote } from '../target/pendingVote'
 import { ReviewStep } from './ReviewStep'
 import { VerdictStep } from './VerdictStep'
 import { addFlag, canReview, chooseVerdict, emptyChoice, provedFlags, removeFlag, setQuote, type Choice } from './choice'
-import { isWorking, useAttest } from './useAttest'
+import { useAttest } from './useAttest'
 
 export type AttestPanelProps = {
   targetId: string
@@ -27,6 +27,12 @@ export type AttestPanelProps = {
   scan: ScanReport | null
   /** A challenge is open on this target. */
   underDispute: boolean
+  /**
+   * Whether the dialog is shown. The page keeps this component mounted while the dialog is closed,
+   * so the attempt, the choice and the step outlive the dialog, and closing it never loses a vote
+   * that is on its way. It is shown by default.
+   */
+  open?: boolean
   onClose: () => void
 }
 
@@ -73,14 +79,14 @@ function walletGate(user: UserState, disconnect: () => void): React.ReactNode {
  */
 function useRegisterVote(attest: Attestation, recheck: () => void) {
   const { register } = usePendingVote()
-  const { state, txHash, verdict } = attest
+  const { state, txHash, verdict, account } = attest
   useEffect(() => {
-    if (state !== 'done' || txHash === null || verdict === null) return
-    register(verdict, txHash)
+    if (state !== 'done' || txHash === null || verdict === null || account === null) return
+    register(verdict, txHash, account)
     recheck()
     // The wallet is read again once per vote. A new `recheck` function must not repeat it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, txHash, verdict, register])
+  }, [state, txHash, verdict, account, register])
 }
 
 type Pane = {
@@ -158,12 +164,12 @@ export function AttestPanel(props: AttestPanelProps) {
     />
   )
   const verdict = <VerdictPane props={props} choice={choice} setChoice={setChoice} onContinue={() => setStep('review')} />
+  if (props.open === false) return null
   return (
     <Panel
       title={step === 'verdict' ? copy.attest.action : copy.attest.review}
       marker={copy.attest.step[step === 'verdict' ? 0 : 1]}
       onClose={props.onClose}
-      closeDisabled={isWorking(attest.state)}
     >
       {walletGate(user, () => disconnect()) ?? (step === 'verdict' ? verdict : review)}
     </Panel>

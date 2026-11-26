@@ -137,7 +137,8 @@ export function ReviewStep(props: ReviewStepProps) {
           onSubmit={props.onSubmit}
           onRetry={props.onRetry}
         />
-        <Button variant="secondary" disabled={isWorking(props.state)} onClick={props.onBack}>
+        {/* After the vote was cast the summary describes it, so another choice cannot be made from here. */}
+        <Button variant="secondary" disabled={isWorking(props.state) || props.state === 'done'} onClick={props.onBack}>
           {copy.attest.back}
         </Button>
       </footer>

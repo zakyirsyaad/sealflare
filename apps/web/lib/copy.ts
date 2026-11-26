@@ -189,6 +189,8 @@ export const copy = {
     "dangerSafe": "Safe is not available for a target that was judged dangerous.",
     "noRegistry": "The registry contract address is not known.",
     "reportInvalid": "The evidence report could not be built. Nothing was signed or sent on-chain.",
+    "replaced": "The transaction was replaced or cancelled in your wallet, so this vote was not cast. Check your wallet, then try again.",
+    "reverted": "The transaction reverted on-chain, so this vote was not cast.",
     "hashMismatch": "The evidence service answered with another hash. Nothing was sent on-chain.",
     "rateLimited": "Too many evidence uploads. Try again later. Nothing was sent on-chain.",
     "invalidFlags": "These flags do not fit this verdict, so nothing was signed or sent on-chain.",
