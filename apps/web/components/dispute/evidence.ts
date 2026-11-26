@@ -8,7 +8,7 @@ import {
   utf8Length,
   type ScanReport,
 } from '@sealflare/shared/schemas'
-import { EXPIRY_SECONDS, freshNonce } from '../attest/useAttest'
+import { EXPIRY_SECONDS, freshNonce } from '../attest/report'
 import { shortProofOf, travellingScan, trimScan } from '../attest/choice'
 
 /** Everything the two approvals need, built before the wallet is asked for anything. */

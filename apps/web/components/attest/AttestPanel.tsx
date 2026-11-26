@@ -162,7 +162,11 @@ export function AttestPanel(props: AttestPanelProps) {
     <Panel
       title={step === 'verdict' ? copy.attest.action : copy.attest.review}
       marker={copy.attest.step[step === 'verdict' ? 0 : 1]}
-      onClose={props.onClose}
+      onClose={() => {
+        // The attempt stops at its next step, so a late signature sends nothing.
+        attest.cancel()
+        props.onClose()
+      }}
       closeDisabled={isLocked(attest.state)}
     >
       {walletGate(user, () => disconnect()) ?? (step === 'verdict' ? verdict : review)}

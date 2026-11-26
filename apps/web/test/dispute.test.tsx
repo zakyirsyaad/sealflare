@@ -267,7 +267,7 @@ test('the page names the four endings and what each returns', () => {
   }
   // The money and the XP come from the rules, never from a second copy of them in the copy.
   expect(within(table).getByText('80%, 50% or 0% of the stake back')).toBeInTheDocument()
-  expect(within(table).getByText(`Stake lost, ${Math.abs(XP.CHALLENGER_LOST)} XP`)).toBeInTheDocument()
+  expect(within(table).getByText(`Stake lost, ${XP.CHALLENGER_LOST} XP`)).toBeInTheDocument()
 })
 
 test('with modules not live the dispute page shows the fixed sentence and no dispute', () => {

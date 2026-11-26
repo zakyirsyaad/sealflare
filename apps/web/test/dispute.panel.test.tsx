@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { CONSTANTS, FLAGS } from '@sealflare/shared/rules'
@@ -269,6 +269,37 @@ test('the panel is locked while the receipt of the transaction is waited for', a
   await waitFor(() => expect(screen.getByRole('button', { name: copy.common.close })).toBeDisabled())
   document.querySelector('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }))
   expect(closed).not.toHaveBeenCalled()
+})
+
+test('the attempt stops when the panel was left, so a late signature pins nothing', async () => {
+  // The wallet answers after the panel was closed: the evidence is not pinned and no stake is sent.
+  let sign!: (value: string) => void
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise((resolve) => { sign = resolve }))
+  const closed = vi.fn()
+  render(
+    <ChallengePanel targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} onClose={closed} />,
+  )
+  await toReview()
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submit }))
+  await userEvent.click(screen.getByRole('button', { name: copy.common.close }))
+  expect(closed).toHaveBeenCalled()
+  await act(async () => { sign(`0x${'11'.repeat(65)}`) })
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
+test('the attempt stops when the panel goes away, so a late signature pins nothing', async () => {
+  let sign!: (value: string) => void
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise((resolve) => { sign = resolve }))
+  const view = render(
+    <ChallengePanel targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} onClose={() => {}} />,
+  )
+  await toReview()
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submit }))
+  view.unmount()
+  await act(async () => { sign(`0x${'11'.repeat(65)}`) })
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
 })
 
 // ---- the cooldown ---------------------------------------------------------------------------

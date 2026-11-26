@@ -101,7 +101,7 @@ test('the receipt of the vote is waited for on the chain the vote was sent on', 
   await submit()
   await waitFor(() => expect(wagmi.receiptParams.at(-1)?.hash).toBe(txHash), { timeout: 5_000 })
   expect(wagmi.receiptParams.at(-1)?.chainId).toBe(56)
-}), 20_000
+}, 20_000)
 
 test('a vote the wallet cancelled is a failure, never a pending vote', async () => {
   panel()
@@ -111,7 +111,7 @@ test('a vote the wallet cancelled is a failure, never a pending vote', async () 
   act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled' }))
   expect(await screen.findByRole('alert', {}, { timeout: 5_000 })).toHaveTextContent(copy.errors.txReplaced)
   expect(screen.queryByRole('button', { name: copy.attest.pending })).toBeNull()
-}), 20_000
+}, 20_000)
 
 test('the panel can be left while the wallet is asking', async () => {
   // A wallet prompt that never settles must not keep the panel on the screen for ever.
@@ -123,4 +123,19 @@ test('the panel can be left while the wallet is asking', async () => {
   expect(screen.getByRole('button', { name: copy.common.close })).toBeEnabled()
   document.querySelector('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }))
   expect(closed).toHaveBeenCalled()
-}), 20_000
+}, 20_000)
+
+test('the attempt stops when the panel was left, so a late signature pins nothing', async () => {
+  // The wallet answers after the panel was closed: the evidence is not pinned and no vote is sent.
+  let sign!: (value: string) => void
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise((resolve) => { sign = resolve }))
+  const closed = vi.fn()
+  render(<AttestPanel {...panelProps({ onClose: closed })} />)
+  await toReview()
+  await submit()
+  await userEvent.click(screen.getByRole('button', { name: copy.common.close }))
+  expect(closed).toHaveBeenCalled()
+  await act(async () => { sign(`0x${'11'.repeat(65)}`) })
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+}, 20_000)
