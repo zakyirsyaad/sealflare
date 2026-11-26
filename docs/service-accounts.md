@@ -24,7 +24,7 @@ VPS, or as GitHub Actions secrets, by the founder.
 | 7 | Vercel | Done: project `sealflare`, root `apps/web`, see [deploy/README.md](../deploy/README.md) | 1 Dec (release) |
 | 8 | VPS | Oracle VPS `vps-oracle`, set up in [deploy/README.md](../deploy/README.md): Postgres and daily `pg_dump` run; the internal service, indexer and worker are added when built. Copying dumps off the VPS is still to be decided | 1 Dec for the indexer and internal service, 4 Dec for the worker |
 | 9 | Treasury | An address (ideally a multisig) that receives fees; passed as `TREASURY` to `DeployModules` | testnet rehearsal |
-| 10 | Deployer | The hardware wallet that deploys `Core` and calls `setModules` once | testnet rehearsal |
+| 10 | Deployer | A fresh account used only to deploy `Core` and call `setModules` once, held as a password-encrypted Foundry keystore (`~/.foundry/keystores/deployer`) | testnet rehearsal |
 
 ## Variables
 
@@ -67,4 +67,5 @@ openssl rand -base64 48
 - Postgres is never exposed to the internet; only containers on the VPS reach it.
 - Rotate any key that appears in a log, a screenshot, a chat, or a commit. Push protection and the
   gitleaks check in CI catch the common formats, not all of them.
-- The deployer key never exists as a file. Deploy scripts accept only `--ledger`.
+- The deployer key exists only as a password-encrypted keystore. Deploy scripts sign with
+  `--account deployer`; no path accepts a raw private key, and none is ever put in `.env`.
