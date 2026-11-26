@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { Button } from '../ui/Button'
-import type { ChallengePhase } from '../../lib/chain/court'
+import { courtAddress, type ChallengePhase } from '../../lib/chain/court'
 import { copy } from '../../lib/copy'
 import { JoinPanel } from './JoinPanel'
 import { RevealPanel } from './RevealPanel'
@@ -29,6 +29,8 @@ export function JuryActions({ challengeId, phase, commitEndsAt, revealEndsAt }: 
     setPanel(null)
     void refetch()
   }
+  // Without a Court there is no jury to join, so the box says that instead of offering a button.
+  if (courtAddress() === null) return <p className="sf-lead">{copy.dispute.noCourt}</p>
   if (phase === null) return null
   const committed = juror?.committed === true
   const revealed = juror?.revealed === true

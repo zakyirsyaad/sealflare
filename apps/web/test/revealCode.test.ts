@@ -250,6 +250,17 @@ test('entries of the list that are not codes of this challenge are left out', ()
   expect(loadRevealCodes(12n, JUROR)).toEqual([mine])
 })
 
+test('a bare code from an earlier build is read as a list of one, and the next save keeps it', () => {
+  const code = newRevealCode(12n, true)
+  // An earlier build kept one bare code under the key, without a list around it.
+  localStorage.setItem(`sealflare:reveal:56:${JUROR.toLowerCase()}:12`, code)
+  expect(loadRevealCodes(12n, JUROR)).toEqual([code])
+  expect(loadRevealCode(12n, JUROR)).toBe(code)
+  const second = newRevealCode(12n, false)
+  expect(saveRevealCode(second, JUROR)).toBe(true)
+  expect(loadRevealCodes(12n, JUROR)).toEqual([code, second])
+})
+
 test('the browser is asked up front whether it can keep a code, and it leaves nothing behind', () => {
   expect(canKeepRevealCode()).toBe(true)
   expect(localStorage.length).toBe(0)

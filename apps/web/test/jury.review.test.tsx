@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
@@ -139,23 +139,79 @@ test('a commit the Court refuses because the juror already committed is not a fa
   )
   join_()
   await commit()
-  // The vote is on the chain, so the panel says so and offers no retry that could never work.
-  expect(await screen.findByText(copy.jury.committedTitle)).toBeInTheDocument()
+  // The vote is on the chain, so there is nothing to retry, but it is not the code of this panel.
+  expect(await screen.findByText(copy.jury.committedElsewhere)).toBeInTheDocument()
+  expect(screen.queryByText(copy.jury.committedTitle)).toBeNull()
   expect(screen.queryByRole('button', { name: copy.common.retry })).toBeNull()
+})
+
+test('a commit the Court holds with the code of this panel is confirmed, even when the transaction failed', async () => {
+  // The transaction failed, but the Court holds the very commit that was sent.
+  wagmi.writeContractAsync.mockImplementation(async (call: { args: readonly unknown[] }) => {
+    const current = wagmi.reads.current.getJuror as Record<string, unknown>
+    wagmi.reads.current.getJuror = { ...current, committed: true, commitHash: call.args[1] }
+    throw Object.assign(new Error('reverted'), { name: 'ContractFunctionRevertedError', data: { errorName: 'AlreadyCommitted', args: [] } })
+  })
+  join_()
+  await commit()
+  expect(await screen.findByText(copy.jury.committedTitle)).toBeInTheDocument()
+  expect(screen.queryByText(copy.jury.committedElsewhere)).toBeNull()
+  expect(screen.queryByRole('button', { name: copy.common.retry })).toBeNull()
+})
+
+test('a commit that the chain shows later turns the miss into the confirmation', async () => {
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  join_()
+  const code = await commit()
+  // The chain shows nothing yet, so the panel says that it does not show the commit.
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
+  // The commit turns up on the chain afterwards, so the panel confirms it after all.
+  wagmi.reads.current.getJuror = {
+    committed: true,
+    revealed: false,
+    uphold: false,
+    weight: 3,
+    commitHash: commitHashFor(code, ME),
+  }
+  expect(await screen.findByText(copy.jury.committedTitle)).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('a read that failed keeps the panel checking, and never calls the vote missing', async () => {
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  wagmi.readErrors.current.getJuror = true
+  join_()
+  await commit()
+  expect(await screen.findByText(copy.jury.verifying)).toBeInTheDocument()
+  // The reads keep failing, so nothing is known and nothing is said about the vote.
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 2500))
+  })
+  expect(screen.getByText(copy.jury.verifying)).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 test('while the chain is being asked, the panel says so and shows no confirmation', async () => {
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
-  chainTakes('commit')
+  let code = ''
   let release: () => void = () => {}
   wagmi.refetch.mockImplementationOnce(
     () =>
       new Promise(resolve => {
-        release = () => resolve({ data: wagmi.reads.current.getJuror })
+        release = () => {
+          wagmi.reads.current.getJuror = {
+            committed: true,
+            revealed: false,
+            uphold: false,
+            weight: 3,
+            commitHash: commitHashFor(code, ME),
+          }
+          resolve({ data: wagmi.reads.current.getJuror, isError: false })
+        }
       }),
   )
   join_()
-  await commit()
+  code = await commit()
   expect(await screen.findByText(copy.jury.verifying)).toBeInTheDocument()
   expect(screen.queryByText(copy.jury.committedTitle)).toBeNull()
   release()

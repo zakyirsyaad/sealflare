@@ -9,6 +9,14 @@ import { useUserState } from '../../lib/chain/userState'
 /** What the Court holds about one juror in one dispute. */
 export type JurorState = { committed: boolean; revealed: boolean; uphold: boolean; commitHash: Hex }
 
+/**
+ * What one read of the Court answered.
+ *
+ * `failed` is true when the read itself failed. A read that failed says nothing about the vote, so
+ * it must not be taken for an answer that shows nothing.
+ */
+export type JurorRead = { juror: JurorState | null; failed: boolean }
+
 export type JurorChain = {
   /** The wallet that is connected, or null. */
   account: Address | null
@@ -16,8 +24,8 @@ export type JurorChain = {
   status: number | null
   /** Null until the Court answers. */
   juror: JurorState | null
-  /** Reads both again and answers with the commitment the Court holds now. Null when it cannot be read. */
-  refetch: () => Promise<JurorState | null>
+  /** Reads both again and answers with the commitment the Court holds now. */
+  refetch: () => Promise<JurorRead>
 }
 
 /** How often the Court is asked again, so the box follows a commit or a reveal without a reload. */
@@ -57,9 +65,10 @@ export function useJuror(challengeId: string): JurorChain {
     refetch: async () => {
       try {
         const [, read] = await Promise.all([status.refetch(), juror.refetch()])
-        return asJuror(read?.data)
+        // A read that failed keeps the last answer that worked, and says that it failed.
+        return { juror: asJuror(read?.data), failed: read?.isError === true }
       } catch {
-        return null
+        return { juror: null, failed: true }
       }
     },
   }

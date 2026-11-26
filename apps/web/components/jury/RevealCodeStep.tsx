@@ -3,9 +3,10 @@ import { useState } from 'react'
 import type { Address } from 'viem'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { canKeepRevealCode, commitHashFor, newRevealCode } from '../../lib/revealCode'
+import { canKeepRevealCode, commitHashFor, loadRevealCode, newRevealCode } from '../../lib/revealCode'
 import { AttestButton } from '../attest/AttestButton'
 import type { AttestState } from '../attest/useAttest'
+import type { JurorState } from './useJuror'
 
 export type RevealCodeStepProps = {
   challengeId: bigint
@@ -21,8 +22,8 @@ export type RevealCodeStepProps = {
   keptFailed: boolean
   /** The Court is being asked whether it holds the commit. */
   checking: boolean
-  /** The Court already holds a commit for this wallet, so there is nothing left to send. */
-  committedOnChain: boolean
+  /** The commit the Court holds for this wallet, or null when it holds none. */
+  held: JurorState | null
   onCommit: (code: string) => void
   onBack: () => void
 }
@@ -116,6 +117,22 @@ function useHandout(code: string, challengeId: bigint, account: Address, window:
 }
 
 /**
+ * What the Court holds when it holds another code than the one of this panel.
+ *
+ * Only the code that was committed can reveal the vote, so the panel says so, and it points at the
+ * code this browser keeps when it keeps it.
+ */
+function CommittedElsewhere({ held, challengeId, account }: { held: JurorState; challengeId: bigint; account: Address }) {
+  const saved = loadRevealCode(challengeId, account, held.commitHash) !== null
+  return (
+    <section className="sf-stack">
+      <p className="sf-lead">{copy.jury.committedElsewhere}</p>
+      {saved && <p className="sf-lead">{copy.jury.committedCodeSaved}</p>}
+    </section>
+  )
+}
+
+/**
  * The third step: the reveal code, which the juror has to copy or download before the commit.
  *
  * The code is made once, when the step opens, and is never derived from a signature. The commit
@@ -124,6 +141,10 @@ function useHandout(code: string, challengeId: bigint, account: Address, window:
 export function RevealCodeStep(props: RevealCodeStepProps) {
   const [code] = useState(() => newRevealCode(props.challengeId, props.uphold))
   const handout = useHandout(code, props.challengeId, props.account, props.window)
+  const held = props.held
+  // The commit on the chain is the one of this panel only when the hash says so.
+  const mine = held !== null && held.commitHash === commitHashFor(code, props.account).toLowerCase()
+  const elsewhere = held !== null && !mine
   return (
     <>
       <section className="sf-stack">
@@ -142,12 +163,13 @@ export function RevealCodeStep(props: RevealCodeStepProps) {
         <p className="sf-lead">{props.keptFailed ? copy.jury.localFailed : copy.jury.localNote}</p>
       </section>
       {props.checking && <p className="sf-lead" role="status">{copy.jury.verifying}</p>}
-      {(props.state === 'done' || props.committedOnChain) && (
+      {(props.state === 'done' || mine) && (
         <Confirmation window={props.window} keptFailed={props.keptFailed} onDownload={handout.downloadCode} />
       )}
+      {elsewhere && held !== null && <CommittedElsewhere held={held} challengeId={props.challengeId} account={props.account} />}
       <footer className="sf-panel__footer">
         {/* A vote the Court already holds has nothing to retry, so no button is offered. */}
-        {!props.committedOnChain && (
+        {!mine && !elsewhere && (
           <AttestButton
             state={props.state}
             error={props.error}

@@ -307,9 +307,22 @@ test('a deployment without a Court address says so instead of doing nothing', as
     core: '0x1000000000000000000000000000000000000001',
   })
   reveal()
-  await userEvent.click(revealButton())
-  expect(await screen.findByRole('alert')).toHaveTextContent(copy.dispute.noCourt)
+  // There is no Court to reveal to, so the panel says that and offers nothing to press.
+  expect(await screen.findByText(copy.dispute.noCourt)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: copy.jury.reveal })).toBeNull()
+  expect(screen.queryByLabelText(copy.jury.pasteCode)).toBeNull()
   expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
+test('the jury box says so when the deployment has no Court address', () => {
+  process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({
+    chainId: 56,
+    agentId: '0x3000000000000000000000000000000000000003',
+    core: '0x1000000000000000000000000000000000000001',
+  })
+  actions('COMMIT')
+  expect(screen.getByText(copy.dispute.noCourt)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: copy.jury.join })).toBeNull()
 })
 
 // ---- review of the lead on #41 ---------------------------------------------------------------

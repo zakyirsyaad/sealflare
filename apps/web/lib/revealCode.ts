@@ -58,15 +58,34 @@ const MAX_KEPT = 50
 
 /** The codes kept under a key, oldest first. Anything that is not a code of this challenge is left out. */
 function readList(challengeId: bigint, juror: Address): string[] {
+  const stored = readStored(challengeId, juror)
+  if (stored === null) return []
+  return asCodes(stored).filter(code => parseRevealCode(code)?.challengeId === challengeId)
+}
+
+/** The text under the key, or null when the browser keeps nothing or refuses to answer. */
+function readStored(challengeId: bigint, juror: Address): string | null {
   try {
-    const stored = localStorage.getItem(keyOf(challengeId, juror))
-    if (stored === null) return []
-    const list: unknown = JSON.parse(stored)
-    if (!Array.isArray(list)) return []
-    return list.filter((item): item is string => typeof item === 'string' && parseRevealCode(item)?.challengeId === challengeId)
+    return localStorage.getItem(keyOf(challengeId, juror))
   } catch {
-    return []
+    return null
   }
+}
+
+/**
+ * The stored text as a list of codes.
+ *
+ * A browser that ran an earlier build of this page kept a bare code under the key, so a text that is
+ * not a list is read as a list of one. That code is a stake that must not be lost.
+ */
+function asCodes(stored: string): string[] {
+  try {
+    const list: unknown = JSON.parse(stored)
+    if (Array.isArray(list)) return list.filter((item): item is string => typeof item === 'string')
+  } catch {
+    // The text is not a list, so it can still be a bare code of an earlier build.
+  }
+  return parseRevealCode(stored) === null ? [] : [stored.trim()]
 }
 
 /**

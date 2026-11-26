@@ -14,7 +14,7 @@ import { walletGate } from '../attest/AttestPanel'
 import { confirmedView, useConfirmation, useHeldByChain } from './confirmation'
 import { SummaryStep, VoteStep } from './JoinSteps'
 import { RevealCodeStep } from './RevealCodeStep'
-import { useJuror } from './useJuror'
+import { useJuror, type JurorState } from './useJuror'
 import { utcOf } from './schedule'
 
 export type JoinPanelProps = {
@@ -72,16 +72,16 @@ export function JoinPanel(props: JoinPanelProps) {
   const chain = useJuror(props.challengeId)
   const { tx, keptFailed, commit, blocked, sent } = useCommit(props.challengeId, chain.account)
   // The commit counts once the Court holds it for this wallet, with the hash of the code that was sent.
-  const outcome = useConfirmation(tx.state, chain.refetch, juror => {
+  const isMine = (juror: JurorState | null): boolean => {
     if (sent.current === null || chain.account === null || juror === null) return false
     return juror.committed && juror.commitHash === commitHashFor(sent.current, chain.account).toLowerCase()
-  })
+  }
+  const outcome = useConfirmation(tx.state, chain.refetch, chain.juror, isMine)
   // A commit that was refused because the juror already committed on the chain is not a failure to
-  // retry: the vote is in, and retrying would be refused the same way for ever.
-  const already = useHeldByChain(tx.state, chain.refetch, juror => juror?.committed === true)
-  const view = already
-    ? { state: 'idle' as const, error: null, checking: false }
-    : confirmedView(tx, outcome, copy.jury.commitNotFound)
+  // retry: the vote is in, and retrying would be refused the same way for ever. The hash tells
+  // whether it is the code of this panel, or another one that only this wallet can reveal.
+  const held = useHeldByChain(tx.state, chain.refetch, juror => juror?.committed === true)
+  const view = held !== null ? { state: 'idle' as const, error: null, checking: false } : confirmedView(tx, outcome, copy.jury.commitNotFound)
   const from = utcOf(props.commitEndsAt)
   const to = utcOf(props.revealEndsAt)
   const body =
@@ -102,7 +102,7 @@ export function JoinPanel(props: JoinPanelProps) {
         state={blocked ? 'failed' : view.state}
         error={blocked ? copy.dispute.noCourt : view.error}
         checking={view.checking}
-        committedOnChain={already}
+        held={held}
         txHash={tx.txHash}
         window={copy.jury.revealWindow.replace('{from}', from).replace('{to}', to)}
         keptFailed={keptFailed}

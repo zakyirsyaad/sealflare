@@ -29,6 +29,8 @@ const voteWord = (uphold: boolean): string => copy.jury.yourVote.replace('{vote}
 
 /** Why nothing can be revealed right now, or null when the juror may reveal. */
 function reasonOf(props: RevealPanelProps, juror: JurorState | null): string | null {
+  // Without a Court there is nothing to reveal to, so the panel says that instead of asking.
+  if (courtAddress() === null) return copy.dispute.noCourt
   if (props.phase === 'COMMIT') return copy.jury.revealNotOpen.replace('{time}', utcOf(props.commitEndsAt))
   if (props.phase === 'AWAITING_CLOSE' || props.phase === 'CLOSED') return copy.jury.revealOver
   if (props.phase === null) return copy.jury.readingCommit
@@ -65,7 +67,8 @@ function useReveal({ challengeId, account, juror, tx }: Omit<FormProps, 'outcome
   const source = pasted.trim() !== '' ? pasted : stored
   const reveal = () => {
     if (source === null || juror === null) return
-    if (court === null) return setProblem(copy.dispute.noCourt)
+    // The panel is not offered without a Court, so this only keeps a stray call from sending nothing.
+    if (court === null) return
     const checked = checkRevealCode(source, challengeId, account, juror.commitHash)
     if (!checked.ok) return setProblem(checked.message)
     setProblem(null)
@@ -152,7 +155,7 @@ export function RevealPanel(props: RevealPanelProps) {
   const chain = useJuror(props.challengeId)
   const tx = useWriteTx()
   // The reveal counts once the Court says the vote is open, not when a receipt comes back.
-  const outcome = useConfirmation(tx.state, chain.refetch, juror => juror?.revealed === true)
+  const outcome = useConfirmation(tx.state, chain.refetch, chain.juror, juror => juror?.revealed === true)
   const reason = reasonOf(props, chain.juror)
   const revealed = chain.juror?.revealed === true
   // A reveal that was sent keeps its form, so the answer of the chain cannot take it away

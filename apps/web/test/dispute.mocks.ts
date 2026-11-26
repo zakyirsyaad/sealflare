@@ -16,7 +16,7 @@ export const wagmi = {
     refetchInterval?: number
   }[],
   /** Reads again and answers with what the chain holds now, as `refetch` of a read does. */
-  refetch: vi.fn(async (name: string) => ({ data: wagmi.reads.current[name] })),
+  refetch: vi.fn(async (name: string) => ({ data: wagmi.reads.current[name], isError: wagmi.readErrors.current[name] === true })),
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } as Record<string, unknown> },
   receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
   block: { current: { timestamp: BigInt(Math.floor(NOW.getTime() / 1000)) } },
@@ -46,7 +46,8 @@ export const wagmiModule = {
       refetchInterval: params.query?.refetchInterval as number | undefined,
     })
     return {
-      data: wagmi.reads.current[params.functionName],
+      // A read that is turned off answers nothing, as a read of a contract that is not there does.
+      data: params.query?.enabled === false ? undefined : wagmi.reads.current[params.functionName],
       isLoading: false,
       isError: wagmi.readErrors.current[params.functionName] === true,
       refetch: () => wagmi.refetch(params.functionName),

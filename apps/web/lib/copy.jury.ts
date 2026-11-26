@@ -58,5 +58,7 @@ export const jury = {
   "copyTimeNote": "Copying the time replaces what is on your clipboard, including the reveal code.",
   "downloadRequired": "This browser cannot keep a copy of the code. Download it before you commit.",
   "downloadAgainRequired": "This browser did not keep a copy of the code, so download it now. The file is the only copy you have.",
+  "committedElsewhere": "This wallet already committed with another code. Only that code can reveal the vote.",
+  "committedCodeSaved": "The code that was committed is kept in this browser, so you can reveal the vote from this device.",
   "revealWhy": "Revealing opens your vote for everyone. Nothing is sent until the code matches the vote you committed."
 } as const
