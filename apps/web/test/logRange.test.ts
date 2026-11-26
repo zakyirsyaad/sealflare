@@ -16,6 +16,11 @@ test('a span that would need more than the cap of requests is refused instead of
   expect(() => ranges(0n, BigInt(MAX_LOG_RANGES) * 10n - 1n, 10n)).not.toThrow()
 })
 
+test('the window covers ten million blocks, about three months of BNB Chain', () => {
+  expect(MAX_LOG_RANGES * Number(LOG_RANGE)).toBe(10_000_000)
+  expect(() => ranges(0n, 9_999_999n)).not.toThrow()
+})
+
 test('the logs of all ranges come back in order', async () => {
   const fetchRange = vi.fn(async (from: bigint) => [`log@${from}`])
   const logs = await collectLogs(fetchRange, 0n, 25_000n, 10_000n)
