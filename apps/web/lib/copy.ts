@@ -483,7 +483,7 @@ export const copy = {
     "settled": "This bounty has been settled.",
     "amount": "{amount} BNB",
     "created": "Created",
-    "empty": "There are no bounties yet.",
+    "empty": "There are no open bounties yet.",
     "emptyAction": "Scan a target",
     "readFailed": "The bounties could not be read.",
     "loadFailed": "The bounty of this target could not be read.",

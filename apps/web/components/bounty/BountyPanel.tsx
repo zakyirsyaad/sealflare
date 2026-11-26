@@ -1,10 +1,10 @@
 'use client'
 import { useId, useRef, useState } from 'react'
-import { useConnect, useConnectors } from 'wagmi'
 import type { Hex } from 'viem'
 import { CONSTANTS } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { Panel } from '../ui/Panel'
+import { ConnectSection } from '../wallet/ConnectSection'
 import { WrongNetwork } from '../wallet/WrongNetwork'
 import { TransactionLink } from '../attest/AttestButton'
 import { modulesLive } from '../../lib/chain/config'
@@ -23,32 +23,6 @@ export type BountyPanelProps = {
   /** Whether the dialog is shown. */
   open?: boolean
   onClose: () => void
-}
-
-/** The wallet has to be connected before anything can be signed. */
-function ConnectSection() {
-  const connectors = useConnectors()
-  const { mutate, isPending, error } = useConnect()
-  return (
-    <section className="sf-stack">
-      <h3 className="sf-stack__title">{copy.wallet.connectTitle}</h3>
-      <p className="sf-lead">{copy.bounty.walletNeeded}</p>
-      <ul className="sf-connectors">
-        {connectors.map(connector => (
-          <li key={connector.uid}>
-            <Button className="sf-btn--block" disabled={isPending} onClick={() => mutate({ connector })}>
-              {connector.name}
-            </Button>
-          </li>
-        ))}
-      </ul>
-      {error !== null && error !== undefined && (
-        <p role="alert" className="sf-error">
-          {copy.wallet.connectFailed}
-        </p>
-      )}
-    </section>
-  )
 }
 
 /** The slots a bounty may have, as a radio group with the arrow keys of the radio pattern. */
@@ -242,7 +216,7 @@ function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>
     <Panel title={copy.target.fundBounty} onClose={onClose} closeDisabled={busy}>
       {gate.disabled && <p className="sf-lead">{gate.reason}</p>}
       <Summary amount={wei !== null && wei > 0n ? formatBnb(wei) : null} />
-      {!gate.disabled && user.kind === 'no-wallet' && <ConnectSection />}
+      {!gate.disabled && user.kind === 'no-wallet' && <ConnectSection what={copy.bounty.walletNeeded} />}
       {!gate.disabled && user.kind === 'wrong-network' && <WrongNetwork />}
       {!gate.disabled && connected && (
         <div className="sf-stack">

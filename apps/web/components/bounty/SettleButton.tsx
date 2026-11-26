@@ -1,12 +1,13 @@
 'use client'
-import { BountySummary } from '@sealflare/shared/schemas'
+import type { BountySummary } from '@sealflare/shared/schemas'
 import { Button } from '../ui/Button'
+import { ConnectSection } from '../wallet/ConnectSection'
 import { WrongNetwork } from '../wallet/WrongNetwork'
 import { TransactionLink } from '../attest/AttestButton'
 import { useUserState } from '../../lib/chain/userState'
 import { copy } from '../../lib/copy'
 import { canSettle } from '../../lib/bounty/settle'
-import { useBounty } from '../../lib/bounty/useBounty'
+import { useBounty, type BountyStatus } from '../../lib/bounty/useBounty'
 
 export type SettleButtonProps = {
   bounty: BountySummary
@@ -31,7 +32,7 @@ function numericId(id: string): bigint | null {
 }
 
 /** The states of the write: it is on its way, it failed, or it landed. */
-function WriteStates({ status, error, txHash, onRetry }: { status: string; error: string | null; txHash: string | null; onRetry: () => void }) {
+function WriteStates({ status, error, txHash, onRetry }: { status: BountyStatus; error: string | null; txHash: string | null; onRetry: () => void }) {
   if (status === 'done') {
     return (
       <div className="sf-stack">
@@ -74,16 +75,18 @@ export function SettleButton({ bounty, now }: SettleButtonProps) {
   const id = numericId(bounty.id)
   if (now === null || id === null) return null
   if (!canSettle(bounty, new Date(now * 1000))) return null
-  if (user.kind === 'no-wallet') return <p className="sf-lead">{copy.bounty.settleWalletNeeded}</p>
+  if (user.kind === 'no-wallet') return <ConnectSection what={copy.bounty.settleWalletNeeded} />
   if (user.kind === 'wrong-network') return <WrongNetwork />
   // While the wallet is still being read, nothing is offered that needs it.
   if (user.kind === 'checking') return null
   const busy = state.status === 'sending'
   return (
     <div className="sf-stack">
-      <Button variant="primary" disabled={busy} onClick={() => void settleBounty(id)}>
-        {busy ? copy.attest.pending : copy.bounty.settle}
-      </Button>
+      {(state.status === 'idle' || busy) && (
+        <Button variant="primary" disabled={busy} onClick={() => void settleBounty(id)}>
+          {busy ? copy.attest.pending : copy.bounty.settle}
+        </Button>
+      )}
       <p className="sf-lead">{copy.bounty.gas}</p>
       <WriteStates status={state.status} error={state.error} txHash={state.txHash} onRetry={() => void settleBounty(id)} />
     </div>

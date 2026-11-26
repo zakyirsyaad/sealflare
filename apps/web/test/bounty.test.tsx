@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => ({
   block: { timestamp: 1_800_000_000 },
   blockFails: false,
   connectError: null as Error | null,
+  noRegistry: false,
   fetch: vi.fn(),
   loadBounties: vi.fn(),
 }))
@@ -61,7 +62,11 @@ vi.mock('../lib/chain/config', () => ({
   agentIdUrl: 'https://agent-id.example/get',
 }))
 vi.mock('../lib/chain/addresses', () => ({
-  addresses: () => ({ agentId: me, core: me, court: null, vault }),
+  addresses: () => {
+    // The registry cannot be read, so the state of the wallet stays unknown.
+    if (mocks.noRegistry) throw new Error('the registry is not configured')
+    return { agentId: me, core: me, court: null, vault }
+  },
 }))
 vi.mock('../server/bounties', () => ({ loadBounties: mocks.loadBounties }))
 vi.mock('../lib/env.public', () => ({
@@ -144,6 +149,7 @@ beforeEach(() => {
   mocks.block = { timestamp: NOW }
   mocks.blockFails = false
   mocks.connectError = null
+  mocks.noRegistry = false
   mocks.write.mockResolvedValue(`0x${'22'.repeat(32)}`)
   mocks.fetch.mockResolvedValue(answer([bounty()]))
   mocks.loadBounties.mockResolvedValue([bounty()])
@@ -234,6 +240,43 @@ test('a write the wallet refuses goes back to the summary, without a message', a
   await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1))
   expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.getByRole('button', { name: copy.bounty.create })).toBeEnabled()
+})
+
+test('the reason of the contract is named when the write is refused', async () => {
+  const reverted = Object.assign(new Error('the vault refused'), {
+    name: 'ContractFunctionRevertedError',
+    data: { errorName: 'BountyNotSettleable', args: [] },
+  })
+  mocks.write.mockRejectedValueOnce(reverted)
+  render(<BountyPanel targetId={targetId} onClose={() => {}} />)
+  await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
+  await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('This bounty cannot be settled yet.')
+})
+
+test('the panel cannot be closed while the transaction is on its way', async () => {
+  mocks.write.mockReturnValue(new Promise(() => {}))
+  render(<BountyPanel targetId={targetId} onClose={() => {}} />)
+  await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
+  await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
+  await waitFor(() => expect(screen.getByRole('button', { name: copy.common.close })).toBeDisabled())
+})
+
+test('a full bounty whose moment is later than the seven days waits for the seven days', async () => {
+  mocks.fetch.mockResolvedValue(
+    answer([bounty({ filled: 3, slots: 3, createdAt: daysAgo(2), settleableAt: daysFromNow(9) })]),
+  )
+  render(<BountyTab targetId={targetId} />)
+  expect(await screen.findByText(copy.bounty.settleAt.replace('{time}', formatUtc(NOW + 5 * 86_400)))).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: copy.bounty.settle })).toBeNull()
+})
+
+test('the settlement is not offered while the state of the wallet is unknown', async () => {
+  mocks.noRegistry = true
+  mocks.fetch.mockResolvedValue(answer([bounty({ filled: 2, slots: 3, settleableAt: null, createdAt: daysAgo(8) })]))
+  render(<BountyTab targetId={targetId} />)
+  await screen.findByText(copy.bounty.filled.replace('{filled}', '2').replace('{slots}', '3'))
+  expect(screen.queryByRole('button', { name: copy.bounty.settle })).toBeNull()
 })
 
 test('a wallet that cannot be connected is named', () => {
