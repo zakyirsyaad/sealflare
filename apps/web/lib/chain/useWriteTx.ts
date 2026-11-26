@@ -63,14 +63,20 @@ export function useWriteTx() {
   useEffect(() => {
     if (state !== 'pending') return
     if (receipt.isSuccess) {
-      setState('done')
+      // A transaction that was mined and reverted still resolves the wait, so its status is read.
+      if (receipt.data?.status === 'reverted') {
+        setState('failed')
+        setError(copy.errors.unknown)
+      } else {
+        setState('done')
+      }
       return
     }
     if (receipt.isError) {
       setState('failed')
       setError(translateContractError(receipt.error)?.message ?? copy.errors.unknown)
     }
-  }, [state, receipt.isSuccess, receipt.isError, receipt.error])
+  }, [state, receipt.isSuccess, receipt.data?.status, receipt.isError, receipt.error])
 
   const send = useCallback(
     async (request: TxRequest) => {

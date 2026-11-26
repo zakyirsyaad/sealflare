@@ -88,7 +88,8 @@ function Penalties(props: { targetId: string; account: Address | null }) {
       why={copy.dispute.penaltiesWhy}
       account={props.account}
       request={
-        core === null
+        // With no attestation known the call would apply nothing and still cost gas.
+        core === null || attestations === 0
           ? null
           : { address: core, abi: coreAbi, functionName: 'applyPenalties', args: [props.targetId, 0, attestations] }
       }

@@ -40,10 +40,56 @@ function useCooldownEnd(targetId: string): bigint | null {
   return Number(ends) * 1000 > Date.now() ? ends : null
 }
 
-/** The button that opens the panel, or the reason it cannot. */
+/** The id of the challenge the Court holds open on this target, or null. Undefined until the Court answers. */
+function useOpenChallenge(targetId: string) {
+  const court = courtAddress()
+  const read = useReadContract({
+    abi: courtAbi,
+    address: court ?? undefined,
+    chainId: expectedChainId,
+    functionName: 'activeChallengeOf',
+    args: [targetId as `0x${string}`],
+    query: { enabled: court !== null, refetchInterval: 15_000 },
+  })
+  const open = typeof read.data === 'bigint' ? (read.data > 0n ? read.data.toString() : null) : undefined
+  return { open, refetch: read.refetch }
+}
+
+/**
+ * The link to the open challenge, or the button that opens the panel, or the reason it cannot.
+ *
+ * The open challenge is read from the Court, so a challenge opened a moment ago turns the button
+ * into a link without a reload. Until the Court answers, the page's own reading stands.
+ */
 function LiveChallenge(props: ChallengeActionProps) {
   const [open, setOpen] = useState(false)
   const cooldownEnd = useCooldownEnd(props.targetId)
+  const active = useOpenChallenge(props.targetId)
+  const openId = active.open === undefined ? props.activeChallengeId : active.open
+  // The panel is kept while it is open: a challenge it just sent must not take the panel away
+  // while the transaction is still being confirmed.
+  const panel = open && (
+    <ChallengePanel
+      targetId={props.targetId}
+      targetType={props.targetType}
+      label={props.label}
+      scan={props.scan}
+      onClose={() => {
+        setOpen(false)
+        void active.refetch()
+      }}
+    />
+  )
+  if (openId !== null) {
+    return (
+      <>
+        <a className="sf-btn sf-btn--secondary sf-btn--block" href={`/app/disputes/${openId}`}>
+          {copy.dispute.viewOpen}
+        </a>
+        {panel}
+      </>
+    )
+  }
   return (
     <>
       <Button variant="secondary" className="sf-btn--block" disabled={cooldownEnd !== null} onClick={() => setOpen(true)}>
@@ -52,15 +98,7 @@ function LiveChallenge(props: ChallengeActionProps) {
       {cooldownEnd !== null && (
         <p className="sf-actions__note">{copy.dispute.cooldownUntil.replace('{time}', formatUtc(cooldownEnd))}</p>
       )}
-      {open && (
-        <ChallengePanel
-          targetId={props.targetId}
-          targetType={props.targetType}
-          label={props.label}
-          scan={props.scan}
-          onClose={() => setOpen(false)}
-        />
-      )}
+      {panel}
     </>
   )
 }
@@ -81,13 +119,6 @@ export function ChallengeAction(props: ChallengeActionProps) {
         </Button>
         <p className="sf-actions__note">{copy.common.modulesNotLive}</p>
       </>
-    )
-  }
-  if (props.activeChallengeId !== null) {
-    return (
-      <a className="sf-btn sf-btn--secondary sf-btn--block" href={`/app/disputes/${props.activeChallengeId}`}>
-        {copy.dispute.viewOpen}
-      </a>
     )
   }
   return <LiveChallenge {...props} />

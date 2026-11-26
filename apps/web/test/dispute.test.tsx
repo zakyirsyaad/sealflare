@@ -569,3 +569,72 @@ test('the Dispute tab still names the open dispute when the list could not be re
   render(<DisputeTab challenges={null} activeChallengeId="12" />)
   expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/12')
 })
+
+// ---- review round 1 ------------------------------------------------------------------------
+
+test('Resolve that was mined but reverted is a failure, never "Waiting for finality"', async () => {
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null, data: { status: 'reverted' } } as never
+  wagmi.reads.current.phaseOf = 3
+  wagmi.reads.current.getChallenge = { commits: 4, reveals: 3, outcome: 0 }
+  dispute({ detail: detail({ phase: 'AWAITING_CLOSE' }) })
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.resolve }))
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.errors.unknown)
+  expect(screen.queryByText(copy.common.waitingFinality)).toBeNull()
+})
+
+test.each([
+  ['the attestation count is not known yet', undefined],
+  ['the list holds no attestation', { attestationCount: 0 }],
+])('Apply penalties cannot be sent while %s, because it would apply nothing and still cost gas', async (_name, target) => {
+  wagmi.reads.current.phaseOf = 4
+  wagmi.reads.current.getChallenge = { commits: 3, reveals: 3, outcome: 1 }
+  wagmi.reads.current.pendingPenalties = 2
+  wagmi.reads.current.getTarget = target
+  dispute({ detail: closedUpheld() })
+  const button = screen.getByRole('button', { name: 'Apply penalties (2 pending)' })
+  expect(button).toBeDisabled()
+  await userEvent.click(button)
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
+test('the phase strip is named as the phases, and the endings table keeps its own name', () => {
+  dispute()
+  expect(screen.getByRole('list', { name: 'Dispute phases' })).toBeInTheDocument()
+  expect(screen.getByRole('table', { name: copy.dispute.outcomesTitle })).toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: copy.dispute.outcomesTitle })).toBeNull()
+})
+
+test('the open challenge is read from the Court, so a challenge opened a moment ago turns the button into a link', () => {
+  wagmi.reads.current.activeChallengeOf = 13n
+  action({ activeChallengeId: null })
+  expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/13')
+  expect(screen.queryByRole('button', { name: copy.dispute.action })).toBeNull()
+  const asked = wagmi.readCalls.find(call => call.functionName === 'activeChallengeOf')
+  expect(asked?.args).toEqual([targetId])
+})
+
+test('a challenge that the Court no longer holds open leaves the button open, whatever the page was loaded with', () => {
+  wagmi.reads.current.activeChallengeOf = 0n
+  action({ activeChallengeId: '12' })
+  expect(screen.getByRole('button', { name: copy.dispute.action })).toBeEnabled()
+  expect(screen.queryByRole('link', { name: copy.dispute.viewOpen })).toBeNull()
+})
+
+test('until the Court answers, the page says which challenge is open', () => {
+  wagmi.reads.current.activeChallengeOf = undefined
+  action({ activeChallengeId: '12' })
+  expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/12')
+})
+
+test('the panel stays open while the transaction it sent is being confirmed, even once the Court reports the challenge', async () => {
+  wagmi.reads.current.activeChallengeOf = 0n
+  const view = action()
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.action }))
+  expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
+  wagmi.reads.current.activeChallengeOf = 13n
+  view.rerender(
+    <ChallengeAction targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} tier="CAUTION_FLAGGED" activeChallengeId={null} />,
+  )
+  expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/13')
+  expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
+})

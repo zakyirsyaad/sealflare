@@ -340,7 +340,6 @@ export const copy = {
     "cooldownUntil": "You can challenge this target again after {time}.",
     "disputeTitle": "Challenge",
     "viewTarget": "View the target",
-    "viewDispute": "View the dispute",
     "phaseCommit": "Commit",
     "phaseReveal": "Reveal",
     "phaseResolve": "Resolve",
@@ -420,8 +419,8 @@ export const copy = {
     "listFailed": "The disputes could not be read.",
     "notFound": "There is no such dispute.",
     "tabHistory": "Past and open disputes of this target",
-    "chainPending": "Reading the dispute from the chain",
     "needWallet": "Connect a wallet to do this.",
+    "phasesLabel": "Dispute phases",
     "penaltiesWhy": "The jury confirmed that this target is dangerous. Guardians who attested it as safe lose reputation once the penalties are applied.",
     "pageFailed": "The dispute could not be read."
   },

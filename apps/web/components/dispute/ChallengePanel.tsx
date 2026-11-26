@@ -67,23 +67,25 @@ function useForfeit(targetId: string) {
  * nothing can be signed before the wallet is connected and holds an Agent ID. The flags of the
  * scan are ticked from the start, and the verdict is always the danger rule of the Court.
  */
-export function ChallengePanel(props: ChallengePanelProps) {
+export function ChallengePanel({ scan: offered, ...props }: ChallengePanelProps) {
+  // A scan of another target must not tick flags here or travel with the report.
+  const scan = offered !== null && offered.targetId === props.targetId ? offered : null
   const user = useUserState()
   const { mutate: disconnect } = useDisconnect()
   const [step, setStep] = useState<Step>('flags')
-  const [choice, setChoice] = useState<Choice>(() => chooseVerdict('DANGER', props.scan?.flags ?? 0))
+  const [choice, setChoice] = useState<Choice>(() => chooseVerdict('DANGER', scan?.flags ?? 0))
   const [statement, setStatement] = useState('')
   const forfeit = useForfeit(props.targetId)
   const challenge = useChallenge({
     targetId: props.targetId,
     targetType: props.targetType,
-    scan: props.scan,
+    scan,
     address: 'address' in user ? user.address : null,
   })
 
-  const proved = provedFlags(choice, props.scan, props.targetId)
+  const proved = provedFlags(choice, scan, props.targetId)
   const complete = missingQuotes(choice, proved).length === 0
-  const preview = complete ? shortProofOf(choice.flags, choice.quotes, travellingScan(choice, props.scan, props.targetId)) : ''
+  const preview = complete ? shortProofOf(choice.flags, choice.quotes, travellingScan(choice, scan, props.targetId)) : ''
   const toggle = (flag: FlagName) =>
     setChoice(current => ((current.flags & FLAGS[flag]) === 0 ? addFlag(current, flag) : removeFlag(current, flag)))
   const submit = () => void challenge.submit({ flags: choice.flags, quotes: choice.quotes, statement })

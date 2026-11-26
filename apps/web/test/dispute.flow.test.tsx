@@ -344,3 +344,40 @@ test('a reply from a wallet that is not the publisher shows the reason of the co
   await writeReply()
   expect(await screen.findByText(copy.errors.NotPublisher)).toBeInTheDocument()
 })
+
+// ---- review round 1 ------------------------------------------------------------------------
+
+test('a transaction that was mined but reverted is a failure, never "Waiting for finality"', async () => {
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null, data: { status: 'reverted' } } as never
+  panel()
+  await toReview()
+  await submit()
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.errors.unknown)
+  expect(screen.queryByText(copy.common.waitingFinality)).toBeNull()
+  expect(screen.getByRole('button', { name: copy.common.retry })).toBeInTheDocument()
+})
+
+test('a reply that was mined but reverted is a failure too', async () => {
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null, data: { status: 'reverted' } } as never
+  reply()
+  await writeReply()
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.errors.unknown)
+  expect(screen.queryByText(copy.common.waitingFinality)).toBeNull()
+})
+
+test('a scan of another target ticks nothing and is never attached to the report', async () => {
+  // The scan holds a flag, but it is the scan of another target, so it must not speak for this one.
+  const foreign = { ...scan(), targetId: skillId }
+  panel({ scan: foreign })
+  expect(foreign.flags).toBe(FLAGS.UNVERIFIED_SOURCE)
+  expect(screen.getByRole('checkbox', { name: 'Unverified source' })).not.toBeChecked()
+  expect(screen.getByRole('button', { name: copy.dispute.continue })).toBeDisabled()
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Hidden mint' }))
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.continue }))
+  await userEvent.type(screen.getByLabelText('Quote from the evidence for Hidden mint'), 'function mint(address to)')
+  await userEvent.type(screen.getByLabelText(copy.dispute.statementLabel), 'The owner can mint.')
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.continue }))
+  await submit()
+  const sent = uploadEvidence.mock.calls[0]?.[0] as { reportJson: string }
+  expect(JSON.parse(sent.reportJson).scan).toBeUndefined()
+})

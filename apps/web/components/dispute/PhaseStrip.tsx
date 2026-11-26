@@ -38,7 +38,7 @@ function statusOf(cell: Cell, props: PhaseStripProps): string | null {
  */
 export function PhaseStrip(props: PhaseStripProps) {
   return (
-    <ol className="sf-frame sf-phases" aria-label={copy.dispute.endingsTitle}>
+    <ol className="sf-frame sf-phases" aria-label={copy.dispute.phasesLabel}>
       {CELLS.map(cell => {
         const active = props.phase === cell.key
         const status = statusOf(cell, props)

@@ -337,14 +337,16 @@ export function useReceipt(
   useEffect(() => {
     if (state !== 'pending') return
     if (receipt.isSuccess) {
-      done()
+      // A transaction that was mined and reverted still resolves the wait, so its status is read.
+      if (receipt.data?.status === 'reverted') fail(copy.errors.unknown)
+      else done()
       return
     }
     if (receipt.isError) {
       const translated = translateContractError(receipt.error)
       fail(translated?.message ?? copy.errors.unknown)
     }
-  }, [state, receipt.isSuccess, receipt.isError, receipt.error, done, fail])
+  }, [state, receipt.isSuccess, receipt.data?.status, receipt.isError, receipt.error, done, fail])
 }
 
 type Outcome = { state: 'idle' } | { state: 'failed'; message: string } | { state: 'pending'; hash: Hex }

@@ -76,6 +76,8 @@ test('an https URI is kept as it is', () => {
 })
 
 test.each([
+  ['ipfs://bafy/../secret'],
+  ['ipfs://../x'],
   ['javascript:alert(1)'],
   ['data:text/html,<script>alert(1)</script>'],
   ['http://insecure.example/x'],

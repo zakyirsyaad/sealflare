@@ -11,7 +11,8 @@ export function evidenceHref(uri: string | null | undefined): string | null {
   const value = uri.trim()
   if (value.startsWith('ipfs://')) {
     const path = value.slice('ipfs://'.length).replace(/^ipfs\//, '')
-    return /^[A-Za-z0-9][A-Za-z0-9._~/-]*$/.test(path) ? `${IPFS_GATEWAY}${path}` : null
+    const clean = /^[A-Za-z0-9][A-Za-z0-9._~/-]*$/.test(path) && !path.split('/').some(part => part === '..' || part === '.')
+    return clean ? `${IPFS_GATEWAY}${path}` : null
   }
   if (!value.startsWith('https://')) return null
   try {
