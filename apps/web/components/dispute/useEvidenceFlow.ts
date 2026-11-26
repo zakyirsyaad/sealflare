@@ -2,12 +2,11 @@
 import { useCallback, useState } from 'react'
 import { useSignTypedData, useWriteContract } from 'wagmi'
 import type { Address, Hex } from 'viem'
-import { writeStep, type TxRequest } from '../../lib/chain/useWriteTx'
+import { useReceipt, writeStep, type TxRequest } from '../../lib/chain/useWriteTx'
 import { copy } from '../../lib/copy'
 import {
   approveEvidence,
   approveEvidenceUpload,
-  useReceipt,
   type AttestState,
   type SignTypedDataAsync,
   type WriteContractAsync,

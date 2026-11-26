@@ -15,7 +15,7 @@ import { ChallengePanel } from '../components/dispute/ChallengePanel'
 import { ReplyPanel } from '../components/dispute/ReplyPanel'
 import { copy } from '../lib/copy'
 import { resetDispute, state, uploadEvidence, wagmi } from './dispute.mocks'
-import { CORE, COURT, ME, address, scan, targetId, txHash } from './dispute.fixtures'
+import { CORE, COURT, JUROR_ONE, ME, address, scan, targetId, txHash } from './dispute.fixtures'
 import { bundle, skillId, skillScan } from './attest.fixtures'
 
 const rejection = () => new UserRejectedRequestError(new Error('The user rejected the request.'))
@@ -235,8 +235,18 @@ test('the stake sent is the constant of the contract even after a retry', async 
 
 // ---- the reply of the publisher ------------------------------------------------------------
 
-function reply() {
-  return render(<ReplyPanel challengeId="12" targetId={targetId} onClose={() => {}} />)
+function reply(overrides: Partial<Parameters<typeof ReplyPanel>[0]> = {}) {
+  return render(
+    <ReplyPanel
+      challengeId="12"
+      targetId={targetId}
+      phase="COMMIT"
+      publisherRole="VERIFIED_PUBLISHER"
+      publisher={ME}
+      onClose={() => {}}
+      {...overrides}
+    />,
+  )
 }
 
 async function writeReply(text = 'The mint is capped by the governor.') {
@@ -297,6 +307,33 @@ test('a reply from a wallet that is not the publisher shows the reason of the co
   reply()
   await writeReply()
   expect(await screen.findByText(copy.errors.NotPublisher)).toBeInTheDocument()
+})
+
+test('a reply from a wallet that is not the publisher is never signed or pinned', async () => {
+  reply({ publisher: JUROR_ONE })
+  await writeReply()
+  expect(await screen.findByText(copy.errors.NotPublisher)).toBeInTheDocument()
+  expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
+test('a reply after the commit phase is never signed or pinned', async () => {
+  reply({ phase: 'REVEAL' })
+  await writeReply()
+  expect(await screen.findByText(copy.dispute.replyClosed)).toBeInTheDocument()
+  expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
+test('a reply of a sponsor is never signed or pinned', async () => {
+  reply({ publisherRole: 'THIRD_PARTY_SPONSOR' })
+  await writeReply()
+  expect(await screen.findByText(copy.dispute.sponsorCannotReply)).toBeInTheDocument()
+  expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
+  expect(uploadEvidence).not.toHaveBeenCalled()
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
 })
 
 // ---- review round 1 ------------------------------------------------------------------------

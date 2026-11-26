@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import { evidenceHashOf } from '@sealflare/shared/schemas'
-import { CORE, COURT, ME, txHash } from './dispute.fixtures'
+import { CORE, COURT, ME, NOW, txHash } from './dispute.fixtures'
 
 /** The wallet, the chain reads and the evidence upload that every dispute test stands on. */
 export const wagmi = {
@@ -8,8 +8,12 @@ export const wagmi = {
   signMessageAsync: vi.fn(),
   writeContractAsync: vi.fn(),
   reads: { current: {} as Record<string, unknown> },
-  readCalls: [] as { functionName: string; args?: readonly unknown[] }[],
+  readErrors: { current: {} as Record<string, boolean> },
+  readCalls: [] as { functionName: string; args?: readonly unknown[]; refetchInterval?: number }[],
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } as Record<string, unknown> },
+  receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
+  block: { current: { timestamp: BigInt(Math.floor(NOW.getTime() / 1000)) } },
+  blockCalls: [] as { chainId?: number; refetchInterval?: number }[],
 }
 export const state = { value: {} as Record<string, unknown> }
 export const config = { modulesLive: true }
@@ -19,10 +23,22 @@ export const wagmiModule = {
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
   useSignMessage: () => ({ signMessageAsync: wagmi.signMessageAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
-  useWaitForTransactionReceipt: () => wagmi.receipt.current,
-  useReadContract: (params: { functionName: string; args?: readonly unknown[] }) => {
-    wagmi.readCalls.push({ functionName: params.functionName, args: params.args })
-    return { data: wagmi.reads.current[params.functionName], isLoading: false, isError: false, refetch: vi.fn() }
+  useWaitForTransactionReceipt: (params: { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }) => {
+    wagmi.receiptParams.push(params)
+    return wagmi.receipt.current
+  },
+  useBlock: (params: { chainId?: number; query?: { refetchInterval?: number } }) => {
+    wagmi.blockCalls.push({ chainId: params?.chainId, refetchInterval: params?.query?.refetchInterval })
+    return { data: wagmi.block.current }
+  },
+  useReadContract: (params: { functionName: string; args?: readonly unknown[]; query?: { refetchInterval?: number } }) => {
+    wagmi.readCalls.push({ functionName: params.functionName, args: params.args, refetchInterval: params.query?.refetchInterval })
+    return {
+      data: wagmi.reads.current[params.functionName],
+      isLoading: false,
+      isError: wagmi.readErrors.current[params.functionName] === true,
+      refetch: vi.fn(),
+    }
   },
   useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
   useConnectors: () => [{ uid: '1', id: 'injected', name: 'Browser wallet' }],
@@ -51,6 +67,10 @@ export async function clientModule() {
 export function resetDispute() {
   vi.clearAllMocks()
   wagmi.readCalls.length = 0
+  wagmi.receiptParams.length = 0
+  wagmi.blockCalls.length = 0
+  wagmi.readErrors.current = {}
+  wagmi.block.current = { timestamp: BigInt(Math.floor(NOW.getTime() / 1000)) }
   config.modulesLive = true
   process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({
     chainId: 56,

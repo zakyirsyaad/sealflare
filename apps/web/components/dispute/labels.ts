@@ -1,6 +1,7 @@
+import { CONSTANTS } from '@sealflare/shared/rules'
 import type { ChallengeSummary } from '@sealflare/shared/schemas'
 import { copy } from '../../lib/copy'
-import { shortAddress, timeLeft } from '../../lib/format'
+import { targetLabel, timeLeft } from '../../lib/format'
 
 type Outcome = ChallengeSummary['outcome']
 type Phase = ChallengeSummary['phase'] | 'NONE'
@@ -18,12 +19,7 @@ const VERDICT_TEXT: Record<Outcome, string> = {
   UPHELD: copy.dispute.verdictUpheld,
   REJECTED: copy.dispute.verdictRejected,
   TIED: copy.dispute.verdictTied,
-  EXPIRED: copy.dispute.verdictExpired,
-}
-
-/** An address is shortened, the name of a repository is not. */
-export function targetLabel(label: string): string {
-  return /^0x[0-9a-fA-F]{40}$/.test(label) ? shortAddress(label) : label
+  EXPIRED: copy.dispute.verdictExpired.replace('{min}', String(CONSTANTS.MIN_REVEALS)),
 }
 
 export const outcomeWord = (outcome: Outcome): string => OUTCOME_WORD[outcome]

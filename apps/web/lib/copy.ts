@@ -96,6 +96,7 @@ export const copy = {
     "NoWithdrawalRequested": "No withdrawal has been requested.",
     "NothingToWithdraw": "You have no balance to withdraw.",
     "TransferFailed": "The transfer failed. Try again.",
+    "txReplaced": "The wallet cancelled or replaced that transaction, so it did not go through.",
     "WithdrawalNotReady": "The withdrawal is not ready yet. It becomes available at {time}."
   },
   "jurorStatus": [

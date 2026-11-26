@@ -1,6 +1,6 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
-import { useSignTypedData, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
+import { useCallback, useState } from 'react'
+import { useSignTypedData, useWriteContract } from 'wagmi'
 import { toHex, type Address, type Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
 import {
@@ -14,9 +14,10 @@ import {
 } from '@sealflare/shared/schemas'
 import { isValidFlags, targetIdOfContract, targetIdOfSkill, type TargetType, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import { ApiError, api } from '../../lib/api/client'
-import { addresses } from '../../lib/chain/addresses'
 import { expectedChainId } from '../../lib/chain/config'
+import { coreAddress } from '../../lib/chain/court'
 import { isUserRejection, translateContractError } from '../../lib/chain/errors'
+import { useReceipt } from '../../lib/chain/useWriteTx'
 import { copy } from '../../lib/copy'
 import { isBytes32, isContractWord } from '../../lib/targetWord'
 import { shortProofOf, statementOf, travellingScan, trimScan } from './choice'
@@ -27,6 +28,17 @@ export type AttestState = 'idle' | 'signing-evidence' | 'uploading' | 'signing-t
 /** The wallet or the chain is still working on the vote, so the panel cannot be left. */
 export function isWorking(state: AttestState): boolean {
   return state === 'signing-evidence' || state === 'uploading' || state === 'signing-tx' || state === 'pending'
+}
+
+/**
+ * The panel is locked only while the work is the app's own.
+ *
+ * While the wallet is asking, the user may leave: a prompt that never settles must not keep the
+ * panel on the screen for ever. The upload and the wait for the receipt are the app's own work,
+ * and those keep the panel where it is.
+ */
+export function isLocked(state: AttestState): boolean {
+  return state === 'uploading' || state === 'pending'
 }
 
 export type AttestInput = {
@@ -59,15 +71,6 @@ export const EXPIRY_SECONDS = 300
 
 /** The outcome of one step. A refusal in the wallet returns to the summary without an error. */
 export type Step<T> = { ok: true; value: T } | { ok: false; state: 'idle' | 'failed'; message?: string }
-
-/** The address of the registry, or null when the deployment does not name one. */
-function coreAddress(): Address | null {
-  try {
-    return addresses(expectedChainId).core
-  } catch {
-    return null
-  }
-}
 
 /** A nonce that is never used twice, as a decimal string the server reads. */
 export function freshNonce(): string {
@@ -324,29 +327,6 @@ async function runAttestation(params: {
     shortProof: params.prepared.shortProof,
     evidenceURI: uploaded.value,
   })
-}
-
-/** Watches the receipt of the vote. A reverted transaction names its own reason. */
-export function useReceipt(
-  state: AttestState,
-  txHash: Hex | null,
-  done: () => void,
-  fail: (message: string) => void,
-) {
-  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
-  useEffect(() => {
-    if (state !== 'pending') return
-    if (receipt.isSuccess) {
-      // A transaction that was mined and reverted still resolves the wait, so its status is read.
-      if (receipt.data?.status === 'reverted') fail(copy.errors.unknown)
-      else done()
-      return
-    }
-    if (receipt.isError) {
-      const translated = translateContractError(receipt.error)
-      fail(translated?.message ?? copy.errors.unknown)
-    }
-  }, [state, receipt.isSuccess, receipt.data?.status, receipt.isError, receipt.error, done, fail])
 }
 
 type Outcome = { state: 'idle' } | { state: 'failed'; message: string } | { state: 'pending'; hash: Hex }

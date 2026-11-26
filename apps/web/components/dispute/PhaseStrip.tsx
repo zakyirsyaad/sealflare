@@ -16,7 +16,12 @@ type Cell = { key: 'COMMIT' | 'REVEAL' | 'AWAITING_CLOSE'; number: string; name:
 const CELLS: readonly Cell[] = [
   { key: 'COMMIT', number: '01', name: copy.dispute.phaseCommit, help: copy.dispute.commitHelp },
   { key: 'REVEAL', number: '02', name: copy.dispute.phaseReveal, help: copy.dispute.revealHelp },
-  { key: 'AWAITING_CLOSE', number: '03', name: copy.dispute.phaseResolve, help: copy.dispute.resolveHelp },
+  {
+    key: 'AWAITING_CLOSE',
+    number: '03',
+    name: copy.dispute.phaseResolve,
+    help: copy.dispute.resolveHelp.replace('{min}', String(CONSTANTS.MIN_REVEALS)),
+  },
 ]
 
 /** What the big line of a phase says: the time left of a window, or the state of the closing step. */

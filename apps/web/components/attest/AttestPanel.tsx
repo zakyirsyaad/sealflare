@@ -14,7 +14,7 @@ import { usePendingVote } from '../target/pendingVote'
 import { ReviewStep } from './ReviewStep'
 import { VerdictStep } from './VerdictStep'
 import { addFlag, canReview, chooseVerdict, emptyChoice, provedFlags, removeFlag, setQuote, type Choice } from './choice'
-import { isWorking, useAttest } from './useAttest'
+import { isLocked, useAttest } from './useAttest'
 
 export type AttestPanelProps = {
   targetId: string
@@ -163,7 +163,7 @@ export function AttestPanel(props: AttestPanelProps) {
       title={step === 'verdict' ? copy.attest.action : copy.attest.review}
       marker={copy.attest.step[step === 'verdict' ? 0 : 1]}
       onClose={props.onClose}
-      closeDisabled={isWorking(attest.state)}
+      closeDisabled={isLocked(attest.state)}
     >
       {walletGate(user, () => disconnect()) ?? (step === 'verdict' ? verdict : review)}
     </Panel>
