@@ -6,12 +6,15 @@ export function Panel({
   title,
   marker,
   onClose,
+  closeDisabled = false,
   children,
 }: {
   title: string
   /** A short step marker in the header, such as "1 of 2". */
   marker?: string
   onClose: () => void
+  /** The panel cannot be left, for example while a transaction is on its way. */
+  closeDisabled?: boolean
   children: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -22,11 +25,11 @@ export function Panel({
     dialog.showModal()
     return () => { dialog.close(); previous?.focus() }
   }, [])
-  return <dialog ref={ref} className="sf-panel" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose() }}>
+  return <dialog ref={ref} className="sf-panel" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); if (!closeDisabled) onClose() }}>
     <header>
       <h2 id={titleId}>{title}</h2>
       {marker !== undefined && <span className="sf-mono">{marker}</span>}
-      <Button variant="ghost" onClick={onClose}>{copy.common.close}</Button>
+      <Button variant="ghost" disabled={closeDisabled} onClick={onClose}>{copy.common.close}</Button>
     </header>
     <div className="sf-panel__body">{children}</div>
   </dialog>

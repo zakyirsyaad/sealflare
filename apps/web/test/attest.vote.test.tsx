@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { evidenceHashOf, type SignalGroup } from '@sealflare/shared/schemas'
 
@@ -147,4 +147,20 @@ test('the vote shown is the vote that was sent, even when the choice changes aft
   await userEvent.click(screen.getByRole('radio', { name: /^Danger/ }))
   expect(screen.queryByRole('row', { name: /Your vote: Danger/ })).toBeNull()
   expect(screen.getByRole('row', { name: /Your vote: Caution/ })).toBeInTheDocument()
+})
+
+test('the wallet is read again once the receipt is good, so the quota follows the chain', async () => {
+  const recheck = vi.fn()
+  state.value = { kind: 'holder', address, isLoading: false, isError: false, recheck, attestationsLeft: 3 }
+  render(page(signal(0)))
+  await vote()
+  await screen.findByRole('row', { name: /Your vote: Caution/ })
+  expect(recheck).toHaveBeenCalledTimes(1)
+})
+
+test('the panel cannot be closed while the vote is on its way', async () => {
+  wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
+  render(page(signal(0)))
+  await vote()
+  await waitFor(() => expect(screen.getByRole('button', { name: copy.common.close })).toBeDisabled())
 })

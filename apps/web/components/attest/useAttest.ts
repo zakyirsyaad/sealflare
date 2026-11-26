@@ -3,7 +3,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSignTypedData, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { toHex, type Address, type Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
-import { API_EIP712, EvidenceReport, evidenceHashOf, parseShortProof, type ScanReport } from '@sealflare/shared/schemas'
+import {
+  API_EIP712,
+  EVIDENCE_MAX_BYTES,
+  EvidenceReport,
+  evidenceHashOf,
+  parseShortProof,
+  utf8Length,
+  type ScanReport,
+} from '@sealflare/shared/schemas'
 import { isValidFlags, targetIdOfContract, targetIdOfSkill, type TargetType, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import { ApiError, api } from '../../lib/api/client'
 import { addresses } from '../../lib/chain/addresses'
@@ -11,10 +19,15 @@ import { expectedChainId } from '../../lib/chain/config'
 import { isUserRejection, translateContractError } from '../../lib/chain/errors'
 import { copy } from '../../lib/copy'
 import { isBytes32, isContractWord } from '../../lib/targetWord'
-import { shortProofOf, travellingScan } from './choice'
+import { shortProofOf, statementOf, travellingScan, trimScan } from './choice'
 
 /** The states of an attestation, from the summary to the vote on the chain. */
 export type AttestState = 'idle' | 'signing-evidence' | 'uploading' | 'signing-tx' | 'pending' | 'failed' | 'done'
+
+/** The wallet or the chain is still working on the vote, so the panel cannot be left. */
+export function isWorking(state: AttestState): boolean {
+  return state === 'signing-evidence' || state === 'uploading' || state === 'signing-tx' || state === 'pending'
+}
 
 export type AttestInput = {
   verdict: Verdict
@@ -87,10 +100,12 @@ function wordOf(target: AttestTarget): Hex | null {
  * a report may not leave out something the attached scan found. A Safe vote carries no flags, so
  * it carries no scan either.
  */
-export function buildReport(target: AttestTarget, input: AttestInput): EvidenceReport {
+export function buildReport(target: AttestTarget, input: AttestInput, trim = false): EvidenceReport {
   const author = target.address
   if (author === null) throw new Error('The report needs the address of the Guardian.')
-  const scan = travellingScan({ verdict: input.verdict, flags: input.flags, quotes: input.quotes }, target.scan, target.targetId)
+  const travelling = travellingScan({ verdict: input.verdict, flags: input.flags, quotes: input.quotes }, target.scan, target.targetId)
+  const scan = travelling !== null && trim ? trimScan(travelling) : travelling
+  const statement = statementOf(input.flags, input.quotes)
   const report = {
     schemaVersion: 1 as const,
     kind: 'attestation' as const,
@@ -99,6 +114,7 @@ export function buildReport(target: AttestTarget, input: AttestInput): EvidenceR
     createdAt: new Date().toISOString(),
     flags: input.flags,
     shortProof: shortProofOf(input.flags, input.quotes, scan),
+    ...(statement === undefined ? {} : { statement }),
   }
   return scan === null ? report : { ...report, scan }
 }
@@ -118,24 +134,41 @@ type Prepared = {
  * Guardian for a signature.
  */
 function prepare(target: AttestTarget, input: AttestInput, core: Address): Prepared | null {
-  let parsed: ReturnType<typeof EvidenceReport.safeParse>
-  try {
-    parsed = EvidenceReport.safeParse(buildReport(target, input))
-  } catch {
-    return null
+  const parsed = parseReport(target, input, false)
+  if (parsed === null) return null
+  let reportJson = JSON.stringify(parsed)
+  // The server refuses a report over the limit after the Guardian has signed it, and every retry
+  // fails the same way. A scan with a finding for every match is trimmed to one per flag first.
+  let report = parsed
+  if (utf8Length(reportJson) > EVIDENCE_MAX_BYTES) {
+    const trimmed = parseReport(target, input, true)
+    if (trimmed === null) return null
+    report = trimmed
+    reportJson = JSON.stringify(trimmed)
+    if (utf8Length(reportJson) > EVIDENCE_MAX_BYTES) return null
   }
-  if (!parsed.success) return null
-  // A line of the evidence summary without a quote is no evidence at all.
-  if (parseShortProof(parsed.data.shortProof).some(item => item.excerpt.trim() === '')) return null
-  const reportJson = JSON.stringify(parsed.data)
   return {
     core,
     reportJson,
     evidenceHash: evidenceHashOf(new TextEncoder().encode(reportJson)),
     nonce: freshNonce(),
     expiry: String(Math.floor(Date.now() / 1000) + EXPIRY_SECONDS),
-    shortProof: parsed.data.shortProof,
+    shortProof: report.shortProof,
   }
+}
+
+/** The report, checked against the shared schema. Null when the schema or the summary refuses it. */
+function parseReport(target: AttestTarget, input: AttestInput, trim: boolean): EvidenceReport | null {
+  let parsed: ReturnType<typeof EvidenceReport.safeParse>
+  try {
+    parsed = EvidenceReport.safeParse(buildReport(target, input, trim))
+  } catch {
+    return null
+  }
+  if (!parsed.success) return null
+  // A line of the evidence summary without a quote is no evidence at all.
+  if (parseShortProof(parsed.data.shortProof).some(item => item.excerpt.trim() === '')) return null
+  return parsed.data
 }
 
 /** Why the vote may not be written, or null when it may be written. */
@@ -152,9 +185,13 @@ function blockerOf(target: AttestTarget, input: AttestInput, core: Address | nul
 async function approveEvidence(
   sign: SignTypedDataAsync,
   prepared: Prepared,
+  account: Address,
 ): Promise<Step<Hex>> {
   try {
+    // The account is named, so a wallet that switched account between the two approvals refuses
+    // instead of signing as another Guardian.
     const signature = await sign({
+      account,
       domain: { ...API_EIP712.domain, chainId: expectedChainId },
       types: { EvidenceUpload: [...API_EIP712.types.EvidenceUpload] },
       primaryType: 'EvidenceUpload',
@@ -206,6 +243,7 @@ async function approveEvidenceUpload(
 async function approveTransaction(
   write: WriteContractAsync,
   params: {
+    account: Address
     core: Address
     word: Hex
     targetType: TargetType
@@ -217,7 +255,11 @@ async function approveTransaction(
   },
 ): Promise<Step<Hex>> {
   try {
+    // The account and the chain are named: the evidence was signed by this account, and `core` is
+    // only valid on this chain, so a wallet that switched either refuses instead of sending.
     const hash = await write({
+      account: params.account,
+      chainId: expectedChainId,
       address: params.core,
       abi: coreAbi,
       functionName: 'attest',
@@ -254,7 +296,7 @@ async function runAttestation(params: {
   progress: (state: AttestState) => void
 }): Promise<Step<Hex>> {
   params.progress('signing-evidence')
-  const signed = await approveEvidence(params.sign, params.prepared)
+  const signed = await approveEvidence(params.sign, params.prepared, params.target.address as Address)
   if (!signed.ok) return signed
 
   params.progress('uploading')
@@ -272,6 +314,7 @@ async function runAttestation(params: {
 
   params.progress('signing-tx')
   return approveTransaction(params.write, {
+    account: params.target.address as Address,
     core: params.prepared.core,
     word: wordOf(params.target) as Hex,
     targetType: params.target.targetType,

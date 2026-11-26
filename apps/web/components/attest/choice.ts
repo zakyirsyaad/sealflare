@@ -1,5 +1,5 @@
 import { CONSTANTS, FLAGS, isValidFlags, type FlagName, type TargetType, type Verdict } from '@sealflare/shared/rules'
-import { buildShortProof, utf8Length, type ScanReport, type ShortProofItem } from '@sealflare/shared/schemas'
+import { STATEMENT_MAX_CHARS, buildShortProof, utf8Length, type ScanReport, type ShortProofItem } from '@sealflare/shared/schemas'
 
 /** What the Guardian chose so far. */
 export type Choice = {
@@ -165,4 +165,32 @@ function buildProof(items: ShortProofItem[]): string {
     return buildShortProof(trimmed.map(item => ({ ...item, excerpt: cut(item.excerpt, budget) })))
   }
   return buildShortProof(items)
+}
+
+/**
+ * The full quotes of the Guardian for the flags that are reported, one line each.
+ *
+ * The short proof on-chain cuts long quotes to fit 512 bytes, so the report keeps the whole text.
+ * Undefined when the Guardian wrote no quote.
+ */
+export function statementOf(flags: number, quotes: Record<string, string>): string | undefined {
+  const lines = Object.entries(quotes)
+    .filter(([flag, quote]) => quote.trim() !== '' && (flags & (FLAGS[flag as FlagName] ?? 0)) !== 0)
+    .map(([flag, quote]) => `${flag}: ${quote.trim()}`)
+  if (lines.length === 0) return undefined
+  return lines.join('\n').slice(0, STATEMENT_MAX_CHARS)
+}
+
+/**
+ * The scan with one finding per flag. The flags of the scan stay the same, so it is still a valid
+ * report, and the short proof reads the first finding of a flag, so it does not change either.
+ */
+export function trimScan(scan: ScanReport): ScanReport {
+  const seen = new Set<string>()
+  const findings = scan.findings.filter(finding => {
+    if (seen.has(finding.flag)) return false
+    seen.add(finding.flag)
+    return true
+  })
+  return { ...scan, findings }
 }

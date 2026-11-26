@@ -14,7 +14,7 @@ import { usePendingVote } from '../target/pendingVote'
 import { ReviewStep } from './ReviewStep'
 import { VerdictStep } from './VerdictStep'
 import { addFlag, canReview, chooseVerdict, emptyChoice, provedFlags, removeFlag, setQuote, type Choice } from './choice'
-import { useAttest } from './useAttest'
+import { isWorking, useAttest } from './useAttest'
 
 export type AttestPanelProps = {
   targetId: string
@@ -67,12 +67,19 @@ function walletGate(user: UserState, disconnect: () => void): React.ReactNode {
   return null
 }
 
-/** Tells the page about the vote as soon as the receipt is good, so it shows before the indexer has it. */
-function useRegisterVote(attest: Attestation) {
+/**
+ * Tells the page about the vote as soon as the receipt is good, so it shows before the indexer has
+ * it, and reads the quota and the vote of the wallet again so the Attest button follows the chain.
+ */
+function useRegisterVote(attest: Attestation, recheck: () => void) {
   const { register } = usePendingVote()
   const { state, txHash, verdict } = attest
   useEffect(() => {
-    if (state === 'done' && txHash !== null && verdict !== null) register(verdict, txHash)
+    if (state !== 'done' || txHash === null || verdict === null) return
+    register(verdict, txHash)
+    recheck()
+    // The wallet is read again once per vote. A new `recheck` function must not repeat it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, txHash, verdict, register])
 }
 
@@ -126,7 +133,7 @@ export function AttestPanel(props: AttestPanelProps) {
     scan: props.scan,
     address: 'address' in user ? user.address : null,
   })
-  useRegisterVote(attest)
+  useRegisterVote(attest, user.recheck)
 
   const submit = () => {
     if (choice.verdict === null) return
@@ -156,6 +163,7 @@ export function AttestPanel(props: AttestPanelProps) {
       title={step === 'verdict' ? copy.attest.action : copy.attest.review}
       marker={copy.attest.step[step === 'verdict' ? 0 : 1]}
       onClose={props.onClose}
+      closeDisabled={isWorking(attest.state)}
     >
       {walletGate(user, () => disconnect()) ?? (step === 'verdict' ? verdict : review)}
     </Panel>

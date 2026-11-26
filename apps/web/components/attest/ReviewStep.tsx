@@ -5,7 +5,7 @@ import { copy } from '../../lib/copy'
 import { flagLabel, shortAddress } from '../../lib/format'
 import { AttestButton } from './AttestButton'
 import { flagsOf, type Choice } from './choice'
-import type { AttestState } from './useAttest'
+import { isWorking, type AttestState } from './useAttest'
 
 export type ReviewStepProps = {
   /** The name of the target, as the page shows it. */
@@ -41,11 +41,6 @@ const verdictName: Record<Verdict, string> = {
   SAFE: copy.attest.safe,
   CAUTION: copy.attest.caution,
   DANGER: copy.attest.danger,
-}
-
-/** The wallet or the chain is still working on the vote, so the summary cannot be left. */
-function working(state: AttestState): boolean {
-  return state === 'signing-evidence' || state === 'uploading' || state === 'signing-tx' || state === 'pending'
 }
 
 /** An address is shortened, a repository name is not. */
@@ -143,7 +138,7 @@ export function ReviewStep(props: ReviewStepProps) {
           onSubmit={props.onSubmit}
           onRetry={props.onRetry}
         />
-        <Button variant="secondary" disabled={working(props.state)} onClick={props.onBack}>
+        <Button variant="secondary" disabled={isWorking(props.state)} onClick={props.onBack}>
           {copy.attest.back}
         </Button>
       </footer>

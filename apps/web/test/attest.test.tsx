@@ -1,8 +1,8 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UserRejectedRequestError } from 'viem'
-import { evidenceHashOf } from '@sealflare/shared/schemas'
+import { EVIDENCE_MAX_BYTES, evidenceHashOf, utf8Length } from '@sealflare/shared/schemas'
 
 const wagmi = vi.hoisted(() => ({
   signTypedDataAsync: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock('../lib/api/client', async () => {
 
 import { AttestPanel } from '../components/attest/AttestPanel'
 import { copy } from '../lib/copy'
-import { address, bundle, cleanScan, CORE, scan, skillId, skillScan, targetId, twoFindingScan, txHash, word } from './attest.fixtures'
+import { address, bundle, cleanScan, contractScan, CORE, scan, skillId, skillScan, targetId, twoFindingScan, txHash, unverified, word } from './attest.fixtures'
 
 function panelProps(overrides: Partial<Parameters<typeof AttestPanel>[0]> = {}): Parameters<typeof AttestPanel>[0] {
   return {
@@ -384,4 +384,59 @@ test('the arrow keys move the choice and do not scroll the page', async () => {
   const notPrevented = fireEvent.keyDown(radio('Caution'), { key: 'ArrowDown' })
   expect(notPrevented).toBe(false)
   expect(radio('Danger')).toHaveAttribute('aria-checked', 'true')
+})
+
+test('both approvals name the connected account, and the write names the chain', async () => {
+  panel()
+  await toReview('Caution')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  await waitFor(() => expect(wagmi.writeContractAsync).toHaveBeenCalledTimes(1))
+  expect(wagmi.signTypedDataAsync.mock.calls[0]?.[0]).toMatchObject({ account: address })
+  expect(wagmi.writeContractAsync.mock.calls[0]?.[0]).toMatchObject({ account: address, chainId: 56 })
+})
+
+test('a scan with a finding for every match is trimmed to one per flag before it is signed', async () => {
+  const many = Array.from({ length: 330 }, (_, index) => ({
+    ...unverified,
+    title: `match ${index} ${'t'.repeat(100)}`,
+    location: 'l'.repeat(200),
+    excerpt: 'e'.repeat(500),
+  }))
+  const big = contractScan(many)
+  expect(utf8Length(JSON.stringify(big))).toBeGreaterThan(EVIDENCE_MAX_BYTES)
+  panel({ scan: big })
+  await toReview('Caution')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  await waitFor(() => expect(uploadEvidence).toHaveBeenCalledTimes(1))
+  const sent = uploadEvidence.mock.calls[0]?.[0] as { reportJson: string }
+  expect(utf8Length(sent.reportJson)).toBeLessThanOrEqual(EVIDENCE_MAX_BYTES)
+  const report = JSON.parse(sent.reportJson) as { scan: { findings: unknown[]; flags: number } }
+  expect(report.scan.findings).toHaveLength(1)
+  expect(report.scan.flags).toBe(big.flags)
+})
+
+test('the full quote of the Guardian is kept in the report when the short proof has to cut it', async () => {
+  panel()
+  await userEvent.click(radio('Caution'))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.addFlag }))
+  await userEvent.click(screen.getByRole('button', { name: 'Hidden mint' }))
+  const quote = `function mint(address to) ${'x'.repeat(700)}`
+  await userEvent.click(screen.getByRole('textbox'))
+  await userEvent.paste(quote)
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  await waitFor(() => expect(uploadEvidence).toHaveBeenCalledTimes(1))
+  const sent = uploadEvidence.mock.calls[0]?.[0] as { reportJson: string }
+  const report = JSON.parse(sent.reportJson) as { statement?: string; shortProof: string }
+  expect(report.statement).toContain(quote)
+  expect(report.shortProof).not.toContain(quote)
+})
+
+test('a report with no quote of the Guardian carries no statement', async () => {
+  panel()
+  await toReview('Caution')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  await waitFor(() => expect(uploadEvidence).toHaveBeenCalledTimes(1))
+  const sent = uploadEvidence.mock.calls[0]?.[0] as { reportJson: string }
+  expect(JSON.parse(sent.reportJson)).not.toHaveProperty('statement')
 })
