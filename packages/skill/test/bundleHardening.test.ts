@@ -327,6 +327,24 @@ describe('a file that was not read is never a pass', () => {
     expect(bundle.unread).toBe(1)
     expect(await scanSkillReport({ folder, guard: fakeGuard() })).not.toContain('Suggested verdict: SAFE')
   })
+
+  test('a committed name that is not valid UTF-8 stops the scan', async () => {
+    const folder = await gitSkillIn(await temp())
+    // The tree holds bytes, so the entry is written with raw bytes and committed: a disk may refuse
+    // such a name.
+    const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: folder, input: `${PIPE_TO_SHELL}\n` })
+      .toString()
+      .trim()
+    const record = Buffer.concat([Buffer.from(`100644 ${blob}\tpayload`), Buffer.from([0xff]), Buffer.from('.sh\0')])
+    execFileSync('git', ['update-index', '--add', '-z', '--index-info'], { cwd: folder, input: record })
+    execFileSync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'second'], {
+      cwd: folder,
+    })
+
+    // The name would be hashed under a replacement character, and no target id could ever match it.
+    await expect(readBundle(folder)).rejects.toThrow(/not valid UTF-8/)
+    await expect(scanSkillReport({ folder, guard: fakeGuard() })).rejects.toThrow(/not valid UTF-8/)
+  })
 })
 
 describe('a missing blob outside the folder does not stop the scan of the folder', () => {

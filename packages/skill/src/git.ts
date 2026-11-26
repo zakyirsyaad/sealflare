@@ -149,7 +149,7 @@ export function committedFiles(repository: Repository): TreeFile[] {
   }
   const tree = git(repository.root, ['ls-tree', '-r', '-l', '-z', 'HEAD'])
   if (!tree.ok) throw new Error(`The committed tree could not be read: ${tree.why}`)
-  return parseTree(tree.out.toString('utf8'), repository.prefix)
+  return parseTree(tree.out, repository.prefix)
 }
 
 /**
@@ -157,17 +157,21 @@ export function committedFiles(repository: Repository): TreeFile[] {
  * byte. The size is padded with spaces, and it is a dash for a submodule. The sizes come from the
  * tree, so the limits of a bundle are checked without reading a single blob.
  */
-function parseTree(listing: string, prefix: string): TreeFile[] {
+function parseTree(listing: Buffer, prefix: string): TreeFile[] {
   const files: TreeFile[] = []
-  for (const record of listing.split('\0')) {
-    if (record.length === 0) continue
-    const tab = record.indexOf('\t')
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  const folder = Buffer.from(prefix === '' ? '' : `${prefix}/`)
+  for (const record of recordsOf(listing)) {
+    const tab = record.indexOf(0x09)
     if (tab < 0) continue
-    const [mode, , oid, size] = record.slice(0, tab).split(/ +/)
-    const path = record.slice(tab + 1)
+    // The head of the record is the mode, the type, the id and the size. They are all ASCII, so
+    // they are read as they are, and the name after the tab is read on its own.
+    const [mode, , oid, size] = record.subarray(0, tab).toString('latin1').split(/ +/)
+    const name = record.subarray(tab + 1)
     // The folder is chosen before the size is read: a blob outside the folder may be missing, as in
     // a sparse partial clone, and it has no bearing on the bundle.
-    if (prefix !== '' && !path.startsWith(`${prefix}/`)) continue
+    if (prefix !== '' && !name.subarray(0, folder.length).equals(folder)) continue
+    const path = decodeName(decoder, name)
     if (mode === undefined || oid === undefined || size === undefined) continue
     const bytes = size === '-' ? 0 : Number(size)
     // A blob that git cannot read has the size BAD. A file of the folder is never dropped for that,
@@ -176,6 +180,36 @@ function parseTree(listing: string, prefix: string): TreeFile[] {
     files.push({ path: prefix === '' ? path : path.slice(prefix.length + 1), mode, oid, size: bytes })
   }
   return files
+}
+
+/**
+ * The name of a committed file.
+ *
+ * A name that is not valid UTF-8 is read as a replacement character by a lenient decoder, and the
+ * file would then be hashed under a name the registry can never see. The scan stops instead.
+ */
+function decodeName(decoder: TextDecoder, bytes: Buffer): string {
+  try {
+    return decoder.decode(bytes)
+  } catch {
+    throw new Error(
+      `A committed file has a name that is not valid UTF-8, so the registry can never publish it: 0x${bytes.toString('hex')}`,
+    )
+  }
+}
+
+/** The records of a NUL separated listing of git, with the empty ones left out. */
+function recordsOf(out: Buffer): Buffer[] {
+  const records: Buffer[] = []
+  let start = 0
+  while (start < out.length) {
+    let end = out.indexOf(0, start)
+    if (end < 0) end = out.length
+    const record = out.subarray(start, end)
+    start = end + 1
+    if (record.length > 0) records.push(record)
+  }
+  return records
 }
 
 /** The bytes of a committed file. The content comes from the commit, not from the working tree. */
@@ -236,13 +270,7 @@ function pathsOf(out: Buffer, prefix: string): Listing {
   let nested = 0
   const folder = Buffer.from(prefix === '' ? '' : `${prefix}/`)
   const decoder = new TextDecoder('utf-8', { fatal: true })
-  let start = 0
-  while (start < out.length) {
-    let end = out.indexOf(0, start)
-    if (end < 0) end = out.length
-    const record = out.subarray(start, end)
-    start = end + 1
-    if (record.length === 0) continue
+  for (const record of recordsOf(out)) {
     if (!record.subarray(0, folder.length).equals(folder)) continue
     let path: string
     try {
