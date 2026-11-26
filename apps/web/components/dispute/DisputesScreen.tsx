@@ -5,7 +5,8 @@ import { ErrorState } from '../ui/ErrorState'
 import { Table, type TableRow } from '../ui/Table'
 import { modulesLive } from '../../lib/chain/config'
 import { copy } from '../../lib/copy'
-import { phaseWord, targetLabel, windowLeft } from './labels'
+import { targetLabel } from '../../lib/format'
+import { phaseWord, windowLeft } from './labels'
 import { useNow } from './useNow'
 
 export type DisputesScreenProps = {

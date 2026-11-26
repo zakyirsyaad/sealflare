@@ -1,6 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { XP } from '@sealflare/shared/rules'
 
 vi.mock('wagmi', async () => (await import('./dispute.mocks')).wagmiModule)
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }), usePathname: () => '/app' }))
@@ -100,6 +101,27 @@ test('another wallet does not see "Submit reply" even for a verified publisher',
   state.value = { kind: 'holder', address: JUROR_ONE, isLoading: false, isError: false, recheck: () => {} }
   dispute({ publisherRole: 'VERIFIED_PUBLISHER', publisher: ME })
   expect(screen.queryByRole('button', { name: copy.dispute.submitReply })).toBeNull()
+})
+
+test('the reply panel is left when the Court leaves the commit phase', async () => {
+  state.value = { kind: 'holder', address: ME, isLoading: false, isError: false, recheck: () => {} }
+  const view = dispute({ publisherRole: 'VERIFIED_PUBLISHER', publisher: ME })
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submitReply }))
+  expect(screen.getByRole('heading', { name: copy.dispute.submitReply })).toBeInTheDocument()
+  // The chain read refreshes every fifteen seconds, and the phase is no longer the commit phase.
+  wagmi.reads.current.phaseOf = 2
+  view.rerender(<DisputeScreen {...screenProps({ publisherRole: 'VERIFIED_PUBLISHER', publisher: ME })} />)
+  expect(screen.queryByRole('heading', { name: copy.dispute.submitReply })).toBeNull()
+})
+
+test('the reply panel is left when the wallet is no longer the verified publisher', async () => {
+  state.value = { kind: 'holder', address: ME, isLoading: false, isError: false, recheck: () => {} }
+  const view = dispute({ publisherRole: 'VERIFIED_PUBLISHER', publisher: ME })
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submitReply }))
+  expect(screen.getByRole('heading', { name: copy.dispute.submitReply })).toBeInTheDocument()
+  state.value = { kind: 'holder', address: JUROR_ONE, isLoading: false, isError: false, recheck: () => {} }
+  view.rerender(<DisputeScreen {...screenProps({ publisherRole: 'VERIFIED_PUBLISHER', publisher: ME })} />)
+  expect(screen.queryByRole('heading', { name: copy.dispute.submitReply })).toBeNull()
 })
 
 test('a target with no publisher says "No publisher is bound to this target, so no reply is possible." with no countdown', () => {
@@ -243,7 +265,9 @@ test('the page names the four endings and what each returns', () => {
   for (const word of [copy.dispute.outcomeUpheld, copy.dispute.outcomeRejected, copy.dispute.outcomeTied, copy.dispute.outcomeExpired]) {
     expect(within(table).getByRole('rowheader', { name: word })).toBeInTheDocument()
   }
-  expect(within(table).getByText(copy.dispute.expiredChallenger)).toBeInTheDocument()
+  // The money and the XP come from the rules, never from a second copy of them in the copy.
+  expect(within(table).getByText('80%, 50% or 0% of the stake back')).toBeInTheDocument()
+  expect(within(table).getByText(`Stake lost, ${Math.abs(XP.CHALLENGER_LOST)} XP`)).toBeInTheDocument()
 })
 
 test('with modules not live the dispute page shows the fixed sentence and no dispute', () => {

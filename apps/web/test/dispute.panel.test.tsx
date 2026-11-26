@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { CONSTANTS, FLAGS } from '@sealflare/shared/rules'
@@ -72,6 +72,16 @@ test('the review step names the 0.01 BNB stake and all four endings with the mon
   expect(screen.getByText('Expired: 0.008 BNB of your 0.01 BNB comes back.')).toBeInTheDocument()
   expect(screen.getByText(copy.dispute.cooldownNote.replace('{days}', '7'))).toBeInTheDocument()
   expect(screen.getByText(copy.attest.twoApprovals)).toBeInTheDocument()
+})
+
+test('the cooldown follows every ending of a dispute but a danger verdict', async () => {
+  panel()
+  await toReview()
+  expect(
+    screen.getByText(
+      'After a dispute that ends in any other way than a danger verdict, you cannot challenge this target again for 7 days.',
+    ),
+  ).toBeInTheDocument()
 })
 
 test.each([
@@ -231,4 +241,66 @@ test('the panel stays open while the transaction it sent is being confirmed, eve
   )
   expect(screen.getByRole('link', { name: copy.dispute.viewOpen })).toHaveAttribute('href', '/app/disputes/13')
   expect(screen.getByText(copy.dispute.step[0])).toBeInTheDocument()
+})
+
+// ---- the panel may be left ------------------------------------------------------------------
+
+test('the panel can be left while the wallet is asking', async () => {
+  const closed = vi.fn()
+  // A wallet prompt that never settles must not keep the panel on the screen for ever.
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise(() => {}))
+  render(
+    <ChallengePanel targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} onClose={closed} />,
+  )
+  await toReview()
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submit }))
+  expect(screen.getByRole('button', { name: copy.common.close })).toBeEnabled()
+  document.querySelector('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }))
+  expect(closed).toHaveBeenCalled()
+})
+
+test('the panel is locked while the receipt of the transaction is waited for', async () => {
+  const closed = vi.fn()
+  render(
+    <ChallengePanel targetId={targetId} targetType="SMART_CONTRACT" label={address} scan={scan()} onClose={closed} />,
+  )
+  await toReview()
+  await userEvent.click(screen.getByRole('button', { name: copy.dispute.submit }))
+  await waitFor(() => expect(screen.getByRole('button', { name: copy.common.close })).toBeDisabled())
+  document.querySelector('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }))
+  expect(closed).not.toHaveBeenCalled()
+})
+
+// ---- the cooldown ---------------------------------------------------------------------------
+
+test('the cooldown is judged by the clock of the chain, not by the clock of the browser', () => {
+  // The browser runs a year ahead, but the chain says the cooldown is still running.
+  vi.useFakeTimers({ now: new Date('2027-01-01T00:00:00.000Z'), toFake: ['Date'] })
+  wagmi.reads.current.cooldownEndsAt = unixOf(new Date('2026-12-04T00:00:00.000Z'))
+  action()
+  expect(screen.getByRole('button', { name: copy.dispute.action })).toBeDisabled()
+  expect(screen.getByText(copy.dispute.cooldownUntil.replace('{time}', '2026-12-04 00:00 UTC'))).toBeInTheDocument()
+})
+
+test('a cooldown that the chain says is over leaves the button open, whatever the browser says', () => {
+  vi.useFakeTimers({ now: new Date('2026-11-01T00:00:00.000Z'), toFake: ['Date'] })
+  wagmi.reads.current.cooldownEndsAt = unixOf(new Date('2026-11-30T00:00:00.000Z'))
+  wagmi.block.current = { timestamp: BigInt(Math.floor(new Date('2026-12-01T00:00:00.000Z').getTime() / 1000)) }
+  action()
+  expect(screen.getByRole('button', { name: copy.dispute.action })).toBeEnabled()
+})
+
+test('a cooldown that could not be read keeps the button closed', () => {
+  wagmi.reads.current.cooldownEndsAt = undefined
+  wagmi.readErrors.current.cooldownEndsAt = true
+  action()
+  expect(screen.getByRole('button', { name: copy.dispute.action })).toBeDisabled()
+})
+
+test('the cooldown and the clock of the chain are read again, so the button follows the chain', () => {
+  action()
+  const cooldown = wagmi.readCalls.find(call => call.functionName === 'cooldownEndsAt')
+  expect(cooldown?.refetchInterval).toBeGreaterThan(0)
+  expect(wagmi.blockCalls[0]?.refetchInterval).toBeGreaterThan(0)
+  expect(wagmi.blockCalls[0]?.chainId).toBe(56)
 })
