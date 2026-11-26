@@ -5,7 +5,7 @@ import { fail, ok } from '../../../server/respond'
 import { copy } from '../../../lib/copy'
 import { internalGet, InternalServiceError, InternalTargetSummary } from '../../../server/internal'
 import { withTiers } from '../../../server/tier'
-import { deadlineFromNow, withDeadline } from '../../../server/deadline'
+import { deadlineFromNow } from '../../../server/deadline'
 import { VERDICT_TIERS, VerdictSchema, type Verdict } from '../../../lib/verdict'
 
 /** The default size of a page. */
@@ -19,6 +19,16 @@ const DEFAULT_LIMIT = 20
  * told to narrow it instead of being shown a failure without a reason.
  */
 const NARROW_MESSAGE = copy.explore.tooMany
+
+/**
+ * How many candidates a filter may cover before the request cannot answer it in time.
+ *
+ * The tier of a target is read from the chain in batches of a hundred, so a filter that covers
+ * more than one batch needs more than one round of reads. Such a filter cannot be answered
+ * inside the deadline of a request, so the reader is asked for a narrower one instead of a
+ * failure without a reason.
+ */
+const BROAD_CANDIDATES = 100
 
 /** The query of the target list: the frozen one, plus the verdict a reader filters by. */
 type TargetQuery = z.infer<typeof ListQuery> & { verdict?: Verdict }
@@ -61,13 +71,17 @@ function readNumber(text: string | null): number | undefined {
  * Without a tier filter the page comes from the internal service and only the tier of the rows
  * of that page is filled. With a tier filter every candidate is read, because the tier is not
  * in the indexed rows and the page cannot be cut before the tier is known.
+ *
+ * The request is bounded without a race around the whole work: the internal service has a
+ * timeout of its own and the reads of the chain stop at the deadline of the route. The route
+ * therefore decides what a failure means, because it knows how many candidates were read.
  */
 export async function GET(request: Request): Promise<Response> {
   const query = readQuery(new URL(request.url))
   if (!query.ok) return fail('BAD_REQUEST', 'The query of the target list is not valid.', 400)
   const deadlineAt = deadlineFromNow()
   try {
-    return await withDeadline(answerTargets(query.value, deadlineAt), deadlineAt)
+    return await answerTargets(query.value, deadlineAt)
   } catch (error) {
     if (error instanceof InternalServiceError) {
       // The internal service refused the request or could not answer. There is no list to show,
@@ -77,19 +91,9 @@ export async function GET(request: Request): Promise<Response> {
       if (error.code === 'BAD_REQUEST') return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
       return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
     }
-    // The deadline of the request passed, or the chain could not be read. There is no list.
-    // A filter that has to read the tier of every candidate is the one that runs out of time.
-    if (Date.now() >= deadlineAt && hasTierFilter(query.value)) {
-      return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
-    }
     console.error('The target list could not be read.', error instanceof Error ? error.name : 'unknown')
     return fail('INTERNAL', 'The target list could not be read.', 503)
   }
-}
-
-/** Whether the query asks for the tier of a target, directly or through a verdict. */
-function hasTierFilter(query: TargetQuery): boolean {
-  return query.tier !== undefined || query.verdict !== undefined
 }
 
 /**
@@ -156,9 +160,13 @@ async function answerFiltered(
   if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
   const filled = await withTiers(items.data, deadlineAt)
   if (filled === null) {
-    // A filter that runs out of time covers more targets than one request can read, so the
-    // reader is asked for a narrower filter instead of a failure without a reason.
-    if (Date.now() >= deadlineAt) return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
+    // A filter that covers more candidates than one round of tier reads cannot be answered
+    // inside the deadline, so the reader is asked for a narrower filter. A filter that covers
+    // few of them only ran out of time, so the answer is a failure of the read and not a
+    // request to change a filter that was fine.
+    if (Date.now() >= deadlineAt && items.data.length > BROAD_CANDIDATES) {
+      return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
+    }
     return fail('INTERNAL', 'The trust tier cannot be read.', 503)
   }
   // The order of the internal service is kept, so the page of a filter is the page of the

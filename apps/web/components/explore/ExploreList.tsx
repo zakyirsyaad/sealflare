@@ -190,13 +190,27 @@ export function ExploreList({ kind, verdict, page }: ExploreListProps) {
   // look like a registry without targets.
   const failed = query.isError
   const tooMany = query.error instanceof ApiError && query.error.code === 'BAD_REQUEST'
+  // A page that holds no row while the list holds some is a page past the end, not an empty
+  // registry. The two are told apart, because a reader of the second would look for a target
+  // that is there.
+  const pastTheEnd = total > 0 && items.length === 0
 
   return (
     <div className="sf-list-page">
       <ListHead state={state} />
       {query.isPending && <Skeleton label={copy.common.loading} rows={5} />}
       {failed && <ErrorState what={tooMany ? copy.explore.tooMany : copy.explore.failed} onChainSafe onRetry={() => void query.refetch()} />}
-      {!query.isPending && !failed && items.length === 0 && (
+      {!query.isPending && !failed && pastTheEnd && (
+        <EmptyState
+          title={copy.explore.noSuchPage}
+          action={
+            <Link className="sf-btn sf-btn--secondary" href={hrefOf(state, { page: 1 })}>
+              {copy.explore.backToStart}
+            </Link>
+          }
+        />
+      )}
+      {!query.isPending && !failed && !pastTheEnd && items.length === 0 && (
         <EmptyState
           title={copy.explore.empty}
           action={

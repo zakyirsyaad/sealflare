@@ -220,7 +220,7 @@ describe('the public target API', () => {
     expect(body.data).toBeUndefined()
   })
 
-  test('a filter that runs out of time asks for a narrower filter', async () => {
+  test('a filter of few candidates that runs out of time is a failure of the read', async () => {
     vi.useFakeTimers()
     try {
       internalGet.mockResolvedValue({ data: { items: [summary()] }, meta: { finalizedBlock: '12345' } })
@@ -229,6 +229,32 @@ describe('the public target API', () => {
       const pending = listRoute(request('/api/targets?verdict=SAFE'))
       await vi.advanceTimersByTimeAsync(9000)
       const response = await pending
+      // The filter covers one target, so it was not too wide. The read ran out of time, and the
+      // answer says so instead of asking for a narrower filter that was fine.
+      expect(response.status).toBe(503)
+      const body = await answer(response)
+      expect(body.success).toBe(false)
+      expect(body.error.code).toBe('INTERNAL')
+      expect(body.error.message).not.toContain('Narrow the filter')
+      expect(body.data).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('a filter that covers many candidates and runs out of time asks for a narrower filter', async () => {
+    vi.useFakeTimers()
+    try {
+      const candidates = Array.from({ length: 101 }, (_, index) =>
+        summary({ targetId: `0x${String(index + 1).padStart(64, '0')}` }),
+      )
+      internalGet.mockResolvedValue({ data: { items: candidates }, meta: { finalizedBlock: '12345' } })
+      reader.tierAt.mockImplementation(() => new Promise(() => {}))
+      const pending = listRoute(request('/api/targets?verdict=SAFE'))
+      await vi.advanceTimersByTimeAsync(9000)
+      const response = await pending
+      // More candidates than one round of tier reads cannot be answered inside the deadline, so
+      // the reader is asked for a narrower filter.
       expect(response.status).toBe(400)
       const body = await answer(response)
       expect(body.success).toBe(false)

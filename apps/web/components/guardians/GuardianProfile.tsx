@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { AddressSchema, type ActivityItem } from '@sealflare/shared/schemas'
-import type { Weight } from '@sealflare/shared/rules'
+import { weightOf, type Weight } from '@sealflare/shared/rules'
 import { ApiError } from '../../lib/api/client'
 import { loadGuardian } from '../../lib/api/lists'
 import { copy } from '../../lib/copy'
@@ -13,8 +13,13 @@ import { Chip } from '../ui/Chip'
 import { ErrorState, EmptyState } from '../ui'
 import { Skeleton } from '../ui/Skeleton'
 
-/** The highest vote weight of the frozen rules. */
-const MAX_WEIGHT: Weight = 5
+/**
+ * The highest vote weight of the frozen rules.
+ *
+ * It is read from the frozen rules instead of written down, so the panel can never name a
+ * weight that the rules do not have.
+ */
+const MAX_WEIGHT: Weight = weightOf(Number.MAX_SAFE_INTEGER)
 
 export type GuardianProfileProps = {
   address: string
@@ -155,26 +160,41 @@ export function GuardianProfile({ address }: GuardianProfileProps) {
         </div>
       </header>
       <Standing guardian={guardian} />
-      <TargetTable
-        caption={copy.guardians.historyCaption}
-        columns={COLUMNS}
-        rows={guardian.history.map((item, index) => rowOf(item, index, now))}
-        footer={
-          <>
-            <span className="sf-mono">
-              {(guardian.history.length === 1 ? copy.guardians.historyCountOne : copy.guardians.historyCount).replace(
-                '{count}',
-                String(guardian.history.length),
-              )}
-            </span>
-            {query.data.finalizedBlock !== null && (
-              <span className="sf-mono sf-list__muted">
-                {copy.guardians.indexedTo.replace('{block}', query.data.finalizedBlock)}
-              </span>
-            )}
-          </>
-        }
-      />
+      {guardian.history.length === 0 ? (
+        // A Guardian that never voted has no history, and the screen says so instead of
+        // showing a table without a row.
+        <EmptyState
+          title={copy.guardians.emptyHistory}
+          action={
+            <Link className="sf-btn sf-btn--secondary" href="/app/guardians">
+              {copy.guardians.title}
+            </Link>
+          }
+        />
+      ) : (
+        <section aria-label={copy.guardians.history}>
+          <TargetTable
+            caption={copy.guardians.historyCaption}
+            columns={COLUMNS}
+            rows={guardian.history.map((item, index) => rowOf(item, index, now))}
+            footer={
+              <>
+                <span className="sf-mono">
+                  {(guardian.history.length === 1 ? copy.guardians.historyCountOne : copy.guardians.historyCount).replace(
+                    '{count}',
+                    String(guardian.history.length),
+                  )}
+                </span>
+                {query.data.finalizedBlock !== null && (
+                  <span className="sf-mono sf-list__muted">
+                    {copy.guardians.indexedTo.replace('{block}', query.data.finalizedBlock)}
+                  </span>
+                )}
+              </>
+            }
+          />
+        </section>
+      )}
     </div>
   )
 }

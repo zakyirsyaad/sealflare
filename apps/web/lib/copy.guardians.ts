@@ -11,6 +11,8 @@ export const guardians = {
     "status": "Status"
   },
   "empty": "No Guardian has voted yet.",
+  "noSuchPage": "This page is past the end of the list.",
+  "backToStart": "Back to the first page",
   "failed": "The Guardians could not be loaded.",
   "count": "{count} Guardians",
   "countOne": "{count} Guardian",
@@ -25,6 +27,7 @@ export const guardians = {
   "voteWeight": "Vote weight {weight} of {max}",
   "history": "History",
   "historyCaption": "History",
+  "emptyHistory": "This Guardian has not done anything yet.",
   "historyCount": "{count} entries",
   "historyCountOne": "{count} entry",
   "historyColumns": {

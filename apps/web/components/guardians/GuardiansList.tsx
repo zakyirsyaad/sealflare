@@ -81,6 +81,10 @@ export function GuardiansList({ page }: GuardiansListProps) {
   // A read that fails later hides the rows it had, because a list that hides a failure would
   // look like a registry without Guardians.
   const failed = query.isError
+  // A page that holds no row while the list holds some is a page past the end, not an empty
+  // registry. The two are told apart, because a reader of the second would look for a Guardian
+  // that is there.
+  const pastTheEnd = total > 0 && items.length === 0
 
   return (
     <div className="sf-list-page">
@@ -92,7 +96,17 @@ export function GuardiansList({ page }: GuardiansListProps) {
       </header>
       {query.isPending && <Skeleton label={copy.common.loading} rows={5} />}
       {failed && <ErrorState what={copy.guardians.failed} onChainSafe onRetry={() => void query.refetch()} />}
-      {!query.isPending && !failed && items.length === 0 && (
+      {!query.isPending && !failed && pastTheEnd && (
+        <EmptyState
+          title={copy.guardians.noSuchPage}
+          action={
+            <Link className="sf-btn sf-btn--secondary" href={hrefOf(1)}>
+              {copy.guardians.backToStart}
+            </Link>
+          }
+        />
+      )}
+      {!query.isPending && !failed && !pastTheEnd && items.length === 0 && (
         <EmptyState
           title={copy.guardians.empty}
           action={

@@ -22,6 +22,8 @@ export const explore = {
   },
   "caption": "Targets",
   "empty": "No target matches this filter yet.",
+  "noSuchPage": "This page is past the end of the list.",
+  "backToStart": "Back to the first page",
   "clearFilter": "Clear the filter",
   "scanTarget": "Scan a target",
   "failed": "The targets could not be loaded.",
