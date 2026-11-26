@@ -1,7 +1,11 @@
+'use client'
 import type { SignalGroup } from '@sealflare/shared/schemas'
 import { flagNames } from '@sealflare/shared/rules'
 import { Chip } from '../ui/Chip'
 import { copy } from '../../lib/copy'
+import { verdictLabel } from '../../lib/format'
+import { TransactionLink } from '../attest/AttestButton'
+import { countVerdict, usePendingVote } from './pendingVote'
 import { flagLabel } from '../../lib/format'
 
 export type SignalBreakdownProps = { signal: { newIds: SignalGroup; guardians: SignalGroup } }
@@ -47,6 +51,23 @@ function Row({ label, note, group }: { label: string; note: string; group: Signa
   )
 }
 
+/** The vote of this session, shown until the indexer has read it from a final block. */
+function PendingRow({ signal }: SignalBreakdownProps) {
+  const { vote } = usePendingVote()
+  if (vote === null || countVerdict(signal, vote.verdict) > vote.baseline) return null
+  return (
+    <tr data-pending-vote>
+      <th scope="row" className="sf-signal__who">
+        {copy.attest.pendingVote.replace('{verdict}', verdictLabel(vote.verdict))}
+        <span className="sf-signal__note">{copy.common.waitingFinality}</span>
+      </th>
+      <td colSpan={5}>
+        <TransactionLink txHash={vote.txHash}>{copy.target.transaction}</TransactionLink>
+      </td>
+    </tr>
+  )
+}
+
 /**
  * The two groups are counted apart: new Agent IDs carry weight 1, experienced Guardians carry
  * weight 2 or more. The signal is never collapsed into a single number.
@@ -72,6 +93,7 @@ export function SignalBreakdown({ signal }: SignalBreakdownProps) {
           note={copy.target.combinedWeight.replace('{weight}', String(signal.guardians.weight.safe + signal.guardians.weight.caution + signal.guardians.weight.danger))}
           group={signal.guardians}
         />
+        <PendingRow signal={signal} />
       </tbody>
     </table>
   )

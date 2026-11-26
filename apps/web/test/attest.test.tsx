@@ -1,9 +1,8 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UserRejectedRequestError } from 'viem'
-import { FLAGS, targetIdOfContract } from '@sealflare/shared/rules'
-import { evidenceHashOf, ScanReport } from '@sealflare/shared/schemas'
+import { evidenceHashOf } from '@sealflare/shared/schemas'
 
 const wagmi = vi.hoisted(() => ({
   signTypedDataAsync: vi.fn(),
@@ -43,121 +42,26 @@ vi.mock('../lib/api/client', async () => {
 
 import { AttestPanel } from '../components/attest/AttestPanel'
 import { copy } from '../lib/copy'
+import { address, bundle, cleanScan, CORE, scan, skillId, skillScan, targetId, twoFindingScan, txHash, word } from './attest.fixtures'
 
-const address = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
-const targetId = targetIdOfContract(address)
-const codehash = `0x${'22'.repeat(32)}` as const
-const txHash = `0x${'ab'.repeat(32)}` as const
-const CORE = '0x1000000000000000000000000000000000000001'
-
-function scan(overrides: Record<string, unknown> = {}) {
-  return ScanReport.parse({
-    schemaVersion: 1,
-    targetType: 'SMART_CONTRACT',
+function panelProps(overrides: Partial<Parameters<typeof AttestPanel>[0]> = {}): Parameters<typeof AttestPanel>[0] {
+  return {
     targetId,
-    source: { kind: 'contract', address, codehash, blockNumber: '52000000' },
-    scannedAt: '2026-11-25T03:00:00.000Z',
-    checks: [
-      { id: 'source_verified', status: 'flagged' },
-      { id: 'admin_functions', status: 'passed' },
-      { id: 'proxy_eip1967', status: 'passed' },
-      { id: 'proxy_beacon', status: 'passed' },
-      { id: 'proxy_eip1167', status: 'passed' },
-      { id: 'delegatecall_opcode', status: 'passed' },
-      { id: 'dry_run', status: 'passed' },
-    ],
-    findings: [
-      {
-        flag: 'UNVERIFIED_SOURCE',
-        checkId: 'source_verified',
-        title: 'The source is not verified',
-        location: 'explorer',
-        excerpt: 'the contract is not verified on the explorer',
-      },
-    ],
-    flags: FLAGS.UNVERIFIED_SOURCE,
-    suggestedVerdict: 'CAUTION',
+    targetWord: word,
+    targetType: 'SMART_CONTRACT',
+    label: address,
+    tier: 'CAUTION_FLAGGED',
+    scan: scan(),
+    underDispute: false,
+    onClose: () => {},
     ...overrides,
-  })
-}
-
-/** A scan with two findings, so one of them can be taken back. */
-function twoFindingScan() {
-  return ScanReport.parse({
-    schemaVersion: 1,
-    targetType: 'SMART_CONTRACT',
-    targetId,
-    source: { kind: 'contract', address, codehash, blockNumber: '52000000' },
-    scannedAt: '2026-11-25T03:00:00.000Z',
-    checks: [
-      { id: 'source_verified', status: 'flagged' },
-      { id: 'admin_functions', status: 'flagged' },
-      { id: 'proxy_eip1967', status: 'passed' },
-      { id: 'proxy_beacon', status: 'passed' },
-      { id: 'proxy_eip1167', status: 'passed' },
-      { id: 'delegatecall_opcode', status: 'passed' },
-      { id: 'dry_run', status: 'passed' },
-    ],
-    findings: [
-      {
-        flag: 'UNVERIFIED_SOURCE',
-        checkId: 'source_verified',
-        title: 'The source is not verified',
-        location: 'explorer',
-        excerpt: 'the contract is not verified on the explorer',
-      },
-      {
-        flag: 'HIDDEN_MINT',
-        checkId: 'admin_functions',
-        title: 'The owner can mint',
-        location: 'owner.mint',
-        excerpt: 'function mint(address to)',
-      },
-    ],
-    flags: FLAGS.UNVERIFIED_SOURCE | FLAGS.HIDDEN_MINT,
-    suggestedVerdict: 'CAUTION',
-  })
-}
-
-/** A scan that found nothing, so every check passed. */
-function cleanScan() {
-  return ScanReport.parse({
-    schemaVersion: 1,
-    targetType: 'SMART_CONTRACT',
-    targetId,
-    source: { kind: 'contract', address, codehash, blockNumber: '52000000' },
-    scannedAt: '2026-11-25T03:00:00.000Z',
-    checks: [
-      { id: 'source_verified', status: 'passed' },
-      { id: 'admin_functions', status: 'passed' },
-      { id: 'proxy_eip1967', status: 'passed' },
-      { id: 'proxy_beacon', status: 'passed' },
-      { id: 'proxy_eip1167', status: 'passed' },
-      { id: 'delegatecall_opcode', status: 'passed' },
-      { id: 'dry_run', status: 'passed' },
-    ],
-    findings: [],
-    flags: 0,
-    suggestedVerdict: 'SAFE',
-  })
+  }
 }
 
 function panel(overrides: Partial<Parameters<typeof AttestPanel>[0]> = {}) {
-  return render(
-    <AttestPanel
-      targetId={targetId}
-      targetType="SMART_CONTRACT"
-      label={address}
-      tier="CAUTION_FLAGGED"
-      scan={scan()}
-      underDispute={false}
-      onClose={() => {}}
-      {...overrides}
-    />,
-  )
+  return render(<AttestPanel {...panelProps(overrides)} />)
 }
 
-/** Chooses a verdict and moves to the review step. */
 /** The verdict buttons. The name starts with the verdict, so the help text never matches. */
 function radio(name: 'Safe' | 'Caution' | 'Danger') {
   return screen.getByRole('radio', { name: new RegExp(`^${name}`) })
@@ -225,6 +129,12 @@ test('the panel says up front there are two approvals and only the second uses g
   expect(screen.getByText(copy.attest.gas)).toBeInTheDocument()
 })
 
+test('a Safe vote offers no flag at all', async () => {
+  panel()
+  await userEvent.click(radio('Safe'))
+  expect(screen.queryByRole('button', { name: copy.attest.addFlag })).toBeNull()
+})
+
 test('choosing Safe clears the flags', async () => {
   panel()
   await userEvent.click(radio('Caution'))
@@ -261,6 +171,40 @@ test('the bytes signed, uploaded and hashed are the same reportJson', async () =
   expect(signed.message.evidenceHash).toBe(evidenceHashOf(bytes))
   const written = wagmi.writeContractAsync.mock.calls[0]?.[0] as { args: readonly unknown[] }
   expect(written.args[4]).toBe(evidenceHashOf(bytes))
+})
+
+test('Core.attest takes the word of the contract, never its id', async () => {
+  panel()
+  await toReview('Caution')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  const written = wagmi.writeContractAsync.mock.calls[0]?.[0] as { args: readonly unknown[] }
+  expect(written.args[1]).toBe(word)
+  expect(written.args[1]).not.toBe(targetId)
+})
+
+test('Core.attest takes the canonical bundle hash of a skill, never its id', async () => {
+  panel({ targetId: skillId, targetWord: bundle, targetType: 'AI_SKILL_BUNDLE', label: 'sealflare/guard', scan: skillScan() })
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  const written = wagmi.writeContractAsync.mock.calls[0]?.[0] as { args: readonly unknown[] }
+  expect(written.args[1]).toBe(bundle)
+  expect(written.args[1]).not.toBe(skillId)
+})
+
+test('a target whose word is unknown asks for no signature', async () => {
+  panel({ targetWord: null })
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByText(copy.attest.targetUnknown)).toBeInTheDocument()
+  expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
+})
+
+test('a drifted contract asks for no signature even when the panel is open', async () => {
+  panel({ tier: 'STALE_CODEHASH_DRIFT' })
+  await toReview('Safe')
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByText(copy.errors.CodeChangedSincePin)).toBeInTheDocument()
+  expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
 })
 
 test('two attempts never use the same nonce and never live longer than ten minutes', async () => {
@@ -304,6 +248,8 @@ test('rejecting the first approval returns to the review step with no error', as
   await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
   expect(screen.getByRole('heading', { name: copy.attest.review })).toBeInTheDocument()
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
+  expect(screen.queryByRole('link', { name: copy.target.transaction })).toBeNull()
   expect(uploadEvidence).not.toHaveBeenCalled()
 })
 
@@ -314,6 +260,8 @@ test('rejecting the second approval returns to the review step with no error and
   await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
   expect(screen.getByRole('heading', { name: copy.attest.review })).toBeInTheDocument()
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
+  expect(screen.queryByRole('link', { name: copy.target.transaction })).toBeNull()
   expect(uploadEvidence).toHaveBeenCalledTimes(1)
   expect(wagmi.writeContractAsync).toHaveBeenCalledTimes(1)
 })
@@ -340,18 +288,7 @@ test('a revert shows the translated contract error and a retry', async () => {
   await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
   expect(await screen.findByRole('alert')).toHaveTextContent(copy.errors.AlreadyAttested)
   expect(screen.getByRole('button', { name: copy.common.retry })).toBeInTheDocument()
-})
-
-test('success shows the vote with the label "Waiting for finality"', async () => {
-  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
-  panel()
-  await toReview('Safe')
-  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
-  expect(await screen.findByText(copy.common.waitingFinality)).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: copy.target.transaction })).toHaveAttribute(
-    'href',
-    `https://bscscan.com/tx/${txHash}`,
-  )
+  expect(screen.getByRole('link', { name: copy.target.transaction })).toHaveAttribute('href', `https://bscscan.com/tx/${txHash}`)
 })
 
 test('no wallet: the panel asks to connect and then continues at step one', async () => {
@@ -361,17 +298,7 @@ test('no wallet: the panel asks to connect and then continues at step one', asyn
   await userEvent.click(screen.getByRole('button', { name: 'Browser wallet' }))
   expect(wagmi.connect).toHaveBeenCalledTimes(1)
   state.value = { kind: 'holder', address, isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
-  view.rerender(
-    <AttestPanel
-      targetId={targetId}
-      targetType="SMART_CONTRACT"
-      label={address}
-      tier="CAUTION_FLAGGED"
-      scan={scan()}
-      underDispute={false}
-      onClose={() => {}}
-    />,
-  )
+  view.rerender(<AttestPanel {...panelProps()} />)
   expect(screen.getByRole('radiogroup', { name: copy.attest.yourVerdict })).toBeInTheDocument()
 })
 
@@ -381,17 +308,7 @@ test('wrong network: the panel offers one switch button and then continues', asy
   await userEvent.click(screen.getByRole('button', { name: /Switch to/ }))
   expect(wagmi.switchChain).toHaveBeenCalledTimes(1)
   state.value = { kind: 'holder', address, isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
-  view.rerender(
-    <AttestPanel
-      targetId={targetId}
-      targetType="SMART_CONTRACT"
-      label={address}
-      tier="CAUTION_FLAGGED"
-      scan={scan()}
-      underDispute={false}
-      onClose={() => {}}
-    />,
-  )
+  view.rerender(<AttestPanel {...panelProps()} />)
   expect(screen.getByRole('radiogroup', { name: copy.attest.yourVerdict })).toBeInTheDocument()
 })
 
@@ -442,4 +359,20 @@ test('confirmed danger: Safe is disabled, Caution and Danger remain', () => {
   expect(radio('Safe')).toBeDisabled()
   expect(radio('Caution')).toBeEnabled()
   expect(radio('Danger')).toBeEnabled()
+})
+
+test('the radiogroup holds only radios, and the note about confirmed danger describes it', () => {
+  panel({ tier: 'CONFIRMED_DANGER' })
+  const group = screen.getByRole('radiogroup', { name: copy.attest.yourVerdict })
+  expect(within(group).queryByText(copy.attest.dangerSafe)).toBeNull()
+  const note = screen.getByText(copy.attest.dangerSafe)
+  expect(group).toHaveAttribute('aria-describedby', note.id)
+})
+
+test('the arrow keys move the choice and do not scroll the page', async () => {
+  panel()
+  await userEvent.click(radio('Caution'))
+  const notPrevented = fireEvent.keyDown(radio('Caution'), { key: 'ArrowDown' })
+  expect(notPrevented).toBe(false)
+  expect(radio('Danger')).toHaveAttribute('aria-checked', 'true')
 })

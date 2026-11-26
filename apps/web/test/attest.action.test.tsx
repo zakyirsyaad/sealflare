@@ -1,7 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { targetIdOfContract } from '@sealflare/shared/rules'
+import { CONSTANTS } from '@sealflare/shared/rules'
 import type { AttestationRow } from '@sealflare/shared/schemas'
 
 const wagmi = vi.hoisted(() => ({
@@ -41,9 +41,7 @@ vi.mock('../lib/api/client', async () => {
 import { ActionColumn } from '../components/target/ActionColumn'
 import { copy } from '../lib/copy'
 
-const address = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
-const targetId = targetIdOfContract(address)
-const txHash = `0x${'ab'.repeat(32)}` as const
+import { address, targetId, txHash, word } from './attest.fixtures'
 
 function row(overrides: Partial<AttestationRow> = {}): AttestationRow {
   return {
@@ -70,6 +68,9 @@ function actionColumn(overrides: Partial<Parameters<typeof ActionColumn>[0]> = {
       targetType="SMART_CONTRACT"
       currentVersionHref={null}
       targetId={targetId}
+      targetWord={word}
+      bundleChanged={false}
+      evidenceFailed={false}
       label={address}
       scan={null}
       attestations={[]}
@@ -94,7 +95,7 @@ test('quota used up: the button is disabled and says when the quota returns', ()
   state.value = { kind: 'holder', address, isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 0 }
   actionColumn()
   expect(screen.getByRole('button', { name: copy.attest.action })).toBeDisabled()
-  expect(screen.getByText(/You have used all 5 attestations for today\./)).toBeInTheDocument()
+  expect(screen.getByText(new RegExp(`You have used all ${CONSTANTS.DAILY_ATTEST_LIMIT} attestations for today\\.`))).toBeInTheDocument()
   expect(screen.getByText(/The quota returns at .* UTC\./)).toBeInTheDocument()
 })
 
@@ -114,7 +115,35 @@ test('contract code changed: attesting is closed with the explanation', () => {
 })
 
 test('skill changed: the button reads "Scan the current version"', () => {
-  actionColumn({ tier: 'STALE_CODEHASH_DRIFT', targetType: 'AI_SKILL_BUNDLE' })
+  actionColumn({ targetType: 'AI_SKILL_BUNDLE', bundleChanged: true })
   expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
   expect(screen.getByRole('button', { name: copy.target.currentVersion })).toBeDisabled()
+})
+
+test('skill changed with a link to the current version: the button is a link', () => {
+  actionColumn({ targetType: 'AI_SKILL_BUNDLE', bundleChanged: true, currentVersionHref: '/app/scan?src=gh:a/b' })
+  expect(screen.getByRole('link', { name: copy.target.currentVersion })).toHaveAttribute('href', '/app/scan?src=gh:a/b')
+})
+
+test('a skill with the same bundle can be attested', () => {
+  actionColumn({ targetType: 'AI_SKILL_BUNDLE', bundleChanged: false })
+  expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
+})
+
+test('without a wallet a drifted contract still asks to connect first', async () => {
+  state.value = { kind: 'no-wallet', isLoading: false, isError: false, recheck: () => {} }
+  actionColumn({ tier: 'STALE_CODEHASH_DRIFT' })
+  expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
+  expect(screen.queryByText(copy.errors.CodeChangedSincePin)).toBeNull()
+})
+
+test('already attested without a known transaction: the verdict is shown without a link', () => {
+  actionColumn({ attestations: [row({ txHash: `0x${'0'.repeat(64)}` })], evidenceFailed: true })
+  expect(screen.queryByRole('link')).toBeNull()
+  expect(screen.getByRole('button', { name: copy.attest.alreadyVerdict.replace('{verdict}', 'Safe') })).toBeDisabled()
+})
+
+test('already attested while the event log could not be read: no link to a transaction that may not exist', () => {
+  actionColumn({ attestations: [row()], evidenceFailed: true })
+  expect(screen.queryByRole('link')).toBeNull()
 })

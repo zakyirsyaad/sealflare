@@ -3,13 +3,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSignTypedData, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { toHex, type Address, type Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
-import { API_EIP712, EvidenceReport, evidenceHashOf, type ScanReport } from '@sealflare/shared/schemas'
-import type { TargetType, Verdict } from '@sealflare/shared/rules'
+import { API_EIP712, EvidenceReport, evidenceHashOf, parseShortProof, type ScanReport } from '@sealflare/shared/schemas'
+import { isValidFlags, type TargetType, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import { ApiError, api } from '../../lib/api/client'
 import { addresses } from '../../lib/chain/addresses'
 import { expectedChainId } from '../../lib/chain/config'
 import { isUserRejection, translateContractError } from '../../lib/chain/errors'
 import { copy } from '../../lib/copy'
+import { isBytes32, isContractWord } from '../../lib/targetWord'
 import { shortProofOf, travellingScan } from './choice'
 
 /** The states of an attestation, from the summary to the vote on the chain. */
@@ -25,6 +26,9 @@ export type AttestInput = {
 export type AttestTarget = {
   targetId: string
   targetType: TargetType
+  /** The word `Core.attest` takes. Null when the target is not known yet. */
+  targetWord: string | null
+  tier: TrustTier
   /** The scan of this very target, when the page has one. */
   scan: ScanReport | null
   /** The address that votes. Null when no wallet is connected. */
@@ -57,6 +61,19 @@ function freshNonce(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
   return BigInt(`0x${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`).toString()
+}
+
+/**
+ * The word the registry takes.
+ *
+ * A contract is named by its address, a skill by the canonical hash of its bundle. The id of a
+ * target is the hash of that word, so the id is never the word itself.
+ */
+function wordOf(target: AttestTarget): Hex | null {
+  const word = target.targetWord
+  if (word === null) return null
+  const fits = target.targetType === 'SMART_CONTRACT' ? isContractWord(word) : isBytes32(word)
+  return fits ? (word as Hex) : null
 }
 
 /**
@@ -104,6 +121,8 @@ function prepare(target: AttestTarget, input: AttestInput, core: Address): Prepa
     return null
   }
   if (!parsed.success) return null
+  // A line of the evidence summary without a quote is no evidence at all.
+  if (parseShortProof(parsed.data.shortProof).some(item => item.excerpt.trim() === '')) return null
   const reportJson = JSON.stringify(parsed.data)
   return {
     core,
@@ -113,6 +132,16 @@ function prepare(target: AttestTarget, input: AttestInput, core: Address): Prepa
     expiry: String(Math.floor(Date.now() / 1000) + EXPIRY_SECONDS),
     shortProof: parsed.data.shortProof,
   }
+}
+
+/** Why the vote may not be written, or null when it may be written. */
+function blockerOf(target: AttestTarget, input: AttestInput, core: Address | null): string | null {
+  if (target.address === null) return copy.wallet.agentRequired
+  if (core === null) return copy.attest.noRegistry
+  if (target.tier === 'STALE_CODEHASH_DRIFT') return copy.errors.CodeChangedSincePin
+  if (wordOf(target) === null) return copy.attest.targetUnknown
+  if (!isValidFlags(target.targetType, input.verdict, input.flags)) return copy.attest.invalidFlags
+  return null
 }
 
 /** The first approval: the signature of the evidence, without gas. */
@@ -174,7 +203,7 @@ async function approveTransaction(
   write: WriteContractAsync,
   params: {
     core: Address
-    targetId: string
+    word: Hex
     targetType: TargetType
     verdict: Verdict
     flags: number
@@ -190,7 +219,7 @@ async function approveTransaction(
       functionName: 'attest',
       args: [
         TARGET_TYPE_NUMBER[params.targetType],
-        params.targetId as Hex,
+        params.word,
         VERDICT_NUMBER[params.verdict],
         params.flags,
         params.evidenceHash,
@@ -205,7 +234,6 @@ async function approveTransaction(
     return { ok: false, state: 'failed', message: translated?.message ?? copy.errors.unknown }
   }
 }
-
 
 /**
  * The two approvals and the upload between them.
@@ -241,7 +269,7 @@ async function runAttestation(params: {
   params.progress('signing-tx')
   return approveTransaction(params.write, {
     core: params.prepared.core,
-    targetId: params.target.targetId,
+    word: wordOf(params.target) as Hex,
     targetType: params.target.targetType,
     verdict: params.input.verdict,
     flags: params.input.flags,
@@ -249,6 +277,44 @@ async function runAttestation(params: {
     shortProof: params.prepared.shortProof,
     evidenceURI: uploaded.value,
   })
+}
+
+/** Watches the receipt of the vote. A reverted transaction names its own reason. */
+function useReceipt(
+  state: AttestState,
+  txHash: Hex | null,
+  done: () => void,
+  fail: (message: string) => void,
+) {
+  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
+  useEffect(() => {
+    if (state !== 'pending') return
+    if (receipt.isSuccess) {
+      done()
+      return
+    }
+    if (receipt.isError) {
+      const translated = translateContractError(receipt.error)
+      fail(translated?.message ?? copy.errors.unknown)
+    }
+  }, [state, receipt.isSuccess, receipt.isError, receipt.error, done, fail])
+}
+
+type Outcome = { state: 'idle' } | { state: 'failed'; message: string } | { state: 'pending'; hash: Hex }
+
+type Wallet = { sign: SignTypedDataAsync; write: WriteContractAsync; progress: (state: AttestState) => void }
+
+/** Runs one attempt, from the checks to the transaction, and says where it ended. */
+async function attempt(target: AttestTarget, input: AttestInput, wallet: Wallet): Promise<Outcome> {
+  const core = coreAddress()
+  const blocker = blockerOf(target, input, core)
+  if (blocker !== null) return { state: 'failed', message: blocker }
+  const prepared = prepare(target, input, core as Address)
+  if (prepared === null) return { state: 'failed', message: copy.attest.reportInvalid }
+  const result = await runAttestation({ target, input, prepared, ...wallet })
+  if (result.ok) return { state: 'pending', hash: result.value }
+  if (result.state === 'idle') return { state: 'idle' }
+  return { state: 'failed', message: result.message ?? copy.errors.unknown }
 }
 
 /**
@@ -264,57 +330,23 @@ export function useAttest(target: AttestTarget) {
   const [state, setState] = useState<AttestState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<Hex | null>(null)
-  const receipt = useWaitForTransactionReceipt({ hash: txHash ?? undefined })
-
   const fail = useCallback((message: string) => {
     setState('failed')
     setError(message)
   }, [])
-
-  // The receipt decides whether the vote landed. A reverted transaction names its own reason.
-  useEffect(() => {
-    if (state !== 'pending') return
-    if (receipt.isSuccess) {
-      setState('done')
-      return
-    }
-    if (receipt.isError) {
-      const translated = translateContractError(receipt.error)
-      fail(translated?.message ?? copy.errors.unknown)
-    }
-  }, [state, receipt.isSuccess, receipt.isError, receipt.error, fail])
+  const done = useCallback(() => setState('done'), [])
+  useReceipt(state, txHash, done, fail)
 
   const submit = async (input: AttestInput) => {
-    if (target.address === null) {
-      fail(copy.wallet.agentRequired)
-      return
-    }
-    const core = coreAddress()
-    if (core === null) {
-      fail(copy.attest.noRegistry)
-      return
-    }
-    const prepared = prepare(target, input, core)
-    if (prepared === null) {
-      fail(copy.attest.reportInvalid)
-      return
-    }
     setError(null)
-    const result = await runAttestation({
-      target,
-      input,
-      prepared,
+    const outcome = await attempt(target, input, {
       sign: signTypedDataAsync,
       write: writeContractAsync,
       progress: setState,
     })
-    if (!result.ok) {
-      if (result.state === 'idle') setState('idle')
-      else fail(result.message ?? copy.errors.unknown)
-      return
-    }
-    setTxHash(result.value)
-    setState('pending')
+    if (outcome.state === 'failed') return fail(outcome.message)
+    if (outcome.state === 'pending') setTxHash(outcome.hash)
+    setState(outcome.state)
   }
 
   const reset = useCallback(() => {

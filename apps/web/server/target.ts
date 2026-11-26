@@ -5,12 +5,35 @@ import { ZERO_ADDRESS, targetIdOfContract, type TrustTier } from '@sealflare/sha
 import { getChainReader, type ChainReader, type CoreAttestation, type CoreTarget, type EvidenceRow } from './chain'
 import { getScan, getScanForSource, putScan, putScanForSource } from './scanStore'
 import { getScanEnvironment } from './scanner'
+import { contractWord } from '../lib/targetWord'
 
 const ZERO_HASH = `0x${'0'.repeat(64)}` as const
 
 /** The bytes32 of a contract target carries the address in its last twenty bytes. */
 export function addressOf(target: CoreTarget): Hex {
   return `0x${target.target.slice(-40)}` as Hex
+}
+
+/**
+ * The word `Core.attest` takes.
+ *
+ * A contract is named by its address, a skill by the canonical hash of its bundle. The id of a
+ * target is the hash of that word, so the id is never the word itself.
+ */
+export function targetWordOf(target: CoreTarget | null, scan: ScanReport | null, isContract: boolean): string | null {
+  if (!isContract) {
+    if (target !== null) return target.target
+    return scan?.source.kind === 'skill' ? scan.source.canonicalBundleHash : null
+  }
+  const address = target !== null ? addressOf(target) : (scan?.source.kind === 'contract' ? scan.source.address : null)
+  return address === null ? null : contractWord(address)
+}
+
+/** Whether the bundle that was scanned is another bundle than the one the registry sealed. */
+export function bundleChanged(target: CoreTarget | null, scan: ScanReport | null): boolean {
+  if (target === null || target.targetType !== 'AI_SKILL_BUNDLE') return false
+  if (scan === null || scan.targetType !== 'AI_SKILL_BUNDLE' || scan.source.kind !== 'skill') return false
+  return target.target.toLowerCase() !== scan.source.canonicalBundleHash.toLowerCase()
 }
 
 function emptyGroup(): SignalGroup {
@@ -187,6 +210,10 @@ export type TargetPageData = {
   uncheckedBundle: boolean
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
+  /** The word `Core.attest` takes for this target. Null when the target is not known yet. */
+  targetWord: string | null
+  /** The scanned bundle is another bundle than the one the registry sealed. */
+  bundleChanged: boolean
   failed: boolean
 }
 
@@ -229,6 +256,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     differentBundle: false,
     uncheckedBundle: false,
     evidenceFailed: false,
+    targetWord: null,
+    bundleChanged: false,
     failed: false,
   }
   if (!parsedId.success) return { ...empty, failed: true }
@@ -276,6 +305,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
   const unbondingAt = chain.bond && chain.bond.withdrawalAvailableAt > 0 ? chain.bond.withdrawalAvailableAt : null
+  const isContractTarget = (chain.target?.targetType ?? scan?.targetType ?? 'SMART_CONTRACT') === 'SMART_CONTRACT'
   return {
     targetId: id,
     detail,
@@ -289,6 +319,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     differentBundle: foreignBundle,
     uncheckedBundle,
     evidenceFailed: chain.evidenceFailed,
+    targetWord: targetWordOf(chain.target, scan, isContractTarget),
+    bundleChanged: bundleChanged(chain.target, candidate),
     failed: false,
   }
 }

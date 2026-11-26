@@ -1,5 +1,5 @@
-import { FLAGS, type FlagName, type Verdict } from '@sealflare/shared/rules'
-import { buildShortProof, type ScanReport, type ShortProofItem } from '@sealflare/shared/schemas'
+import { CONSTANTS, FLAGS, isValidFlags, type FlagName, type TargetType, type Verdict } from '@sealflare/shared/rules'
+import { buildShortProof, utf8Length, type ScanReport, type ShortProofItem } from '@sealflare/shared/schemas'
 
 /** What the Guardian chose so far. */
 export type Choice = {
@@ -67,14 +67,25 @@ export function travellingScan(
   return scan
 }
 
+/** The excerpt the scanner read for a flag. An empty excerpt proves nothing. */
+function excerptOf(scan: ScanReport | null, flag: FlagName): string {
+  const finding = scan?.findings.find(item => item.flag === flag)
+  return (finding?.excerpt ?? '').trim()
+}
+
 /**
  * The flags whose excerpt travels with the report.
  *
  * Without the scan no excerpt travels, so every flag the Guardian reports has to carry a quote
- * the Guardian wrote. The other way, an excerpt on-chain is never empty.
+ * the Guardian wrote. A finding without an excerpt proves nothing either, so it needs a quote too.
  */
 export function provedFlags(choice: Choice, scan: ScanReport | null, targetId: string): number {
-  return travellingScan(choice, scan, targetId)?.flags ?? 0
+  const travelling = travellingScan(choice, scan, targetId)
+  if (travelling === null) return 0
+  return flagsOf(choice).reduce(
+    (bits, name) => (excerptOf(travelling, name) === '' ? bits : bits | FLAGS[name]),
+    0,
+  )
 }
 
 /** The flags that still wait for a quote from the Guardian. */
@@ -84,11 +95,40 @@ export function missingQuotes(choice: Choice, proved: number): FlagName[] {
   )
 }
 
-/** A Safe vote needs no flag. Caution and Danger need at least one, and every flag needs proof. */
-export function canReview(choice: Choice, proved: number): boolean {
+/**
+ * Whether the summary may be shown.
+ *
+ * A Safe vote carries no flag, Caution and Danger carry at least one, and every flag stays
+ * inside the mask of its target type. Every flag needs proof before the vote may be written.
+ */
+export function canReview(choice: Choice, proved: number, targetType: TargetType): boolean {
   if (choice.verdict === null) return false
-  if (choice.verdict !== 'SAFE' && choice.flags === 0) return false
+  if (!isValidFlags(targetType, choice.verdict, choice.flags)) return false
   return missingQuotes(choice, proved).length === 0
+}
+
+/** The longest prefix of `text` that fits `maxBytes` of UTF-8. */
+function cut(text: string, maxBytes: number): string {
+  let used = 0
+  let out = ''
+  for (const char of text) {
+    const size = utf8Length(char)
+    if (used + size > maxBytes) break
+    used += size
+    out += char
+  }
+  return out
+}
+
+/** The lines of the proof, with the place each quote was read. */
+function proofItems(flags: number, quotes: Record<string, string>, scan: ScanReport | null): ShortProofItem[] {
+  const names = (Object.keys(FLAGS) as FlagName[]).filter(name => (flags & FLAGS[name]) !== 0)
+  return names.map(name => {
+    const finding = scan?.findings.find(item => item.flag === name)
+    const excerpt = excerptOf(scan, name)
+    if (excerpt !== '') return { flag: name, location: finding?.location ?? 'user report', excerpt }
+    return { flag: name, location: 'user report', excerpt: (quotes[name] ?? '').trim() }
+  })
 }
 
 /**
@@ -103,11 +143,26 @@ export function shortProofOf(
   quotes: Record<string, string>,
   scan: ScanReport | null,
 ): string {
-  const names = (Object.keys(FLAGS) as FlagName[]).filter(name => (flags & FLAGS[name]) !== 0)
-  const items: ShortProofItem[] = names.map(name => {
-    const finding = scan?.findings.find(item => item.flag === name)
-    const excerpt = finding?.excerpt ?? (quotes[name] ?? '').trim()
-    return { flag: name, location: finding?.location ?? 'user report', excerpt }
-  })
-  return items.length === 0 ? '' : buildShortProof(items)
+  const items = proofItems(flags, quotes, scan)
+  return items.length === 0 ? '' : buildProof(items)
+}
+
+/**
+ * The proof with every line keeping at least one character of quote.
+ *
+ * `buildShortProof` shortens the excerpts when they do not fit, and it may shorten them to
+ * nothing. The excerpts are shortened here first, so no line on-chain is ever empty.
+ */
+function buildProof(items: ShortProofItem[]): string {
+  for (const locationCap of [200, 60, 40, 20, 0]) {
+    const trimmed = items.map(item => ({ ...item, location: cut(item.location, locationCap) }))
+    const overhead =
+      trimmed.reduce((sum, item) => sum + utf8Length(`${item.flag} @ ${item.location}: `), 0) +
+      trimmed.length -
+      1
+    const budget = Math.floor((CONSTANTS.SHORT_PROOF_MAX_BYTES - overhead) / trimmed.length)
+    if (budget < 1) continue
+    return buildShortProof(trimmed.map(item => ({ ...item, excerpt: cut(item.excerpt, budget) })))
+  }
+  return buildShortProof(items)
 }

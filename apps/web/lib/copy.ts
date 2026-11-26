@@ -55,7 +55,7 @@ export const copy = {
     "AlreadyAttested": "You already attested this target.",
     "AlreadyVerifiedPublisher": "This target already has a verified publisher.",
     "CodeChangedSincePin": "The code changed since it was sealed, so this vote is closed.",
-    "DailyLimitReached": "You have used all 5 attestations for today. The limit resets at {time}.",
+    "DailyLimitReached": "You have used all {limit} attestations for today. The limit resets at {time}.",
     "DeployerMismatch": "The deployer address does not match this contract.",
     "InvalidFlags": "One or more flags are not valid.",
     "InvalidSignature": "That signature is not valid.",
@@ -192,6 +192,9 @@ export const copy = {
     "reportInvalid": "The evidence report could not be built. Nothing was signed or sent on-chain.",
     "hashMismatch": "The evidence service answered with another hash. Nothing was sent on-chain.",
     "rateLimited": "Too many evidence uploads. Try again later. Nothing was sent on-chain.",
+    "invalidFlags": "These flags do not fit this verdict, so nothing was signed or sent on-chain.",
+    "targetUnknown": "The address of this target is unknown, so nothing was signed or sent on-chain.",
+    "pendingVote": "Your vote: {verdict}",
     "flagChoice": "Choose the flag you are reporting"
   },
   "sandbox": {

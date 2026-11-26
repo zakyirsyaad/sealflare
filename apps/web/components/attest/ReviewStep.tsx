@@ -57,6 +57,61 @@ function Row({ name, value }: { name: string; value: React.ReactNode }) {
   )
 }
 
+/** What is written on-chain, row by row. */
+function OnChainSection({ label, choice }: { label: string; choice: Choice }) {
+  const flags = flagsOf(choice)
+  const verdict = choice.verdict as Verdict
+  return (
+    <section className="sf-stack">
+      <span className="sf-mono">{copy.attest.onChain}</span>
+      <div className="sf-rows">
+        <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{labelOf(label)}</span>} />
+        <Row name={copy.attest.rowVerdict} value={verdictName[verdict]} />
+        <Row
+          name={copy.attest.rowFlag}
+          value={flags.length === 0 ? copy.target.none : <span className="sf-mono">{flags.join(', ')}</span>}
+        />
+        <Row name={copy.attest.rowEvidence} value={copy.attest.rowEvidenceValue} />
+        <Row name={copy.attest.rowBnb} value={copy.attest.rowBnbValue} />
+      </div>
+    </section>
+  )
+}
+
+/** What the vote is worth and what it risks. */
+function GainsSection({ verdict }: { verdict: Verdict }) {
+  return (
+    <section className="sf-stack">
+      <span className="sf-mono">{copy.attest.gains}</span>
+      <div className="sf-rows">
+        <Row name={copy.attest.rowReward} value={reward[verdict]} />
+        <Row name={copy.attest.rowRisk} value={risk[verdict]} />
+      </div>
+      {verdict === 'SAFE' && <p className="sf-lead">{copy.attest.safeSummary}</p>}
+    </section>
+  )
+}
+
+/** What may not be changed afterwards, and the quota that is left. */
+function PermanentSection(props: { attestationsLeft: number | null; limit: number; underDispute: boolean }) {
+  const quota = (props.attestationsLeft === null ? copy.target.quotaDefault : copy.target.quotaLeft)
+    .replace('{left}', String(props.attestationsLeft))
+    .replace('{limit}', String(props.limit))
+  return (
+    <section className="sf-stack">
+      <p className="sf-opt__title">{copy.attest.permanent}</p>
+      <p className="sf-lead">{copy.attest.claimable}</p>
+      <p className="sf-lead">{quota}</p>
+      {props.underDispute && (
+        <>
+          <p className="sf-lead">{copy.attest.disputeNoteXp}</p>
+          <p className="sf-lead">{copy.attest.disputeNoteJury}</p>
+        </>
+      )}
+    </section>
+  )
+}
+
 /**
  * The second step: what goes on-chain, what the vote is worth, and what may not be changed.
  *
@@ -65,53 +120,12 @@ function Row({ name, value }: { name: string; value: React.ReactNode }) {
  */
 export function ReviewStep(props: ReviewStepProps) {
   const { choice } = props
-  const verdict = choice.verdict
-  if (verdict === null) return null
-  const flags = flagsOf(choice)
-  const quota =
-    props.attestationsLeft === null
-      ? copy.target.quotaDefault.replace('{limit}', String(props.limit))
-      : copy.target.quotaLeft.replace('{left}', String(props.attestationsLeft)).replace('{limit}', String(props.limit))
+  if (choice.verdict === null) return null
   return (
     <>
-      <section className="sf-stack">
-        <span className="sf-mono">{copy.attest.onChain}</span>
-        <div className="sf-rows">
-          <Row name={copy.attest.rowTarget} value={<span className="sf-mono">{labelOf(props.label)}</span>} />
-          <Row name={copy.attest.rowVerdict} value={verdictName[verdict]} />
-          <Row
-            name={copy.attest.rowFlag}
-            value={
-              flags.length === 0 ? (
-                copy.target.none
-              ) : (
-                <span className="sf-mono">{flags.join(', ')}</span>
-              )
-            }
-          />
-          <Row name={copy.attest.rowEvidence} value={copy.attest.rowEvidenceValue} />
-          <Row name={copy.attest.rowBnb} value={copy.attest.rowBnbValue} />
-        </div>
-      </section>
-      <section className="sf-stack">
-        <span className="sf-mono">{copy.attest.gains}</span>
-        <div className="sf-rows">
-          <Row name={copy.attest.rowReward} value={reward[verdict]} />
-          <Row name={copy.attest.rowRisk} value={risk[verdict]} />
-        </div>
-        {verdict === 'SAFE' && <p className="sf-lead">{copy.attest.safeSummary}</p>}
-      </section>
-      <section className="sf-stack">
-        <p className="sf-opt__title">{copy.attest.permanent}</p>
-        <p className="sf-lead">{copy.attest.claimable}</p>
-        <p className="sf-lead">{quota}</p>
-        {props.underDispute && (
-          <>
-            <p className="sf-lead">{copy.attest.disputeNoteXp}</p>
-            <p className="sf-lead">{copy.attest.disputeNoteJury}</p>
-          </>
-        )}
-      </section>
+      <OnChainSection label={props.label} choice={choice} />
+      <GainsSection verdict={choice.verdict} />
+      <PermanentSection attestationsLeft={props.attestationsLeft} limit={props.limit} underDispute={props.underDispute} />
       <footer className="sf-panel__footer">
         <div className="sf-rows">
           <Row name={copy.attest.approveEvidence} value={copy.attest.noGas} />

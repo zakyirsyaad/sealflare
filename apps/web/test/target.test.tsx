@@ -108,6 +108,8 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     differentBundle: false,
     uncheckedBundle: false,
     evidenceFailed: false,
+    targetWord: null,
+    bundleChanged: false,
     failed: false,
     ...overrides,
   }
@@ -380,7 +382,7 @@ test('a contract whose code changed since it was sealed closes Attest and says w
 
 test('a skill that changed turns Attest into "Scan the current version"', () => {
   wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
-  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT' }) })} />)
+  render(<TargetScreen {...props({ detail: skillDetail(), bundleChanged: true })} />)
   expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
   expect(screen.getByRole('link', { name: copy.target.currentVersion })).toHaveAttribute(
     'href',
@@ -389,7 +391,8 @@ test('a skill that changed turns Attest into "Scan the current version"', () => 
 })
 
 test('a changed skill with no known source still does not offer Attest', () => {
-  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT', src: null }) })} />)
+  wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
+  render(<TargetScreen {...props({ detail: skillDetail({ src: null }), bundleChanged: true })} />)
   expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
   expect(screen.getByRole('button', { name: copy.target.currentVersion })).toBeDisabled()
 })

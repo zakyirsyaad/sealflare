@@ -1,13 +1,14 @@
 'use client'
 import { useState } from 'react'
-import { CONSTANTS, type TrustTier } from '@sealflare/shared/rules'
+import { CONSTANTS, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import type { AttestationRow, ScanReport } from '@sealflare/shared/schemas'
 import { useUserState } from '../../lib/chain/userState'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { formatUtc, verdictLabel } from '../../lib/format'
+import { formatUtc, isZeroHash, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
-import { attestAvailability } from '../attest/availability'
+import { attestAvailability, type AttestAvailability } from '../attest/availability'
+import { usePendingVote } from './pendingVote'
 
 export type ActionColumnProps = {
   tier: TrustTier
@@ -15,6 +16,12 @@ export type ActionColumnProps = {
   /** Scans the skill's repository as it is now. Null when the source is not known. */
   currentVersionHref: string | null
   targetId: string
+  /** The word `Core.attest` takes. Null when the target is not known yet. */
+  targetWord: string | null
+  /** The scanned bundle is another bundle than the one the registry sealed. */
+  bundleChanged: boolean
+  /** The event log could not be read, so the transaction links of the votes are unknown. */
+  evidenceFailed: boolean
   /** The name of the target, as the page shows it. */
   label: string
   scan: ScanReport | null
@@ -22,6 +29,8 @@ export type ActionColumnProps = {
   /** A challenge is open on this target. */
   underDispute: boolean
 }
+
+type Vote = { verdict: Verdict; txHash: string }
 
 /** The moment the daily quota returns. The contract counts the days from the unix epoch, so it is the next UTC midnight. */
 function nextQuotaReset(): string {
@@ -31,13 +40,109 @@ function nextQuotaReset(): string {
 }
 
 /** The vote of this user on this target, when there is one. */
-function previousVote(
-  address: string | undefined,
-  attestations: AttestationRow[],
-): { verdict: AttestationRow['verdict']; txHash: string } | null {
+function previousVote(address: string | undefined, attestations: AttestationRow[]): Vote | null {
   if (address === undefined) return null
   const row = attestations.find(item => item.guardian.toLowerCase() === address.toLowerCase())
   return row === undefined ? null : { verdict: row.verdict, txHash: row.txHash }
+}
+
+function limitText(template: string, left: number | null): string {
+  return template
+    .replace('{left}', String(left))
+    .replace('{limit}', String(CONSTANTS.DAILY_ATTEST_LIMIT))
+}
+
+/** Why the button is closed, or null when it is open. */
+function reasonOf(availability: AttestAvailability): string | null {
+  if (availability.kind === 'code-changed') return copy.errors.CodeChangedSincePin
+  if (availability.kind !== 'quota-exhausted') return null
+  const used = limitText(copy.wallet.quotaExhausted, null)
+  return `${used} ${copy.wallet.quotaReturns.replace('{time}', nextQuotaReset())}`
+}
+
+/** The vote that is already on the chain. Its link is left out when the transaction is unknown. */
+function AttestedButton({ vote, linkKnown }: { vote: Vote; linkKnown: boolean }) {
+  const text = copy.attest.alreadyVerdict.replace('{verdict}', verdictLabel(vote.verdict))
+  const className = 'sf-btn sf-btn--primary sf-btn--lg sf-btn--block'
+  if (!linkKnown || isZeroHash(vote.txHash)) {
+    return (
+      <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled>
+        {text}
+      </Button>
+    )
+  }
+  return (
+    <a className={className} href={`https://bscscan.com/tx/${vote.txHash}`} target="_blank" rel="noreferrer">
+      {text}
+    </a>
+  )
+}
+
+function CurrentVersionButton({ href }: { href: string | null }) {
+  if (href === null) {
+    return (
+      <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled>
+        {copy.target.currentVersion}
+      </Button>
+    )
+  }
+  return (
+    <a className="sf-btn sf-btn--primary sf-btn--lg sf-btn--block" href={href}>
+      {copy.target.currentVersion}
+    </a>
+  )
+}
+
+/** What the attest panel needs to know of the target. */
+function panelProps(props: ActionColumnProps) {
+  return {
+    targetId: props.targetId,
+    targetWord: props.targetWord,
+    targetType: props.targetType,
+    label: props.label,
+    tier: props.tier,
+    scan: props.scan,
+    underDispute: props.underDispute,
+  }
+}
+
+/** The notes under the buttons: the quota, the reason the button is closed and the first-vote invite. */
+function Notes(props: { quota: string; reason: string | null; hint: string | null; holder: boolean; tier: TrustTier }) {
+  return (
+    <div className="sf-actions__meta">
+      <p className="sf-mono sf-actions__quota">{props.quota}</p>
+      {props.reason !== null && <p className="sf-actions__reason">{props.reason}</p>}
+      {props.hint !== null && <p className="sf-actions__note">{props.hint}</p>}
+      {props.holder && props.reason === null && <p className="sf-actions__note">{copy.attest.claimable}</p>}
+      {props.tier === 'UNRATED' && (
+        <div className="sf-actions__invite">
+          <p className="sf-actions__invite-title">{copy.attest.first}</p>
+          <p className="sf-actions__note">{copy.target.firstXp}</p>
+        </div>
+      )}
+      <p className="sf-actions__note">{copy.target.safeRisk}</p>
+    </div>
+  )
+}
+
+type Primary = {
+  availability: AttestAvailability
+  reason: string | null
+  busy: boolean
+  props: ActionColumnProps
+  linkKnown: boolean
+  onOpen: () => void
+}
+
+/** The main button: the attest button, the vote that is already there, or the scan of the current version. */
+function PrimaryAction({ availability, reason, busy, props, linkKnown, onOpen }: Primary) {
+  if (availability.kind === 'skill-changed') return <CurrentVersionButton href={props.currentVersionHref} />
+  if (availability.kind === 'already-attested') return <AttestedButton vote={availability} linkKnown={linkKnown} />
+  return (
+    <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled={reason !== null || busy} onClick={onOpen}>
+      {copy.attest.action}
+    </Button>
+  )
 }
 
 /**
@@ -47,57 +152,31 @@ function previousVote(
  */
 export function ActionColumn(props: ActionColumnProps) {
   const user = useUserState()
+  const { vote: sessionVote } = usePendingVote()
   const [open, setOpen] = useState(false)
   const left = user.kind === 'holder' ? user.attestationsLeft : null
-  const previous = previousVote('address' in user ? user.address : undefined, props.attestations)
+  const onChain = previousVote('address' in user ? user.address : undefined, props.attestations)
+  // The vote of this session counts before the indexer has read it from a final block.
+  const previous: Vote | null = onChain ?? (sessionVote === null ? null : { verdict: sessionVote.verdict, txHash: sessionVote.txHash })
   const availability = attestAvailability({
     kind: user.kind,
     attestationsLeft: left,
     tier: props.tier,
     targetType: props.targetType,
+    bundleChanged: props.bundleChanged,
     previous,
   })
-  const busy = user.isLoading || user.isError
-  const quota =
-    left === null
-      ? copy.target.quotaDefault.replace('{limit}', String(CONSTANTS.DAILY_ATTEST_LIMIT))
-      : copy.target.quotaLeft.replace('{left}', String(left)).replace('{limit}', String(CONSTANTS.DAILY_ATTEST_LIMIT))
-  const reason =
-    availability.kind === 'code-changed'
-      ? copy.errors.CodeChangedSincePin
-      : availability.kind === 'quota-exhausted'
-        ? `${copy.wallet.quotaExhausted.replace('{limit}', String(CONSTANTS.DAILY_ATTEST_LIMIT))} ${copy.wallet.quotaReturns.replace('{time}', nextQuotaReset())}`
-        : null
-  // Without a wallet the panel itself asks for one, so the button stays open.
-  const hint = availability.kind === 'no-wallet' ? copy.target.attestHint : null
-  const attestButton = () => {
-    if (availability.kind === 'skill-changed') {
-      return props.currentVersionHref === null ? (
-        <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled>
-          {copy.target.currentVersion}
-        </Button>
-      ) : (
-        <a className="sf-btn sf-btn--primary sf-btn--lg sf-btn--block" href={props.currentVersionHref}>
-          {copy.target.currentVersion}
-        </a>
-      )
-    }
-    if (availability.kind === 'already-attested') {
-      return (
-        <a className="sf-btn sf-btn--primary sf-btn--lg sf-btn--block" href={`https://bscscan.com/tx/${availability.txHash}`} target="_blank" rel="noreferrer">
-          {copy.attest.alreadyVerdict.replace('{verdict}', verdictLabel(availability.verdict))}
-        </a>
-      )
-    }
-    return (
-      <Button variant="primary" className="sf-btn--lg sf-btn--block" disabled={reason !== null || busy} onClick={() => setOpen(true)}>
-        {copy.attest.action}
-      </Button>
-    )
-  }
+  const reason = reasonOf(availability)
   return (
     <aside className="sf-actions" aria-label={copy.attest.action}>
-      {attestButton()}
+      <PrimaryAction
+        availability={availability}
+        reason={reason}
+        busy={user.isLoading || user.isError}
+        props={props}
+        linkKnown={onChain === null || !props.evidenceFailed}
+        onOpen={() => setOpen(true)}
+      />
       <Button variant="secondary" className="sf-btn--block" disabled>
         {copy.target.challenge}
       </Button>
@@ -105,30 +184,15 @@ export function ActionColumn(props: ActionColumnProps) {
         {copy.target.fundBounty}
       </Button>
       <p className="sf-actions__note">{copy.common.modulesNotLive}</p>
-      <div className="sf-actions__meta">
-        <p className="sf-mono sf-actions__quota">{quota}</p>
-        {reason !== null && <p className="sf-actions__reason">{reason}</p>}
-        {hint !== null && <p className="sf-actions__note">{hint}</p>}
-        {user.kind === 'holder' && reason === null && <p className="sf-actions__note">{copy.attest.claimable}</p>}
-        {props.tier === 'UNRATED' && (
-          <div className="sf-actions__invite">
-            <p className="sf-actions__invite-title">{copy.attest.first}</p>
-            <p className="sf-actions__note">{copy.target.firstXp}</p>
-          </div>
-        )}
-        <p className="sf-actions__note">{copy.target.safeRisk}</p>
-      </div>
-      {open && (
-        <AttestPanel
-          targetId={props.targetId}
-          targetType={props.targetType}
-          label={props.label}
-          tier={props.tier}
-          scan={props.scan}
-          underDispute={props.underDispute}
-          onClose={() => setOpen(false)}
-        />
-      )}
+      <Notes
+        quota={limitText(left === null ? copy.target.quotaDefault : copy.target.quotaLeft, left)}
+        reason={reason}
+        // Without a wallet the panel itself asks for one, so the button stays open.
+        hint={availability.kind === 'no-wallet' ? copy.target.attestHint : null}
+        holder={user.kind === 'holder'}
+        tier={props.tier}
+      />
+      {open && <AttestPanel {...panelProps(props)} onClose={() => setOpen(false)} />}
     </aside>
   )
 }

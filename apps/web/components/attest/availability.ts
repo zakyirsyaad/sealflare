@@ -19,6 +19,8 @@ export type AvailabilityInput = {
   attestationsLeft?: number | null
   tier: TrustTier
   targetType: TargetType
+  /** The scanned bundle is another bundle than the one the registry sealed. */
+  bundleChanged: boolean
   /** The vote of this user on this target, when there is one. */
   previous: { verdict: Verdict; txHash: string } | null
 }
@@ -26,14 +28,11 @@ export type AvailabilityInput = {
 /**
  * Whether the user may attest this target now.
  *
- * The order follows ux.md 6.4: a target whose code changed closes the vote, then the wallet
- * decides, then the quota. A vote that is already on the chain is named before the quota, because
- * it is the more useful answer.
+ * The order follows ux.md 6.4: the wallet comes first, then the vote that is already on the
+ * chain, the quota, and last the target that changed. A target whose code changed closes the
+ * vote, because the vote is bound to the old code.
  */
 export function attestAvailability(input: AvailabilityInput): AttestAvailability {
-  if (input.tier === 'STALE_CODEHASH_DRIFT') {
-    return input.targetType === 'AI_SKILL_BUNDLE' ? { kind: 'skill-changed' } : { kind: 'code-changed' }
-  }
   if (input.kind === 'no-wallet') return { kind: 'no-wallet' }
   if (input.kind === 'wrong-network') return { kind: 'wrong-network' }
   if (input.kind === 'checking') return { kind: 'checking' }
@@ -42,6 +41,8 @@ export function attestAvailability(input: AvailabilityInput): AttestAvailability
     return { kind: 'already-attested', verdict: input.previous.verdict, txHash: input.previous.txHash }
   }
   if (input.attestationsLeft === 0) return { kind: 'quota-exhausted' }
+  if (input.bundleChanged && input.targetType === 'AI_SKILL_BUNDLE') return { kind: 'skill-changed' }
+  if (input.tier === 'STALE_CODEHASH_DRIFT') return { kind: 'code-changed' }
   return { kind: 'ready' }
 }
 

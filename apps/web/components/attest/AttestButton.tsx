@@ -40,6 +40,7 @@ export function AttestButton({ state, error, txHash, onSubmit, onRetry }: Attest
     return (
       <div className="sf-stack">
         <p role="alert" className="sf-error">{error ?? copy.errors.unknown}</p>
+        {txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
         <Button variant="primary" onClick={onRetry}>
           {copy.common.retry}
         </Button>
