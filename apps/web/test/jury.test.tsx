@@ -15,7 +15,7 @@ vi.mock('../lib/api/client', async () => (await import('./dispute.mocks')).clien
 import { JoinPanel } from '../components/jury/JoinPanel'
 import { copy } from '../lib/copy'
 import { commitHashFor, loadRevealCode, parseRevealCode } from '../lib/revealCode'
-import { resetDispute, state, wagmi } from './dispute.mocks'
+import { chainTakes, resetDispute, state, wagmi } from './dispute.mocks'
 import { COURT, ME, NOW, txHash } from './dispute.fixtures'
 
 const COMMIT_ENDS = new Date(NOW.getTime() + 4 * 3_600_000).toISOString()
@@ -127,20 +127,23 @@ test('the commit button stays disabled until the reveal code is copied or downlo
   await waitFor(() => expect(commitButton()).toBeEnabled())
 })
 
-test('downloading the code is enough too, and the file holds the code and nothing else', async () => {
+test('downloading the code is enough too, and the file holds the code and the reveal window', async () => {
   join_()
   await toCode()
   expect(commitButton()).toBeDisabled()
   await userEvent.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
   await waitFor(() => expect(commitButton()).toBeEnabled())
-  expect(click).toHaveBeenCalledWith('sealflare-reveal-code-12.txt', 'blob:sealflare-test')
+  expect(click).toHaveBeenCalledWith(`sealflare-reveal-code-12-${commitHashFor(shownCode(), ME).slice(2, 10)}.txt`, 'blob:sealflare-test')
   const blob = (URL.createObjectURL as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Blob
   const text = await new Promise<string>(resolve => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
     reader.readAsText(blob)
   })
-  expect(text.trim()).toBe(shownCode())
+  // The file carries the reveal window too, so a juror who reveals from another device knows when
+  // to come back.
+  expect(text.split('\n')[0]).toBe(shownCode())
+  expect(text).toContain('Reveal window:')
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:sealflare-test')
 })
 
@@ -218,12 +221,16 @@ test('no signature is asked for anywhere on this path', async () => {
   expect(wagmi.signTypedDataAsync).not.toHaveBeenCalled()
 })
 
-test('no source file of this path can ask for a signature', () => {
+/** Every file under a folder, at any depth. */
+function filesUnder(folder: string): string[] {
+  return readdirSync(folder, { withFileTypes: true }).flatMap(entry =>
+    entry.isDirectory() ? filesUnder(join(folder, entry.name)) : [join(folder, entry.name)],
+  )
+}
+
+test('no file of lib/revealCode.ts or of components/jury, at any depth, can ask for a signature (this scan only covers these two folders)', () => {
   const root = join(__dirname, '..')
-  const files = [
-    join(root, 'lib', 'revealCode.ts'),
-    ...readdirSync(join(root, 'components', 'jury')).map(name => join(root, 'components', 'jury', name)),
-  ]
+  const files = [join(root, 'lib', 'revealCode.ts'), ...filesUnder(join(root, 'components', 'jury'))]
   expect(files.length).toBeGreaterThan(3)
   for (const file of files) expect(readFileSync(file, 'utf8'), file).not.toMatch(/signMessage|signTypedData|personal_sign|eth_sign/)
 })
@@ -239,12 +246,15 @@ test('the code is kept in local storage before the transaction is asked for, so 
   expect(keptWhenAsked).toBe(code)
 })
 
-test('a browser that will not keep the code says so, and the commit still goes ahead with the saved copy', async () => {
+test('a browser that will not keep the code says so, and the commit goes ahead once the code is downloaded', async () => {
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
     throw new DOMException('quota', 'QuotaExceededError')
   })
   join_()
-  await commit()
+  await toCode()
+  await userEvent.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
+  await waitFor(() => expect(commitButton()).toBeEnabled())
+  await userEvent.click(commitButton())
   expect(await screen.findByText(copy.jury.localFailed)).toBeInTheDocument()
   expect(wagmi.writeContractAsync).toHaveBeenCalledTimes(1)
 })
@@ -263,6 +273,7 @@ test('refusing the transaction in the wallet returns to the code with no error a
 
 test('the commit confirmation says there is no reminder outside the app and shows a copyable reveal time', async () => {
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  chainTakes('commit')
   join_()
   await commit()
   expect(await screen.findByText(copy.jury.committedTitle)).toBeInTheDocument()
@@ -281,6 +292,7 @@ test('the code is kept in local storage so a reveal from the same device is one 
 })
 
 test('no code is printed to a log or put in a URL', async () => {
+  chainTakes('commit')
   const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(name => vi.spyOn(console, name).mockImplementation(() => {}))
   const before = window.location.href
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }

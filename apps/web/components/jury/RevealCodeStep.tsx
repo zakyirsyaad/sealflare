@@ -1,13 +1,16 @@
 'use client'
 import { useState } from 'react'
+import type { Address } from 'viem'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
-import { newRevealCode } from '../../lib/revealCode'
+import { canKeepRevealCode, commitHashFor, newRevealCode } from '../../lib/revealCode'
 import { AttestButton } from '../attest/AttestButton'
 import type { AttestState } from '../attest/useAttest'
 
 export type RevealCodeStepProps = {
   challengeId: bigint
+  /** The wallet that commits. Its commit hash names the file of the code. */
+  account: Address
   uphold: boolean
   state: AttestState
   error: string | null
@@ -16,6 +19,10 @@ export type RevealCodeStepProps = {
   window: string
   /** The browser would not keep a copy of the code. */
   keptFailed: boolean
+  /** The Court is being asked whether it holds the commit. */
+  checking: boolean
+  /** The Court already holds a commit for this wallet, so there is nothing left to send. */
+  committedOnChain: boolean
   onCommit: (code: string) => void
   onBack: () => void
 }
@@ -30,26 +37,39 @@ async function toClipboard(text: string): Promise<boolean> {
   }
 }
 
-/** Offers the code as a file. The URL of the file is released at once, and the code is in no URL. */
-function download(code: string, challengeId: bigint): void {
-  const url = URL.createObjectURL(new Blob([`${code}\n`], { type: 'text/plain' }))
+/**
+ * Offers the code as a file. The URL of the file is released at once, and the code is in no URL.
+ *
+ * The name carries the start of the commit hash, which is public on the chain, so the files of two
+ * attempts never share a name and the second cannot hide the first.
+ */
+function download(code: string, challengeId: bigint, account: Address, window: string): void {
+  // The file carries the reveal window too, so a juror who reveals from another device knows when
+  // to come back without asking the app.
+  const url = URL.createObjectURL(new Blob([`${code}\n${window}\n`], { type: 'text/plain' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = `sealflare-reveal-code-${challengeId.toString()}.txt`
+  link.download = `sealflare-reveal-code-${challengeId.toString()}-${commitHashFor(code, account).slice(2, 10)}.txt`
   document.body.append(link)
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
 }
 
-/** The confirmation of a commit: it says that nothing will remind the juror, and gives the time to copy. */
-function Confirmation({ window }: { window: string }) {
+/**
+ * The confirmation of a commit: it says that nothing will remind the juror, and gives the time to copy.
+ *
+ * A browser that would not keep the code is asked for a download here, because the file is then the
+ * only copy the juror has, and the commit is already on the chain.
+ */
+function Confirmation({ window, keptFailed, onDownload }: { window: string; keptFailed: boolean; onDownload: () => void }) {
   const [copied, setCopied] = useState(false)
   return (
     <section className="sf-stack">
       <p className="sf-opt__title">{copy.jury.committedTitle}</p>
       <p className="sf-lead">{copy.jury.noReminder}</p>
       <p className="sf-lead sf-mono">{window}</p>
+      <p className="sf-lead">{copy.jury.copyTimeNote}</p>
       <Button
         onClick={async () => {
           if (await toClipboard(window)) setCopied(true)
@@ -57,17 +77,28 @@ function Confirmation({ window }: { window: string }) {
       >
         {copied ? copy.jury.timeCopied : copy.jury.copyTime}
       </Button>
+      {keptFailed && (
+        <>
+          <p className="sf-lead">{copy.jury.downloadAgainRequired}</p>
+          <Button onClick={onDownload}>{copy.jury.downloadCode}</Button>
+        </>
+      )}
     </section>
   )
 }
 
-/** Whether the juror has taken the code with them, by copying or downloading it. */
-function useHandout(code: string, challengeId: bigint) {
+/**
+ * Whether the juror has taken the code with them. Copying or downloading is enough, unless this
+ * browser cannot keep a copy: then only a file counts, because the clipboard is easily replaced.
+ */
+function useHandout(code: string, challengeId: bigint, account: Address, window: string) {
+  const [canKeep] = useState(canKeepRevealCode)
   const [copied, setCopied] = useState(false)
   const [downloaded, setDownloaded] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
   return {
-    taken: copied || downloaded,
+    canKeep,
+    taken: canKeep ? copied || downloaded : downloaded,
     copied,
     downloaded,
     copyFailed,
@@ -78,7 +109,7 @@ function useHandout(code: string, challengeId: bigint) {
       if (ok) setCopied(true)
     },
     downloadCode: () => {
-      download(code, challengeId)
+      download(code, challengeId, account, window)
       setDownloaded(true)
     },
   }
@@ -92,7 +123,7 @@ function useHandout(code: string, challengeId: bigint) {
  */
 export function RevealCodeStep(props: RevealCodeStepProps) {
   const [code] = useState(() => newRevealCode(props.challengeId, props.uphold))
-  const handout = useHandout(code, props.challengeId)
+  const handout = useHandout(code, props.challengeId, props.account, props.window)
   return (
     <>
       <section className="sf-stack">
@@ -106,20 +137,27 @@ export function RevealCodeStep(props: RevealCodeStepProps) {
           <Button onClick={handout.downloadCode}>{handout.downloaded ? copy.jury.downloaded : copy.jury.downloadCode}</Button>
         </div>
         {handout.copyFailed && <p className="sf-lead">{copy.jury.copyFailed}</p>}
-        {!handout.taken && <p className="sf-lead">{copy.jury.codeRequired}</p>}
+        {!handout.canKeep && <p className="sf-lead">{copy.jury.downloadRequired}</p>}
+        {handout.canKeep && !handout.taken && <p className="sf-lead">{copy.jury.codeRequired}</p>}
         <p className="sf-lead">{props.keptFailed ? copy.jury.localFailed : copy.jury.localNote}</p>
       </section>
-      {props.state === 'done' && <Confirmation window={props.window} />}
+      {props.checking && <p className="sf-lead" role="status">{copy.jury.verifying}</p>}
+      {(props.state === 'done' || props.committedOnChain) && (
+        <Confirmation window={props.window} keptFailed={props.keptFailed} onDownload={handout.downloadCode} />
+      )}
       <footer className="sf-panel__footer">
-        <AttestButton
-          state={props.state}
-          error={props.error}
-          txHash={props.txHash}
-          label={copy.jury.commit}
-          disabled={!handout.taken}
-          onSubmit={() => props.onCommit(code)}
-          onRetry={() => props.onCommit(code)}
-        />
+        {/* A vote the Court already holds has nothing to retry, so no button is offered. */}
+        {!props.committedOnChain && (
+          <AttestButton
+            state={props.state}
+            error={props.error}
+            txHash={props.txHash}
+            label={copy.jury.commit}
+            disabled={!handout.taken}
+            onSubmit={() => props.onCommit(code)}
+            onRetry={() => props.onCommit(code)}
+          />
+        )}
         <Button disabled={props.state !== 'idle'} onClick={props.onBack}>
           {copy.attest.back}
         </Button>

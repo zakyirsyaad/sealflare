@@ -15,7 +15,8 @@ export const wagmi = {
     query?: Record<string, unknown>
     refetchInterval?: number
   }[],
-  refetch: vi.fn(),
+  /** Reads again and answers with what the chain holds now, as `refetch` of a read does. */
+  refetch: vi.fn(async (name: string) => ({ data: wagmi.reads.current[name] })),
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } as Record<string, unknown> },
   receiptParams: [] as { hash?: string; chainId?: number; onReplaced?: (replacement: { reason: string }) => void }[],
   block: { current: { timestamp: BigInt(Math.floor(NOW.getTime() / 1000)) } },
@@ -48,7 +49,7 @@ export const wagmiModule = {
       data: wagmi.reads.current[params.functionName],
       isLoading: false,
       isError: wagmi.readErrors.current[params.functionName] === true,
-      refetch: wagmi.refetch,
+      refetch: () => wagmi.refetch(params.functionName),
     }
   },
   useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
@@ -109,4 +110,18 @@ export function resetDispute() {
     evidenceURI: 'ipfs://bafycid',
     evidenceHash: evidenceHashOf(new TextEncoder().encode(body.reportJson)),
   }))
+}
+
+/**
+ * The chain takes what the wallet sends: after a commit the Court holds it for the juror, and after
+ * a reveal the vote is open. A test that does not call this leaves the chain unchanged, which is
+ * what a cancelled or replaced transaction looks like.
+ */
+export function chainTakes(kind: 'commit' | 'reveal') {
+  wagmi.writeContractAsync.mockImplementation(async (call: { args: readonly unknown[] }) => {
+    const current = wagmi.reads.current.getJuror as Record<string, unknown>
+    wagmi.reads.current.getJuror =
+      kind === 'commit' ? { ...current, committed: true, commitHash: call.args[1] } : { ...current, revealed: true, uphold: call.args[1] }
+    return txHash
+  })
 }

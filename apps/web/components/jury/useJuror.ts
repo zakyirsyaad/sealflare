@@ -16,8 +16,8 @@ export type JurorChain = {
   status: number | null
   /** Null until the Court answers. */
   juror: JurorState | null
-  /** Reads both again, for when the juror just did something that changes them. */
-  refetch: () => void
+  /** Reads both again and answers with the commitment the Court holds now. Null when it cannot be read. */
+  refetch: () => Promise<JurorState | null>
 }
 
 /** How often the Court is asked again, so the box follows a commit or a reveal without a reload. */
@@ -54,9 +54,13 @@ export function useJuror(challengeId: string): JurorChain {
     account,
     status: typeof status.data === 'number' ? status.data : null,
     juror: asJuror(juror.data),
-    refetch: () => {
-      void status.refetch()
-      void juror.refetch()
+    refetch: async () => {
+      try {
+        const [, read] = await Promise.all([status.refetch(), juror.refetch()])
+        return asJuror(read?.data)
+      } catch {
+        return null
+      }
     },
   }
 }

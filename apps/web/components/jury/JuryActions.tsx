@@ -24,10 +24,10 @@ export type JuryActionsProps = {
  */
 export function JuryActions({ challengeId, phase, commitEndsAt, revealEndsAt }: JuryActionsProps) {
   const [panel, setPanel] = useState<'join' | 'reveal' | null>(null)
-  const { juror, refetch } = useJuror(challengeId)
+  const { juror, account, refetch } = useJuror(challengeId)
   const close = () => {
     setPanel(null)
-    refetch()
+    void refetch()
   }
   if (phase === null) return null
   const committed = juror?.committed === true
@@ -38,7 +38,8 @@ export function JuryActions({ challengeId, phase, commitEndsAt, revealEndsAt }: 
       {phase === 'COMMIT' && committed && (
         <p className="sf-lead">{copy.jury.committedNote.replace('{time}', utcOf(commitEndsAt))}</p>
       )}
-      {phase === 'REVEAL' && committed && !revealed && (
+      {/* Without a wallet nothing is known about the juror, so the way in is offered and the panel asks to connect. */}
+      {phase === 'REVEAL' && ((committed && !revealed) || account === null) && (
         <Button variant="primary" onClick={() => setPanel('reveal')}>
           {copy.jury.reveal}
         </Button>

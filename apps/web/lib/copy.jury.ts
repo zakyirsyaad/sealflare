@@ -51,5 +51,12 @@ export const jury = {
   "codeOtherChallenge": "This code belongs to another challenge, so nothing was sent.",
   "codeSaved": "A reveal code for this vote is saved in this browser.",
   "anotherDevice": "Use a code from another device",
+  "verifying": "Checking your commit on the chain",
+  "commitNotFound": "The chain does not show your commit. If you cancelled it in your wallet, try again.",
+  "revealVerifying": "Checking your reveal on the chain",
+  "revealNotFound": "The chain does not show your reveal. If you cancelled it in your wallet, try again.",
+  "copyTimeNote": "Copying the time replaces what is on your clipboard, including the reveal code.",
+  "downloadRequired": "This browser cannot keep a copy of the code. Download it before you commit.",
+  "downloadAgainRequired": "This browser did not keep a copy of the code, so download it now. The file is the only copy you have.",
   "revealWhy": "Revealing opens your vote for everyone. Nothing is sent until the code matches the vote you committed."
 } as const

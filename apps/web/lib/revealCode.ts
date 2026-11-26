@@ -53,26 +53,68 @@ export function commitHashFor(code: string, juror: Address): Hex {
 const keyOf = (challengeId: bigint, juror: Address): string =>
   `sealflare:reveal:${expectedChainId}:${juror.toLowerCase()}:${challengeId.toString()}`
 
-/** Keeps the code on this device. False when the browser refuses or the text is not a code. */
+/** How many attempts are kept for one juror in one challenge. */
+const MAX_KEPT = 50
+
+/** The codes kept under a key, oldest first. Anything that is not a code of this challenge is left out. */
+function readList(challengeId: bigint, juror: Address): string[] {
+  try {
+    const stored = localStorage.getItem(keyOf(challengeId, juror))
+    if (stored === null) return []
+    const list: unknown = JSON.parse(stored)
+    if (!Array.isArray(list)) return []
+    return list.filter((item): item is string => typeof item === 'string' && parseRevealCode(item)?.challengeId === challengeId)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Keeps the code on this device. False when the browser refuses or the text is not a code.
+ *
+ * A code is added to the ones already kept and never replaces one. A juror who goes through the
+ * commit twice, because the first transaction was still pending, would otherwise lose the code
+ * that matches the commit on the chain, and a lost code is a lost stake.
+ */
 export function saveRevealCode(code: string, juror: Address): boolean {
   const parsed = parseRevealCode(code)
   if (parsed === null) return false
+  const kept = readList(parsed.challengeId, juror)
+  const text = code.trim()
+  const list = kept.includes(text) ? kept : [...kept, text].slice(-MAX_KEPT)
   try {
-    localStorage.setItem(keyOf(parsed.challengeId, juror), code.trim())
+    localStorage.setItem(keyOf(parsed.challengeId, juror), JSON.stringify(list))
     return true
   } catch {
     return false
   }
 }
 
-/** The code kept on this device for this challenge and juror, or null. */
-export function loadRevealCode(challengeId: bigint, juror: Address): string | null {
+/** Every code kept on this device for this challenge and juror, oldest first. */
+export function loadRevealCodes(challengeId: bigint, juror: Address): string[] {
+  return readList(challengeId, juror)
+}
+
+/**
+ * The code kept on this device for this challenge and juror, or null.
+ *
+ * With the commit hash the Court holds, it is the code that hashes to it, whichever attempt it
+ * came from. Without one it is the newest.
+ */
+export function loadRevealCode(challengeId: bigint, juror: Address, commitHash?: Hex): string | null {
+  const kept = readList(challengeId, juror)
+  if (commitHash === undefined) return kept.at(-1) ?? null
+  return kept.find(code => commitHashFor(code, juror).toLowerCase() === commitHash.toLowerCase()) ?? null
+}
+
+/** Whether this browser keeps things on this device. A private window may not. Leaves nothing behind. */
+export function canKeepRevealCode(): boolean {
+  const probe = 'sealflare:probe'
   try {
-    const stored = localStorage.getItem(keyOf(challengeId, juror))
-    if (stored === null) return null
-    // A value that names another challenge was not saved by this code, so it is not handed back.
-    return parseRevealCode(stored)?.challengeId === challengeId ? stored : null
+    localStorage.setItem(probe, '1')
+    localStorage.removeItem(probe)
+    return true
   } catch {
-    return null
+    return false
   }
 }

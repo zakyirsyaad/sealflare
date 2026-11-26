@@ -9,8 +9,10 @@ vi.mock('../lib/chain/config', () => ({
 }))
 
 import {
+  canKeepRevealCode,
   commitHashFor,
   loadRevealCode,
+  loadRevealCodes,
   newRevealCode,
   parseRevealCode,
   saveRevealCode,
@@ -186,4 +188,73 @@ test('nothing is printed to the console while a code is made, saved or loaded', 
   commitHashFor(code, JUROR)
   parseRevealCode(code)
   for (const spy of spies) expect(spy).not.toHaveBeenCalled()
+})
+
+// ---- review round: a second code never replaces the one that matches the commit -----------
+
+test('a second code for the same challenge and juror does not replace the first', () => {
+  const first = newRevealCode(12n, true)
+  const second = newRevealCode(12n, false)
+  saveRevealCode(first, JUROR)
+  saveRevealCode(second, JUROR)
+  expect(loadRevealCodes(12n, JUROR)).toEqual([first, second])
+  expect(loadRevealCode(12n, JUROR, commitHashFor(first, JUROR))).toBe(first)
+  expect(loadRevealCode(12n, JUROR, commitHashFor(second, JUROR))).toBe(second)
+})
+
+test('without a commit hash the newest code is handed back', () => {
+  const first = newRevealCode(12n, true)
+  const second = newRevealCode(12n, true)
+  saveRevealCode(first, JUROR)
+  saveRevealCode(second, JUROR)
+  expect(loadRevealCode(12n, JUROR)).toBe(second)
+})
+
+test('a commit hash that no kept code matches gives nothing, and so does another juror', () => {
+  const code = newRevealCode(12n, true)
+  saveRevealCode(code, JUROR)
+  expect(loadRevealCode(12n, JUROR, commitHashFor(newRevealCode(12n, true), JUROR))).toBeNull()
+  expect(loadRevealCode(12n, JUROR, commitHashFor(code, OTHER))).toBeNull()
+})
+
+test('the same code saved twice is kept once', () => {
+  const code = newRevealCode(12n, true)
+  saveRevealCode(code, JUROR)
+  saveRevealCode(code, JUROR)
+  expect(loadRevealCodes(12n, JUROR)).toEqual([code])
+})
+
+test('the codes of fifty attempts are kept and the oldest go first', () => {
+  const codes = Array.from({ length: 60 }, () => newRevealCode(12n, true))
+  for (const code of codes) saveRevealCode(code, JUROR)
+  expect(loadRevealCodes(12n, JUROR)).toEqual(codes.slice(10))
+})
+
+test('a stored value that is not a list of codes is ignored, and a new code starts a clean list', () => {
+  const code = newRevealCode(12n, true)
+  saveRevealCode(code, JUROR)
+  const key = Object.keys(localStorage)[0] as string
+  localStorage.setItem(key, '{"not":"a list"}')
+  expect(loadRevealCodes(12n, JUROR)).toEqual([])
+  localStorage.setItem(key, 'garbage')
+  expect(loadRevealCode(12n, JUROR)).toBeNull()
+  expect(saveRevealCode(code, JUROR)).toBe(true)
+  expect(loadRevealCodes(12n, JUROR)).toEqual([code])
+})
+
+test('entries of the list that are not codes of this challenge are left out', () => {
+  const mine = newRevealCode(12n, true)
+  saveRevealCode(mine, JUROR)
+  const key = Object.keys(localStorage)[0] as string
+  localStorage.setItem(key, JSON.stringify([mine, 'nonsense', newRevealCode(13n, true), 7]))
+  expect(loadRevealCodes(12n, JUROR)).toEqual([mine])
+})
+
+test('the browser is asked up front whether it can keep a code, and it leaves nothing behind', () => {
+  expect(canKeepRevealCode()).toBe(true)
+  expect(localStorage.length).toBe(0)
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('quota', 'QuotaExceededError')
+  })
+  expect(canKeepRevealCode()).toBe(false)
 })

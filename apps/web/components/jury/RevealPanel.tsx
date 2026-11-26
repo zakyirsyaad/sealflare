@@ -11,8 +11,8 @@ import { copy } from '../../lib/copy'
 import { loadRevealCode } from '../../lib/revealCode'
 import { AttestButton } from '../attest/AttestButton'
 import { walletGate } from '../attest/AttestPanel'
-import { buttonStateOf } from '../dispute/txButtonState'
 import { checkRevealCode } from './revealCheck'
+import { confirmedView, useConfirmation, type Outcome } from './confirmation'
 import { utcOf } from './schedule'
 import { useJuror, type JurorState } from './useJuror'
 
@@ -41,6 +41,8 @@ type FormProps = {
   account: Address
   juror: JurorState | null
   tx: ReturnType<typeof useWriteTx>
+  /** What the Court says about the reveal after the transaction. */
+  outcome: Outcome
 }
 
 /**
@@ -49,16 +51,16 @@ type FormProps = {
  * A pasted code wins over the code kept on this device, and either one is checked against the
  * commit on the chain before a transaction is asked for.
  */
-function useReveal({ challengeId, account, juror, tx }: FormProps) {
+function useReveal({ challengeId, account, juror, tx }: Omit<FormProps, 'outcome'>) {
   const court = courtAddress()
   const [pasted, setPasted] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const [sent, setSent] = useState<boolean | null>(null)
   // A code that was kept on this device is only offered when it matches the commit.
   const stored = useMemo(() => {
-    const kept = loadRevealCode(challengeId, account)
-    if (kept === null || juror === null) return null
-    return checkRevealCode(kept, challengeId, account, juror.commitHash).ok ? kept : null
+    if (juror === null) return null
+    // Of the codes kept on this device, the one that hashes to the commit the Court holds.
+    return loadRevealCode(challengeId, account, juror.commitHash)
   }, [challengeId, account, juror])
   const source = pasted.trim() !== '' ? pasted : stored
   const reveal = () => {
@@ -87,6 +89,7 @@ function useReveal({ challengeId, account, juror, tx }: FormProps) {
 function RevealForm(props: FormProps) {
   const { tx, juror } = props
   const form = useReveal(props)
+  const view = confirmedView(tx, props.outcome, copy.jury.revealNotFound)
   return (
     <>
       <p className="sf-lead">{copy.jury.revealWhy}</p>
@@ -109,11 +112,12 @@ function RevealForm(props: FormProps) {
           {form.problem}
         </p>
       )}
-      {tx.state === 'done' && form.sent !== null && <p className="sf-opt__title">{voteWord(form.sent)}</p>}
+      {view.checking && <p className="sf-lead" role="status">{copy.jury.revealVerifying}</p>}
+      {view.state === 'done' && form.sent !== null && <p className="sf-opt__title">{voteWord(form.sent)}</p>}
       <footer className="sf-panel__footer">
         <AttestButton
-          state={buttonStateOf(tx.state)}
-          error={tx.error}
+          state={view.state}
+          error={view.error}
           txHash={tx.txHash}
           label={copy.jury.reveal}
           disabled={form.source === null || juror === null}
@@ -147,6 +151,8 @@ export function RevealPanel(props: RevealPanelProps) {
   const { mutate: disconnect } = useDisconnect()
   const chain = useJuror(props.challengeId)
   const tx = useWriteTx()
+  // The reveal counts once the Court says the vote is open, not when a receipt comes back.
+  const outcome = useConfirmation(tx.state, chain.refetch, juror => juror?.revealed === true)
   const reason = reasonOf(props, chain.juror)
   const revealed = chain.juror?.revealed === true
   // A reveal that was sent keeps its form, so the answer of the chain cannot take it away
@@ -158,7 +164,7 @@ export function RevealPanel(props: RevealPanelProps) {
     ) : revealed && !sending ? (
       <Nothing reason={copy.jury.alreadyRevealed} juror={chain.juror} />
     ) : chain.account === null ? null : (
-      <RevealForm challengeId={BigInt(props.challengeId)} account={chain.account} juror={chain.juror} tx={tx} />
+      <RevealForm challengeId={BigInt(props.challengeId)} account={chain.account} juror={chain.juror} tx={tx} outcome={outcome} />
     )
   return (
     <Panel title={copy.jury.revealTitle} onClose={props.onClose} closeDisabled={isTxWorking(tx.state)}>

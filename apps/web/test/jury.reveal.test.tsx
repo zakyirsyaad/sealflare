@@ -13,7 +13,7 @@ import { JuryActions } from '../components/jury/JuryActions'
 import { RevealPanel } from '../components/jury/RevealPanel'
 import { copy } from '../lib/copy'
 import { commitHashFor, saveRevealCode } from '../lib/revealCode'
-import { resetDispute, state, wagmi } from './dispute.mocks'
+import { chainTakes, resetDispute, state, wagmi } from './dispute.mocks'
 import { COURT, ME, NOW } from './dispute.fixtures'
 
 const OTHER = '0x7100000000000000000000000000000000000001'
@@ -147,6 +147,7 @@ test('a vote that was revealed already is shown, and cannot be revealed again', 
 
 test('after revealing, the vote shows with "Waiting for finality"', async () => {
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  chainTakes('reveal')
   saveRevealCode(MINE, ME)
   reveal()
   await userEvent.click(revealButton())
@@ -309,4 +310,43 @@ test('a deployment without a Court address says so instead of doing nothing', as
   await userEvent.click(revealButton())
   expect(await screen.findByRole('alert')).toHaveTextContent(copy.dispute.noCourt)
   expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})
+
+// ---- review of the lead on #41 ---------------------------------------------------------------
+
+test('a reveal that was cancelled in the wallet is not shown as revealed, even though a receipt came back', async () => {
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  saveRevealCode(MINE, ME)
+  reveal()
+  await userEvent.click(revealButton())
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.jury.revealNotFound)
+  expect(screen.queryByText('Your vote: Uphold')).toBeNull()
+  expect(screen.queryByText(copy.common.waitingFinality)).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
+  await waitFor(() => expect(wagmi.writeContractAsync).toHaveBeenCalledTimes(2))
+})
+
+test('the one-click reveal uses the saved code that matches the commit, even when a newer attempt is saved after it', async () => {
+  saveRevealCode(MINE, ME)
+  saveRevealCode(`sf1.12.r.${'44'.repeat(32)}`, ME)
+  reveal()
+  expect(screen.getByText(copy.jury.codeSaved)).toBeInTheDocument()
+  await userEvent.click(revealButton())
+  expect((wagmi.writeContractAsync.mock.calls[0]?.[0] as { args: readonly unknown[] }).args).toEqual([12n, true, `0x${SALT}`])
+})
+
+test('"Reveal my vote" is offered in the reveal phase before a wallet is connected, and the panel asks for one', async () => {
+  state.value = { kind: 'no-wallet', isLoading: false, isError: false, recheck: () => {} }
+  // Without a wallet the read is disabled, so the Court answers nothing about this juror.
+  wagmi.reads.current.getJuror = undefined
+  actions('REVEAL')
+  await userEvent.click(screen.getByRole('button', { name: copy.jury.reveal }))
+  expect(screen.getByText(copy.wallet.connectTitle)).toBeInTheDocument()
+  expect(screen.queryByLabelText(copy.jury.pasteCode)).toBeNull()
+})
+
+test('once a wallet is connected that did not commit, there is nothing to reveal', () => {
+  wagmi.reads.current.getJuror = committed({ committed: false })
+  actions('REVEAL')
+  expect(screen.queryByRole('button', { name: copy.jury.reveal })).toBeNull()
 })

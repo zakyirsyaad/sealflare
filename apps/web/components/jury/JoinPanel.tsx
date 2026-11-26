@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useDisconnect } from 'wagmi'
 import type { Address } from 'viem'
 import { courtAbi } from '@sealflare/shared/abi'
@@ -11,7 +11,7 @@ import { isTxWorking, useWriteTx } from '../../lib/chain/useWriteTx'
 import { copy } from '../../lib/copy'
 import { commitHashFor, saveRevealCode } from '../../lib/revealCode'
 import { walletGate } from '../attest/AttestPanel'
-import { buttonStateOf } from '../dispute/txButtonState'
+import { confirmedView, useConfirmation, useHeldByChain } from './confirmation'
 import { SummaryStep, VoteStep } from './JoinSteps'
 import { RevealCodeStep } from './RevealCodeStep'
 import { useJuror } from './useJuror'
@@ -40,9 +40,11 @@ const TITLE: Record<Step, string> = { vote: copy.jury.join, summary: copy.jury.r
 function useCommit(challengeId: string, account: Address | null) {
   const tx = useWriteTx()
   const [keptFailed, setKeptFailed] = useState(false)
+  const sent = useRef<string | null>(null)
   const court = courtAddress()
   const commit = (code: string) => {
     if (account === null || court === null) return
+    sent.current = code
     setKeptFailed(!saveRevealCode(code, account))
     void tx.send({
       account,
@@ -54,7 +56,7 @@ function useCommit(challengeId: string, account: Address | null) {
     })
   }
   const blocked = account !== null && court === null
-  return { tx, keptFailed, commit, blocked }
+  return { tx, keptFailed, commit, blocked, sent }
 }
 
 /**
@@ -68,7 +70,18 @@ export function JoinPanel(props: JoinPanelProps) {
   const [step, setStep] = useState<Step>('vote')
   const [vote, setVote] = useState<boolean | null>(null)
   const chain = useJuror(props.challengeId)
-  const { tx, keptFailed, commit, blocked } = useCommit(props.challengeId, chain.account)
+  const { tx, keptFailed, commit, blocked, sent } = useCommit(props.challengeId, chain.account)
+  // The commit counts once the Court holds it for this wallet, with the hash of the code that was sent.
+  const outcome = useConfirmation(tx.state, chain.refetch, juror => {
+    if (sent.current === null || chain.account === null || juror === null) return false
+    return juror.committed && juror.commitHash === commitHashFor(sent.current, chain.account).toLowerCase()
+  })
+  // A commit that was refused because the juror already committed on the chain is not a failure to
+  // retry: the vote is in, and retrying would be refused the same way for ever.
+  const already = useHeldByChain(tx.state, chain.refetch, juror => juror?.committed === true)
+  const view = already
+    ? { state: 'idle' as const, error: null, checking: false }
+    : confirmedView(tx, outcome, copy.jury.commitNotFound)
   const from = utcOf(props.commitEndsAt)
   const to = utcOf(props.revealEndsAt)
   const body =
@@ -85,8 +98,11 @@ export function JoinPanel(props: JoinPanelProps) {
       <RevealCodeStep
         challengeId={BigInt(props.challengeId)}
         uphold={vote === true}
-        state={blocked ? 'failed' : buttonStateOf(tx.state)}
-        error={blocked ? copy.dispute.noCourt : tx.error}
+        account={chain.account as Address}
+        state={blocked ? 'failed' : view.state}
+        error={blocked ? copy.dispute.noCourt : view.error}
+        checking={view.checking}
+        committedOnChain={already}
         txHash={tx.txHash}
         window={copy.jury.revealWindow.replace('{from}', from).replace('{to}', to)}
         keptFailed={keptFailed}
