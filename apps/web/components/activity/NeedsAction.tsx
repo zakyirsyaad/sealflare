@@ -33,7 +33,7 @@ export function NeedsAction({ account, items, onSettled }: NeedsActionProps) {
       </div>
       <ul className="sf-todos">
         {rows.map((row, index) => (
-          <Row key={row.key} row={row} account={account} now={now} primary={index === 0} onSettled={onSettled} />
+          <Row key={`${row.key}:${index}`} row={row} account={account} now={now} primary={index === 0} onSettled={onSettled} />
         ))}
       </ul>
     </section>

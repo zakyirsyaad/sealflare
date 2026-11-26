@@ -29,6 +29,9 @@ const chain = vi.hoisted(() => ({
   penalties: {} as Record<string, number>,
   targets: {} as Record<string, { attestationCount: number }>,
   readsFailed: false,
+  /** When set, the answer of the chain waits for the test to release it. */
+  holdReads: false,
+  release: null as (() => void) | null,
   write: vi.fn(),
   receipt: { isSuccess: true, isError: false, data: { status: 'success' } as { status: string } | null, error: null as Error | null },
 }))
@@ -37,21 +40,46 @@ vi.mock('wagmi', async () => {
   const react = await import('react')
   return {
     // The chain reads again after a refetch, and the screen is drawn again with the new answer.
-    useReadContract: (config: { functionName: string }) => {
+    useReadContract: (config: { functionName: string; address?: string }) => {
       const [, bump] = react.useState(0)
-      const data = chain.readsFailed ? undefined : (chain as unknown as Record<string, unknown>)[config.functionName]
+      // A read without a contract has no answer, the same as a read that is not enabled.
+      const data =
+        chain.readsFailed || config.address === undefined
+          ? undefined
+          : (chain as unknown as Record<string, unknown>)[config.functionName]
       return { data, refetch: () => bump(value => value + 1), isLoading: false, isError: chain.readsFailed }
     },
     useReadContracts: (config: { contracts: { functionName: string; args: readonly unknown[] }[] }) => {
-      const [, bump] = react.useState(0)
-      const data = chain.readsFailed
-        ? undefined
-        : config.contracts.map(contract => {
-            if (contract.functionName === 'pendingPenalties') return chain.penalties[String(contract.args[0])] ?? 0
-            if (contract.functionName === 'getTarget') return chain.targets[String(contract.args[0])] ?? null
-            return undefined
-          })
-      return { data, refetch: () => bump(value => value + 1), isLoading: false, isError: chain.readsFailed }
+      const [version, bump] = react.useState(0)
+      const store = react.useRef<{ signature: string; data: unknown } | null>(null)
+      const signature = config.contracts.map(contract => `${contract.functionName}:${String(contract.args[0])}`).join('|')
+      const compute = () =>
+        config.contracts.map(contract => {
+          if (contract.functionName === 'pendingPenalties') return chain.penalties[String(contract.args[0])] ?? 0
+          if (contract.functionName === 'getTarget') return chain.targets[String(contract.args[0])] ?? null
+          return undefined
+        })
+      if (store.current === null || store.current.signature !== signature) {
+        store.current = { signature, data: compute() }
+      }
+      // The answer of the chain arrives after the call. A held answer waits for the test.
+      const refetch = () => {
+        const next = compute()
+        const sig = signature
+        const deliver = () => {
+          store.current = { signature: sig, data: next }
+          bump(value => value + 1)
+        }
+        if (chain.holdReads) chain.release = deliver
+        else deliver()
+      }
+      return {
+        data: chain.readsFailed ? undefined : store.current.data,
+        dataUpdatedAt: version,
+        refetch,
+        isLoading: false,
+        isError: chain.readsFailed,
+      }
     },
     useWriteContract: () => ({ writeContractAsync: chain.write }),
     useWaitForTransactionReceipt: () => chain.receipt,
@@ -66,11 +94,14 @@ vi.mock('wagmi', async () => {
 const account = vi.hoisted(() => ({ state: {} as Record<string, unknown> }))
 vi.mock('../lib/chain/userState', () => ({ useUserState: () => account.state }))
 
+const modules = vi.hoisted(() => ({ live: true }))
 vi.mock('../lib/chain/config', () => ({
   get expectedChainId() {
     return 56
   },
-  modulesLive: true,
+  get modulesLive() {
+    return modules.live
+  },
   agentIdUrl: 'https://agent-id.example/get',
 }))
 
@@ -148,6 +179,9 @@ beforeEach(() => {
   chain.penalties = {}
   chain.targets = { [TARGET]: { attestationCount: 120 } }
   chain.readsFailed = false
+  chain.holdReads = false
+  modules.live = true
+  chain.release = null
   chain.receipt = { isSuccess: true, isError: false, data: { status: 'success' }, error: null }
   chain.write.mockResolvedValue(TX_HASH)
   account.state = { kind: 'holder', address: ACCOUNT, isLoading: false, isError: false, recheck: () => {} }
@@ -262,6 +296,7 @@ test('an account with no history sees one invitation: scan a first target', asyn
   render(<MyActivityPage />)
   const invitation = await screen.findByRole('link', { name: copy.activity.scanFirst })
   expect(invitation).toHaveAttribute('href', '/app')
+  expect(screen.getAllByRole('link', { name: copy.activity.scanFirst })).toHaveLength(1)
   expect(screen.queryByRole('table')).toBeNull()
 })
 
@@ -429,4 +464,64 @@ test('the mark on the wallet button is read again after a settlement', async () 
   answer = activity({ history: [historyItem()] })
   await userEvent.click(await screen.findByRole('button', { name: copy.activity.claimAction }))
   await waitFor(() => expect(screen.queryByRole('button', { name: /1 item needs action/ })).toBeNull())
+})
+
+test('the last page of penalties waits for the chain before it says what it applied', async () => {
+  // The chain answers the read after the page was mined, so the screen may not say what the page
+  // applied before the new number has arrived.
+  chain.holdReads = true
+  chain.write.mockImplementation(async () => {
+    chain.penalties[TARGET] = 70
+    return TX_HASH
+  })
+  chain.penalties = { [TARGET]: 120 }
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  expect(await screen.findByText(copy.common.waitingFinality)).toBeInTheDocument()
+  expect(screen.queryByText(copy.activity.penaltiesNone)).toBeNull()
+  expect(screen.queryByText(copy.activity.penaltiesApplied)).toBeNull()
+  chain.release?.()
+  expect(await screen.findByText('The last page applied 50 penalties.')).toBeInTheDocument()
+})
+
+test('a page of penalties that the wallet refused says nothing about what it applied', async () => {
+  chain.write.mockRejectedValue({ code: 4001 })
+  chain.penalties = { [TARGET]: 120 }
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  await waitFor(() => expect(chain.write).toHaveBeenCalled())
+  expect(screen.queryByText(copy.activity.penaltiesNone)).toBeNull()
+  expect(screen.queryByText(copy.activity.penaltiesApplied)).toBeNull()
+})
+
+test('the balance shows the note of ux.md 4.2 while the vault is not open yet', async () => {
+  modules.live = false
+  process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({ chainId: 56, agentId: OTHER, core: CORE })
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  expect(await screen.findByText(copy.common.modulesNotLive)).toBeInTheDocument()
+  expect(screen.queryByText(copy.activity.balanceFailed)).toBeNull()
+  expect(screen.queryByRole('button', { name: copy.activity.withdraw })).toBeNull()
+})
+
+test('a wallet without an Agent ID is offered the way to get one', async () => {
+  account.state = { kind: 'no-agent-id', address: ACCOUNT, isLoading: false, isError: false, recheck: () => {} }
+  answer = activity({ history: [historyItem()] })
+  render(<MyActivityPage />)
+  expect(await screen.findByText(copy.wallet.agentWhy)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: copy.wallet.getAgentId })).toHaveAttribute('href', 'https://agent-id.example/get')
+  expect(screen.getByRole('button', { name: copy.wallet.checkAgain })).toBeInTheDocument()
+})
+
+test('a chain read that fails shows the failed state of the claim button', async () => {
+  chain.readsFailed = true
+  answer = activity({
+    needsAction: [need({ kind: 'XP_CLAIMABLE', challengeId: undefined, dueAt: undefined, detail: 'Your early Safe vote held for 48 hours.' })],
+    history: [historyItem()],
+  })
+  render(<MyActivityPage />)
+  expect(await screen.findByText(copy.activity.claimFailed)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: copy.activity.claimAction })).toBeNull()
 })

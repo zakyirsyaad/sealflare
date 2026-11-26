@@ -24,7 +24,8 @@ export type BalanceProps = {
  *
  * The balance is read from the vault and not from the indexer, so it is the number the contract
  * would send. A balance of zero is not offered as a withdrawal: the call would revert. A read
- * that fails is shown as a failure, not as a balance of zero.
+ * that fails is shown as a failure, not as a balance of zero. While the vault is not open yet,
+ * the panel says so instead of failing: the vault is not there to be read.
  */
 export function Balance({ account, balance, failed, onWithdrawn, onRetry }: BalanceProps) {
   const empty = balance !== null && balance === 0n
@@ -35,18 +36,13 @@ export function Balance({ account, balance, failed, onWithdrawn, onRetry }: Bala
         {failed ? (
           <ErrorState what={copy.activity.balanceFailed} onChainSafe onRetry={onRetry} />
         ) : balance === null ? (
-          <Skeleton label={copy.common.loading} />
+          modulesLive ? <Skeleton label={copy.common.loading} /> : <p className="sf-lead">{copy.common.modulesNotLive}</p>
         ) : (
           <>
             <p className="sf-balance__amount">
               {formatBnb(balance)} <span className="sf-balance__unit">{copy.common.bnb}</span>
             </p>
-            {empty && (
-              <>
-                <p className="sf-lead">{copy.activity.balanceEmpty}</p>
-                <a className="sf-btn sf-btn--secondary" href="/app">{copy.activity.scanFirst}</a>
-              </>
-            )}
+            {empty && <p className="sf-lead">{copy.activity.balanceEmpty}</p>}
             {account !== null && balance !== null && !empty && (
               <WithdrawButton account={account} balance={balance} onWithdrawn={onWithdrawn} disabled={!modulesLive} />
             )}

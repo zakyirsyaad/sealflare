@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useReadContract } from 'wagmi'
 import type { Address, Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
@@ -7,6 +7,8 @@ import { coreAddress } from '../../lib/chain/addresses'
 import { expectedChainId } from '../../lib/chain/config'
 import { useWriteTx } from '../../lib/chain/useWriteTx'
 import { copy } from '../../lib/copy'
+import { ErrorState } from '../ui/ErrorState'
+import { Skeleton } from '../ui/Skeleton'
 import { ActionButton } from './ActionButton'
 
 export type SettleXpButtonProps = {
@@ -14,7 +16,7 @@ export type SettleXpButtonProps = {
   targetId: string
   /** The one button of the view that carries the accent. */
   primary?: boolean
-  /** Called once the settlement was mined, so the rows of the account are read again. */
+  /** Called once a settlement was mined, so the rows of the account are read again. */
   onSettled?: () => void
 }
 
@@ -31,6 +33,64 @@ export const SETTLE_PAGE = 50
  */
 export function SettleXpButton({ account, targetId, primary = false, onSettled }: SettleXpButtonProps) {
   const tx = useWriteTx()
+  const core = coreAddress()
+  const reads = useSettleReads(targetId, account)
+  const mined = useRef<string | null>(null)
+  const { state, txHash, reset } = tx
+  useEffect(() => {
+    if (state !== 'done' || txHash === null || mined.current === txHash) return
+    mined.current = txHash
+    onSettled?.()
+    reads.refetchPending()
+  }, [state, txHash, onSettled, reads.refetchPending])
+  useEffect(() => {
+    // The chain has nothing left to settle, so the claim has landed and the button is free.
+    if (state !== 'done' || reads.pending !== 0) return
+    reset()
+  }, [state, reads.pending, reset])
+  const send = () => {
+    if (core === null || reads.position === null) return
+    const start = pageStart(reads.position)
+    void tx.send({ account, address: core, abi: coreAbi, functionName: 'settle', args: [targetId as Hex, start, SETTLE_PAGE] })
+  }
+  // A read that fails is a failure of the row, not a row without a button.
+  if (reads.failed) return <ErrorState what={copy.activity.claimFailed} onChainSafe onRetry={reads.retry} />
+  if (reads.loading) return <Skeleton label={copy.common.loading} />
+  if (reads.position === null || reads.pending === 0) return null
+  return (
+    <div className="sf-stack">
+      <ActionButton
+        label={copy.activity.claimAction}
+        state={tx.state}
+        error={tx.error}
+        txHash={tx.txHash}
+        disabled={core === null}
+        primary={primary}
+        onSubmit={send}
+      />
+      <p className="sf-lead">{copy.activity.settleGas}</p>
+    </div>
+  )
+}
+
+/** What the chain says about the settlement of one target. */
+type SettleReads = {
+  /** The index of the vote of the account, when the chain said. */
+  position: number | null
+  /** How many attestations of the target still wait to be settled. */
+  pending: number | null
+  /** The chain could not be read. */
+  failed: boolean
+  /** The chain has not answered yet. */
+  loading: boolean
+  /** Reads the two numbers again. */
+  retry: () => void
+  /** Reads the number of attestations that wait again. */
+  refetchPending: () => void
+}
+
+/** The two reads the claim needs, and the state they are in. */
+function useSettleReads(targetId: string, account: Address): SettleReads {
   const core = coreAddress()
   const enabled = core !== null
   const index = useReadContract({
@@ -49,42 +109,23 @@ export function SettleXpButton({ account, targetId, primary = false, onSettled }
     args: [targetId as Hex],
     query: { enabled },
   })
-  const position = indexOf(index.data)
-  const { state, txHash, reset } = tx
-  const mined = useRef<string | null>(null)
-  const refetch = useRef(pending.refetch)
-  refetch.current = pending.refetch
-  useEffect(() => {
-    if (state !== 'done' || txHash === null || mined.current === txHash) return
-    mined.current = txHash
-    onSettled?.()
-    void refetch.current()
-  }, [state, txHash, onSettled])
-  useEffect(() => {
-    // The chain has nothing left to settle, so the claim has landed and the button is free.
-    if (state !== 'done' || pendingCount(pending.data) !== 0) return
-    reset()
-  }, [state, pending.data, reset])
-  const send = () => {
-    if (core === null || position === null) return
-    const start = pageStart(position)
-    void tx.send({ account, address: core, abi: coreAbi, functionName: 'settle', args: [targetId as Hex, start, SETTLE_PAGE] })
+  const readIndex = useRef(index.refetch)
+  readIndex.current = index.refetch
+  const readPending = useRef(pending.refetch)
+  readPending.current = pending.refetch
+  const retry = useCallback(() => {
+    void readIndex.current()
+    void readPending.current()
+  }, [])
+  const refetchPending = useCallback(() => void readPending.current(), [])
+  return {
+    position: indexOf(index.data),
+    pending: pendingCount(pending.data),
+    failed: index.isError === true || pending.isError === true,
+    loading: index.isLoading === true || pending.isLoading === true,
+    retry,
+    refetchPending,
   }
-  if (position === null || pendingCount(pending.data) === 0) return null
-  return (
-    <div className="sf-stack">
-      <ActionButton
-        label={copy.activity.claimAction}
-        state={tx.state}
-        error={tx.error}
-        txHash={tx.txHash}
-        disabled={core === null}
-        primary={primary}
-        onSubmit={send}
-      />
-      <p className="sf-lead">{copy.activity.settleGas}</p>
-    </div>
-  )
 }
 
 /** The index of the vote of the account, when the chain answered with one. */

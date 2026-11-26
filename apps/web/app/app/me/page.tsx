@@ -1,5 +1,6 @@
 'use client'
 import { useCallback, useState } from 'react'
+import { useDisconnect } from 'wagmi'
 import { Balance } from '../../../components/activity/Balance'
 import { History } from '../../../components/activity/History'
 import { NeedsAction } from '../../../components/activity/NeedsAction'
@@ -10,10 +11,12 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { ErrorState } from '../../../components/ui/ErrorState'
 import { Skeleton } from '../../../components/ui/Skeleton'
 import { ConnectPrompt } from '../../../components/wallet/ConnectPrompt'
+import { NoAgentId } from '../../../components/wallet/NoAgentId'
 import { WrongNetwork } from '../../../components/wallet/WrongNetwork'
 import { notifyActivityChanged } from '../../../lib/activity/activityChanged'
 import { useActivity } from '../../../lib/activity/useActivity'
 import { usePendingPenalties, useStanding, useVaultBalance } from '../../../lib/activity/useChainReads'
+import { agentIdUrl } from '../../../lib/chain/config'
 import { useUserState } from '../../../lib/chain/userState'
 import { copy } from '../../../lib/copy'
 
@@ -50,11 +53,18 @@ export default function MyActivityPage() {
       </div>
     )
   }
-  return <ActivityView address={address} />
+  return <ActivityView address={address} agentId={agentIdOf(user)} />
+}
+
+/** The way to get an Agent ID, when the wallet does not hold one. */
+function agentIdOf(user: ReturnType<typeof useUserState>): { recheck: () => void } | null {
+  if (user.kind !== 'no-agent-id') return null
+  return { recheck: user.recheck }
 }
 
 /** The screen of an account that is connected. */
-function ActivityView({ address }: { address: `0x${string}` }) {
+function ActivityView({ address, agentId }: { address: `0x${string}`; agentId: { recheck: () => void } | null }) {
+  const { mutate: disconnect } = useDisconnect()
   const activity = useActivity(address)
   const balance = useVaultBalance(address)
   const standing = useStanding(address)
@@ -85,10 +95,12 @@ function ActivityView({ address }: { address: `0x${string}` }) {
           attested={attested}
           penalties={penalties}
           pending={pending}
+          agentId={agentId}
+          onOtherWallet={disconnect}
           onApplied={onApplied}
           onSettled={onSettled}
         />
-        <ActivitySide address={address} balance={balance} standing={standing} />
+        <ActivitySide address={address} balance={balance} standing={standing} holder={agentId === null} />
       </div>
     </div>
   )
@@ -101,6 +113,8 @@ function ActivityMain({
   attested,
   penalties,
   pending,
+  agentId,
+  onOtherWallet,
   onApplied,
   onSettled,
 }: {
@@ -109,16 +123,27 @@ function ActivityMain({
   attested: { targets: string[]; limited: boolean }
   penalties: ReturnType<typeof usePendingPenalties>
   pending: PendingPenalty[]
+  agentId: { recheck: () => void } | null
+  onOtherWallet: () => void
   onApplied: () => void
   onSettled: () => void
 }) {
   return (
     <div className="sf-activity__main">
+      {agentId !== null && (
+        <NoAgentId recheck={agentId.recheck} onOtherWallet={onOtherWallet} agentIdUrl={agentIdUrl} />
+      )}
       <NeedsAction account={address} items={activity.needsAction} onSettled={onSettled} />
       {penalties.failed && attested.targets.length > 0 && (
         <ErrorState what={copy.activity.penaltiesFailed} onChainSafe onRetry={penalties.refetch} />
       )}
-      <PenaltiesPanel account={address} penalties={pending} onApplied={onApplied} />
+      <PenaltiesPanel
+        account={address}
+        penalties={pending}
+        updatedAt={penalties.updatedAt}
+        failed={penalties.failed}
+        onApplied={onApplied}
+      />
       {attested.limited && (
         <p className="sf-lead">
           {copy.activity.penaltiesLimited.replace('{count}', String(MAX_PENALTY_TARGETS))}
@@ -139,10 +164,13 @@ function ActivitySide({
   address,
   balance,
   standing,
+  holder,
 }: {
   address: `0x${string}`
   balance: ReturnType<typeof useVaultBalance>
   standing: ReturnType<typeof useStanding>
+  /** The standing belongs to a holder of an Agent ID, so only a holder has one. */
+  holder: boolean
 }) {
   return (
     <div className="sf-activity__side">
@@ -153,14 +181,16 @@ function ActivitySide({
         onWithdrawn={balance.refetch}
         onRetry={balance.refetch}
       />
-      <Standing
-        score={standing.score}
-        weight={standing.weight}
-        toNextWeight={standing.toNextWeight}
-        attestationsLeft={standing.attestationsLeft}
-        failed={standing.failed}
-        onRetry={standing.refetch}
-      />
+      {holder && (
+        <Standing
+          score={standing.score}
+          weight={standing.weight}
+          toNextWeight={standing.toNextWeight}
+          attestationsLeft={standing.attestationsLeft}
+          failed={standing.failed}
+          onRetry={standing.refetch}
+        />
+      )}
     </div>
   )
 }

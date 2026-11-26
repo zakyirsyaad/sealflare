@@ -4,7 +4,7 @@ import { useReadContract, useReadContracts } from 'wagmi'
 import { zeroAddress, type Address, type Hex } from 'viem'
 import { coreAbi, vaultAbi } from '@sealflare/shared/abi'
 import { coreAddress, vaultAddress } from '../chain/addresses'
-import { expectedChainId } from '../chain/config'
+import { expectedChainId, modulesLive } from '../chain/config'
 import { toNextWeight } from './standing'
 
 /**
@@ -35,7 +35,8 @@ export function useVaultBalance(address: string | null): {
   return {
     wei: typeof data === 'bigint' ? data : null,
     // A deployment that names no vault cannot be read, and that is a failure, not a loading read.
-    failed: read.isError === true || (vault === null && address !== null),
+    // While the vault is not open yet there is nothing to read, and the screen says so instead.
+    failed: read.isError === true || (modulesLive && vault === null && address !== null),
     refetch,
   }
 }
@@ -85,6 +86,8 @@ export function useStanding(address: string | null): StandingReading {
     query: { enabled },
   })
   const score = scoreOf(guardian.data)
+  // The search for the next weight walks the thresholds, so it happens once per score.
+  const next = useMemo(() => (score === null ? null : toNextWeight(score)), [score])
   const failed =
     guardian.isError === true ||
     weight.isError === true ||
@@ -101,7 +104,7 @@ export function useStanding(address: string | null): StandingReading {
   return {
     score,
     weight: typeof weight.data === 'number' ? weight.data : null,
-    toNextWeight: score === null ? null : toNextWeight(score),
+    toNextWeight: next,
     attestationsLeft: typeof quota.data === 'number' ? quota.data : null,
     failed,
     refetch,
@@ -126,6 +129,8 @@ export type TargetPenalties = {
 /** The penalties that are still waiting on each of the targets. */
 export function usePendingPenalties(targets: readonly string[]): {
   pending: Record<string, TargetPenalties>
+  /** The moment the numbers were read, so a reader knows when the chain answered. */
+  updatedAt: number
   failed: boolean
   refetch: () => void
 } {
@@ -185,6 +190,7 @@ export function usePendingPenalties(targets: readonly string[]): {
   const refetch = useStableRefetch(read)
   return {
     pending,
+    updatedAt: read.dataUpdatedAt ?? 0,
     failed: read.isError === true || (core === null && targets.length > 0),
     refetch,
   }

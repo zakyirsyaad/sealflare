@@ -11,6 +11,10 @@ export type PenaltiesPanelProps = {
   account: Address
   /** The targets on which a penalty is still waiting. */
   penalties: readonly PendingPenalty[]
+  /** The moment the numbers of the penalties were read from the chain. */
+  updatedAt: number
+  /** The numbers of the penalties could not be read. */
+  failed: boolean
   /** Called once a page of penalties was applied, so the rest is read again. */
   onApplied: () => void
 }
@@ -21,7 +25,7 @@ export type PenaltiesPanelProps = {
  * The penalties are not one of the actions of ux.md section 11, so they have a panel of their own
  * and the count of the needs action panel stays the count of the mark on the wallet button.
  */
-export function PenaltiesPanel({ account, penalties, onApplied }: PenaltiesPanelProps) {
+export function PenaltiesPanel({ account, penalties, updatedAt, failed, onApplied }: PenaltiesPanelProps) {
   if (penalties.length === 0) return null
   return (
     <section className="sf-frame sf-frame--crop" aria-label={copy.activity.penaltiesPanel}>
@@ -31,7 +35,14 @@ export function PenaltiesPanel({ account, penalties, onApplied }: PenaltiesPanel
       </div>
       <ul className="sf-todos">
         {penalties.map(penalty => (
-          <PenaltyRow key={penalty.targetId} penalty={penalty} account={account} onApplied={onApplied} />
+          <PenaltyRow
+            key={penalty.targetId}
+            penalty={penalty}
+            account={account}
+            updatedAt={updatedAt}
+            failed={failed}
+            onApplied={onApplied}
+          />
         ))}
       </ul>
     </section>
@@ -42,10 +53,14 @@ export function PenaltiesPanel({ account, penalties, onApplied }: PenaltiesPanel
 function PenaltyRow({
   penalty,
   account,
+  updatedAt,
+  failed,
   onApplied,
 }: {
   penalty: PendingPenalty
   account: Address
+  updatedAt: number
+  failed: boolean
   onApplied: () => void
 }) {
   return (
@@ -59,6 +74,8 @@ function PenaltyRow({
         targetId={penalty.targetId}
         pending={penalty.pending}
         attestations={penalty.attestations}
+        updatedAt={updatedAt}
+        failed={failed}
         onApplied={onApplied}
       />
     </li>

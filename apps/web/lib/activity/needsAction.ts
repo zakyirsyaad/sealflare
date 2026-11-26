@@ -110,7 +110,9 @@ function titleOf(item: NeedsAction, target: string): string {
 function detailOf(item: NeedsAction, target: string): string {
   switch (item.kind) {
     case 'REVEAL_DUE':
-      return copy.activity.revealDetail.replace('{stake}', formatBnb(CONSTANTS.JURY_STAKE))
+      return copy.activity.revealDetail
+        .replace('{stake}', formatBnb(CONSTANTS.JURY_STAKE))
+        .replace('{unit}', copy.common.bnb)
     case 'REPLY_DUE':
       return copy.activity.replyDetail.replace('{target}', target)
     case 'CAN_CLOSE':
