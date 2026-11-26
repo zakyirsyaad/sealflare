@@ -452,10 +452,13 @@ test('a late run that the worker ends with the blame of the skill keeps its slot
   expect(failed[0]?.status).toBe('incomplete')
   expect(await used(db)).toBe(1)
 
-  // The worker ends the run and blames the skill of the run, so the slot does not come back.
+  // The worker ends the run and blames the skill of the run, so the slot does not come back and
+  // the reason of the worker is shown, not the reason of the deadline the run missed.
   await pollOnce(pollerAt(db, worker, () => later))
   const ended = await runs(db)
   expect(ended[0]?.failure_cause).toBe('skill_content')
+  const reasons = await db.query<{ failure_message: string | null }>('SELECT failure_message FROM sandbox_runs')
+  expect(reasons[0]?.failure_message).toBe('The run did not finish.')
   expect(await used(db)).toBe(1)
   await close()
 })

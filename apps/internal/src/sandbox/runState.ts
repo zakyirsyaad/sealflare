@@ -194,10 +194,11 @@ async function completeRun(deps: RunDeps, row: RunRow, status: WorkerRunStatus):
  * The run stays failed, because it did miss its deadline. Its slot of the quota comes back now,
  * unless the run ended with a verdict about the skill: a run that caught a forbidden tool call
  * did its job, so nothing is blamed and the slot is not given back. The blame of the run is the
- * one the worker reports, so a run that ended because of the skill keeps its slot as well. A
- * violation the worker found at the end is still stored and cached, because a violation is never
- * hidden. A run that finished cleanly keeps no result, because the frozen schema has no
- * incomplete result whose probes are all clean.
+ * one the worker reports, so a run that ended because of the skill keeps its slot as well. The
+ * reason of the worker is written with it, so a run that is blamed for the skill does not show
+ * the reason of the deadline it missed. A violation the worker found at the end is still stored
+ * and cached, because a violation is never hidden. A run that finished cleanly keeps no result,
+ * because the frozen schema has no incomplete result whose probes are all clean.
  */
 async function completeLateRun(deps: RunDeps, row: RunRow, status: WorkerRunStatus): Promise<void> {
   const fresh = await freshRow(deps, row.run_id)
@@ -205,7 +206,7 @@ async function completeLateRun(deps: RunDeps, row: RunRow, status: WorkerRunStat
   const ending = endingOf(result, status.failure?.cause ?? 'infrastructure')
   const rows = await deps.sql.query<{ run_id: string }>(
     `UPDATE sandbox_runs SET result = $2, evidence_uri = $3, evidence_since = $4, late_since = NULL, read_failures = 0,
-       failure_cause = $5
+       failure_cause = $5, failure_message = COALESCE($6, failure_message)
      WHERE run_id = $1 AND late_since IS NOT NULL RETURNING run_id`,
     [
       row.run_id,
@@ -213,6 +214,7 @@ async function completeLateRun(deps: RunDeps, row: RunRow, status: WorkerRunStat
       status.evidenceURI ?? null,
       status.evidenceURI === undefined ? deps.now().toISOString() : null,
       ending.cause,
+      status.failure?.message ?? null,
     ],
   )
   if (rows.length === 0) return
