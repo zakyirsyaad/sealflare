@@ -68,7 +68,8 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
       { index: 1, shortProof: 'owner can mint', evidenceURI: '', txHash: `0x${'44'.repeat(32)}` },
     ],
     evidenceFrom: async () => [],
-    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0 }),
+    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0, lockedByChallengeId: 0n }),
+    binding: async () => null,
     ...overrides,
   }
 }
@@ -336,4 +337,24 @@ test('a target without attestations never reads the event log', async () => {
   const data = await loadTarget(targetId, null)
   expect(evidence).not.toHaveBeenCalled()
   expect(data.evidenceFailed).toBe(false)
+})
+
+test('a target with no publisher never walks the event log for a binding', async () => {
+  const binding = vi.fn(async () => null)
+  reader.current = fakeReader({ binding })
+  await loadTarget(targetId, null)
+  expect(binding).not.toHaveBeenCalled()
+})
+
+test('a target with a publisher reads how it was bound', async () => {
+  const publisher = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as const
+  const bound = { publisher, role: 'VERIFIED_PUBLISHER', method: 'OWNER' } as const
+  const binding = vi.fn(async () => bound)
+  reader.current = fakeReader({
+    target: async () => coreTarget({ publisher, publisherRole: 'VERIFIED_PUBLISHER' }),
+    binding,
+  })
+  const page = await loadTarget(targetId, null)
+  expect(binding).toHaveBeenCalledTimes(1)
+  expect(page.binding).toEqual(bound)
 })

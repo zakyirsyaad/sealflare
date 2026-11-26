@@ -1,0 +1,92 @@
+import { SignalGroup } from '@sealflare/shared/schemas'
+
+/** One vote, as the indexer stored it. */
+export interface SignalVote {
+  verdict: 'SAFE' | 'CAUTION' | 'DANGER'
+  /** The frozen vote weight W(S), 0 to 5. */
+  weight: number
+  /** The bitmask of the flags the vote carried. */
+  flags: number
+}
+
+/** The votes of one verdict and one weight, counted by the database. */
+export interface SignalTally {
+  verdict: 'SAFE' | 'CAUTION' | 'DANGER'
+  weight: number
+  /** How many votes the group holds. */
+  votes: number
+  /** The total weight of the votes in the group. */
+  totalWeight: number
+  /** The union of the flags of the votes in the group. */
+  flags: number
+}
+
+interface Tally {
+  votes: { safe: number; caution: number; danger: number }
+  weight: { safe: number; caution: number; danger: number }
+  flags: number
+}
+
+const emptyTally = (): Tally => ({
+  votes: { safe: 0, caution: 0, danger: 0 },
+  weight: { safe: 0, caution: 0, danger: 0 },
+  flags: 0,
+})
+
+/** The name of a verdict in the tally. The database only holds the three verdicts. */
+function keyOf(verdict: string): 'safe' | 'caution' | 'danger' {
+  if (verdict === 'SAFE') return 'safe'
+  if (verdict === 'CAUTION') return 'caution'
+  if (verdict === 'DANGER') return 'danger'
+  throw new Error(`the vote has the verdict ${verdict}, which the read model does not know`)
+}
+
+/**
+ * The community signal of a target, split into the two rows the interface shows.
+ *
+ * A new Agent ID holder votes with weight 1, and every other weight belongs to the experienced
+ * Guardians. A vote with weight 0 is a vote whose score went negative, so it is counted with
+ * the Guardians, the same way the SDK counts it.
+ *
+ * The signal is never collapsed into one number, and it never says a target is safe.
+ */
+export function signalOf(rows: readonly SignalVote[]): { newIds: SignalGroup; guardians: SignalGroup } {
+  return splitOf(
+    rows.map((row) => ({
+      verdict: row.verdict,
+      weight: row.weight,
+      votes: 1,
+      totalWeight: row.weight,
+      flags: row.flags,
+    })),
+  )
+}
+
+/**
+ * The same signal, from votes the database already counted.
+ *
+ * The grouping is by verdict and weight, so the two rows of the signal are put together again
+ * here. A group of weight 0 belongs to the Guardians, like a single vote of weight 0 does.
+ */
+export function signalOfTallies(tallies: readonly SignalTally[]): { newIds: SignalGroup; guardians: SignalGroup } {
+  return splitOf(tallies)
+}
+
+/**
+ * The one rule that puts every vote in its row.
+ *
+ * Both answers go through here, so the two can never drift apart. The rule is the one the SDK
+ * uses, so the target page, the Companion Skill and the SDK always show the same breakdown.
+ */
+function splitOf(groups: readonly SignalTally[]): { newIds: SignalGroup; guardians: SignalGroup } {
+  const newIds = emptyTally()
+  const guardians = emptyTally()
+  for (const group of groups) {
+    const tally = group.weight === 1 ? newIds : guardians
+    const key = keyOf(group.verdict)
+    tally.votes[key] += group.votes
+    tally.weight[key] += group.totalWeight
+    tally.flags |= group.flags
+  }
+  return { newIds, guardians }
+}
