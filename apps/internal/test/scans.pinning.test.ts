@@ -22,7 +22,11 @@ const COMMIT = 'a'.repeat(40)
 const PATH = 'skill'
 
 /** The target row the indexer writes for a skill, with its publisher bound or not. */
-async function seedSkill(db: Parameters<typeof insertTarget>[0], bound: boolean): Promise<void> {
+async function seedSkill(
+  db: Parameters<typeof insertTarget>[0],
+  bound: boolean,
+  role: 'VERIFIED_PUBLISHER' | 'THIRD_PARTY_SPONSOR' = 'VERIFIED_PUBLISHER',
+): Promise<void> {
   await insertTarget(db, {
     id: TARGET_ID,
     type: 'AI_SKILL_BUNDLE',
@@ -30,7 +34,7 @@ async function seedSkill(db: Parameters<typeof insertTarget>[0], bound: boolean)
     codehash: null,
     bundleHash: CANONICAL,
     publisher: bound ? PUBLISHER : null,
-    publisherRole: bound ? 'VERIFIED_PUBLISHER' : 'NONE',
+    publisherRole: bound ? role : 'NONE',
   })
 }
 
@@ -134,8 +138,11 @@ test('a newer report of a copy refreshes the report but keeps the pinned source'
 
   expect(await pinnedSrc(db)).toBe(`gh:${ALICE}@${COMMIT}:${PATH}`)
   const response = await get(app, `/scans/${TARGET_ID}`)
-  const answer = asAnswer<{ scannedAt: string }>(await body(response))
+  const answer = asAnswer<{ scannedAt: string; source: { repo: string; commit: string } }>(await body(response))
   expect(answer.data?.scannedAt).toBe('2026-11-25T12:00:00.000Z')
+  // The stored report never names the repository of the copy, so the page cannot show it.
+  expect(answer.data?.source.repo).toBe(ALICE)
+  expect(answer.data?.source.commit).toBe(COMMIT)
   await close()
 })
 
@@ -211,5 +218,55 @@ test('two first scans of different repositories pin exactly one of them', async 
     [TARGET_ID],
   )
   expect(rows).toHaveLength(1)
+  await close()
+})
+
+test('a sponsor is no publisher, so a scan after a sponsorship pins nothing', async () => {
+  const { db, close } = await createTestDb()
+  await seedSkill(db, true, 'THIRD_PARTY_SPONSOR')
+  const { app } = testApp(db)
+
+  await put(app, `/scans/${TARGET_ID}`, skillReport(MALLORY, 'b'.repeat(40), '2026-11-25T10:00:00.000Z'))
+
+  expect(await pinnedSrc(db)).toBeNull()
+  await close()
+})
+
+test('a first scan that loses the race keeps the source of the winner and tries again', async () => {
+  const { db, close } = await createTestDb()
+  await seedSkill(db, true)
+  let inserts = 0
+  let raced = false
+  const racing: typeof db = {
+    ...db,
+    async query<T>(text: string, params?: readonly unknown[]): Promise<T[]> {
+      if (text.includes('INSERT INTO scan_cache')) {
+        inserts += 1
+        // Another request pins the repository of Alice between the read and this write.
+        if (!raced) {
+          raced = true
+          await db.query('INSERT INTO scan_cache (target_id, src, report, scanned_at) VALUES ($1, $2, $3, $4)', [
+            TARGET_ID,
+            `gh:${ALICE}@${COMMIT}:${PATH}`,
+            JSON.stringify(skillReport(ALICE, COMMIT, '2026-11-25T09:00:00.000Z')),
+            '2026-11-25T09:00:00.000Z',
+          ])
+        }
+      }
+      return db.query<T>(text, params)
+    },
+  }
+  const { app } = testApp(racing)
+
+  const response = await put(app, `/scans/${TARGET_ID}`, skillReport(MALLORY, 'b'.repeat(40), '2026-11-25T10:00:00.000Z'))
+
+  expect(response.status).toBe(200)
+  expect(inserts).toBe(2)
+  expect(await pinnedSrc(db)).toBe(`gh:${ALICE}@${COMMIT}:${PATH}`)
+  const stored = await db.query<{ report: { source: { repo: string } } }>(
+    'SELECT report FROM scan_cache WHERE target_id = $1',
+    [TARGET_ID],
+  )
+  expect(stored[0]?.report.source.repo).toBe(ALICE)
   await close()
 })
