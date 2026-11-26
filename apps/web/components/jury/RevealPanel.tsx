@@ -62,7 +62,8 @@ function useReveal({ challengeId, account, juror, tx }: FormProps) {
   }, [challengeId, account, juror])
   const source = pasted.trim() !== '' ? pasted : stored
   const reveal = () => {
-    if (source === null || juror === null || court === null) return
+    if (source === null || juror === null) return
+    if (court === null) return setProblem(copy.dispute.noCourt)
     const checked = checkRevealCode(source, challengeId, account, juror.commitHash)
     if (!checked.ok) return setProblem(checked.message)
     setProblem(null)

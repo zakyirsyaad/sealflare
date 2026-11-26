@@ -278,3 +278,35 @@ test('the jury box offers nothing before the phase is known, and no vote directi
   expect(screen.queryByText(copy.jury.uphold)).toBeNull()
   expect(screen.queryByText(/Your vote/)).toBeNull()
 })
+
+// ---- review round 1 ------------------------------------------------------------------------
+
+test('the Court is asked again every few seconds, so a commit that landed turns "Join" into a note', () => {
+  actions('COMMIT')
+  for (const name of ['jurorStatus', 'getJuror']) {
+    const call = wagmi.readCalls.find(item => item.functionName === name)
+    expect(call?.query?.refetchInterval, name).toBeGreaterThan(0)
+  }
+})
+
+test('closing the panel reads the Court again, so the box shows what the panel just did', async () => {
+  wagmi.reads.current.getJuror = committed({ committed: false })
+  actions('COMMIT')
+  wagmi.refetch.mockClear()
+  await userEvent.click(screen.getByRole('button', { name: copy.jury.join }))
+  await userEvent.click(screen.getByRole('button', { name: copy.common.close }))
+  expect(wagmi.refetch).toHaveBeenCalled()
+})
+
+test('a deployment without a Court address says so instead of doing nothing', async () => {
+  saveRevealCode(MINE, ME)
+  process.env.NEXT_PUBLIC_ADDRESSES_BSC = JSON.stringify({
+    chainId: 56,
+    agentId: '0x3000000000000000000000000000000000000003',
+    core: '0x1000000000000000000000000000000000000001',
+  })
+  reveal()
+  await userEvent.click(revealButton())
+  expect(await screen.findByRole('alert')).toHaveTextContent(copy.dispute.noCourt)
+  expect(wagmi.writeContractAsync).not.toHaveBeenCalled()
+})

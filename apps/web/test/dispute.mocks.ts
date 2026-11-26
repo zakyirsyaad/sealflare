@@ -8,7 +8,8 @@ export const wagmi = {
   signMessageAsync: vi.fn(),
   writeContractAsync: vi.fn(),
   reads: { current: {} as Record<string, unknown> },
-  readCalls: [] as { functionName: string; args?: readonly unknown[] }[],
+  readCalls: [] as { functionName: string; args?: readonly unknown[]; query?: Record<string, unknown> }[],
+  refetch: vi.fn(),
   receipt: { current: { isSuccess: false, isError: false, error: null as unknown } as Record<string, unknown> },
 }
 export const state = { value: {} as Record<string, unknown> }
@@ -20,9 +21,9 @@ export const wagmiModule = {
   useSignMessage: () => ({ signMessageAsync: wagmi.signMessageAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
   useWaitForTransactionReceipt: () => wagmi.receipt.current,
-  useReadContract: (params: { functionName: string; args?: readonly unknown[] }) => {
-    wagmi.readCalls.push({ functionName: params.functionName, args: params.args })
-    return { data: wagmi.reads.current[params.functionName], isLoading: false, isError: false, refetch: vi.fn() }
+  useReadContract: (params: { functionName: string; args?: readonly unknown[]; query?: Record<string, unknown> }) => {
+    wagmi.readCalls.push({ functionName: params.functionName, args: params.args, query: params.query })
+    return { data: wagmi.reads.current[params.functionName], isLoading: false, isError: false, refetch: wagmi.refetch }
   },
   useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
   useConnectors: () => [{ uid: '1', id: 'injected', name: 'Browser wallet' }],

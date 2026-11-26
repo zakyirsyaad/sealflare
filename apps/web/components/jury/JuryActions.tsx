@@ -24,7 +24,11 @@ export type JuryActionsProps = {
  */
 export function JuryActions({ challengeId, phase, commitEndsAt, revealEndsAt }: JuryActionsProps) {
   const [panel, setPanel] = useState<'join' | 'reveal' | null>(null)
-  const { juror } = useJuror(challengeId)
+  const { juror, refetch } = useJuror(challengeId)
+  const close = () => {
+    setPanel(null)
+    refetch()
+  }
   if (phase === null) return null
   const committed = juror?.committed === true
   const revealed = juror?.revealed === true
@@ -46,10 +50,10 @@ export function JuryActions({ challengeId, phase, commitEndsAt, revealEndsAt }: 
         <p className="sf-lead">{copy.jury.revealOver}</p>
       )}
       {panel === 'join' && (
-        <JoinPanel challengeId={challengeId} commitEndsAt={commitEndsAt} revealEndsAt={revealEndsAt} onClose={() => setPanel(null)} />
+        <JoinPanel challengeId={challengeId} commitEndsAt={commitEndsAt} revealEndsAt={revealEndsAt} onClose={close} />
       )}
       {panel === 'reveal' && (
-        <RevealPanel challengeId={challengeId} phase={phase} commitEndsAt={commitEndsAt} onClose={() => setPanel(null)} />
+        <RevealPanel challengeId={challengeId} phase={phase} commitEndsAt={commitEndsAt} onClose={close} />
       )}
     </div>
   )
