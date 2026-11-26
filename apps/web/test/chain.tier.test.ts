@@ -16,7 +16,7 @@ const HEAD = 5_000_000n
 const NODE_HEAD = HEAD - 2n
 
 type Call = { id: number; method: string; params: unknown[] }
-const state = { calls: [] as Call[], requests: 0 }
+const state = { calls: [] as Call[], requests: 0, sizes: [] as number[] }
 
 function answer(call: Call): unknown {
   if (call.method === 'eth_blockNumber') return numberToHex(HEAD)
@@ -42,6 +42,7 @@ beforeAll(async () => {
       state.requests += 1
       const parsed = JSON.parse(body) as Call | Call[]
       const calls = Array.isArray(parsed) ? parsed : [parsed]
+      state.sizes.push(calls.length)
       const answers = calls.map(call => {
         try {
           return { jsonrpc: '2.0', id: call.id, result: answer(call) }
@@ -67,6 +68,7 @@ afterAll(() => {
 beforeEach(() => {
   state.calls = []
   state.requests = 0
+  state.sizes = []
 })
 
 async function reader() {
@@ -94,6 +96,14 @@ describe('the tier of a target, read from a node that lags behind the head', () 
     expect(block).toBe(HEAD - 3n)
   }, TIMEOUT)
 
+  test('the local chain reads the head, because one node never lags behind itself', async () => {
+    const { tierMarginFor } = await import('../server/chain')
+
+    expect(tierMarginFor(31337)).toBe(0n)
+    expect(tierMarginFor(56)).toBe(3n)
+    expect(tierMarginFor(97)).toBe(3n)
+  })
+
   test('a tier at a fixed block is read at that block', async () => {
     const tier = await (await reader()).tierAt(TARGET, 100n)
 
@@ -101,13 +111,16 @@ describe('the tier of a target, read from a node that lags behind the head', () 
     expect(state.calls[0]!.params[1]).toBe(numberToHex(100n))
   }, TIMEOUT)
 
-  test('the reads of a list of targets leave in one request, because the transport batches them', async () => {
+  test('the reads of a list of targets leave in small batches, because a provider may refuse a large one', async () => {
     const chain = await reader()
-    const targets = Array.from({ length: 20 }, (_, index) => `0x${String(index + 1).padStart(64, '0')}` as Hex)
+    const targets = Array.from({ length: 25 }, (_, index) => `0x${String(index + 1).padStart(64, '0')}` as Hex)
 
     await Promise.all(targets.map(targetId => chain.tierAt(targetId, 100n)))
 
-    expect(state.calls).toHaveLength(20)
-    expect(state.requests).toBe(1)
+    expect(state.calls).toHaveLength(25)
+    // The keyless endpoint of viem takes 25 calls and a free plan of another provider takes 3, so
+    // a batch of 100 would be refused by both. No request holds more than ten calls.
+    expect(Math.max(...state.sizes)).toBeLessThanOrEqual(10)
+    expect(state.requests).toBeGreaterThan(1)
   }, TIMEOUT)
 })

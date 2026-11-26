@@ -14,7 +14,7 @@ import { usePendingVote } from '../target/pendingVote'
 import { ReviewStep } from './ReviewStep'
 import { VerdictStep } from './VerdictStep'
 import { addFlag, canReview, chooseVerdict, emptyChoice, provedFlags, removeFlag, setQuote, type Choice } from './choice'
-import { isLocked, useAttest } from './useAttest'
+import { useAttest } from './useAttest'
 
 export type AttestPanelProps = {
   targetId: string
@@ -27,11 +27,17 @@ export type AttestPanelProps = {
   scan: ScanReport | null
   /** A challenge is open on this target. */
   underDispute: boolean
+  /**
+   * Whether the dialog is shown. The page keeps this component mounted while the dialog is closed,
+   * so the attempt, the choice and the step outlive the dialog, and closing it never loses a vote
+   * that is on its way. It is shown by default.
+   */
+  open?: boolean
   onClose: () => void
 }
 
 /** The wallet has to be connected before anything can be signed. */
-export function ConnectSection() {
+function ConnectSection() {
   const connectors = useConnectors()
   const { mutate, isPending, error } = useConnect()
   return (
@@ -73,14 +79,14 @@ export function walletGate(user: UserState, disconnect: () => void): React.React
  */
 function useRegisterVote(attest: Attestation, recheck: () => void) {
   const { register } = usePendingVote()
-  const { state, txHash, verdict } = attest
+  const { state, txHash, verdict, account } = attest
   useEffect(() => {
-    if (state !== 'done' || txHash === null || verdict === null) return
-    register(verdict, txHash)
+    if (state !== 'done' || txHash === null || verdict === null || account === null) return
+    register(verdict, txHash, account)
     recheck()
     // The wallet is read again once per vote. A new `recheck` function must not repeat it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, txHash, verdict, register])
+  }, [state, txHash, verdict, account, register])
 }
 
 type Pane = {
@@ -125,19 +131,38 @@ export function AttestPanel(props: AttestPanelProps) {
   const [step, setStep] = useState<Step>('verdict')
   const [choice, setChoice] = useState<Choice>(emptyChoice)
   const { mutate: disconnect } = useDisconnect()
+  const connected = 'address' in user ? user.address : null
   const attest = useAttest({
     targetId: props.targetId,
     targetWord: props.targetWord,
     targetType: props.targetType,
     tier: props.tier,
     scan: props.scan,
-    address: 'address' in user ? user.address : null,
+    address: connected,
   })
   useRegisterVote(attest, user.recheck)
+
+  // The attempt belongs to the account that started it. Another account of the same wallet has a
+  // vote of its own to make, so the panel starts over for it. A vote that is still on its way is
+  // left alone, so the vote of the first account is still registered.
+  useEffect(() => {
+    if (attest.account === null || connected === null) return
+    if (connected.toLowerCase() === attest.account.toLowerCase()) return
+    if (attest.state !== 'done' && attest.state !== 'failed') return
+    attest.reset()
+    setStep('verdict')
+    setChoice(emptyChoice)
+  }, [attest.account, connected, attest.state, attest.reset])
 
   const submit = () => {
     if (choice.verdict === null) return
     void attest.submit({ verdict: choice.verdict, flags: choice.flags, quotes: choice.quotes })
+  }
+  const close = () => {
+    // Nothing was sent on-chain yet, so an attempt whose wallet prompt never answers may be
+    // abandoned. The late answer of that attempt is ignored.
+    if (attest.state === 'signing-evidence' || attest.state === 'uploading') attest.reset()
+    props.onClose()
   }
   const review = (
     <ReviewStep
@@ -155,19 +180,16 @@ export function AttestPanel(props: AttestPanelProps) {
         attest.reset()
         submit()
       }}
+      onStartAgain={attest.reset}
     />
   )
   const verdict = <VerdictPane props={props} choice={choice} setChoice={setChoice} onContinue={() => setStep('review')} />
+  if (props.open === false) return null
   return (
     <Panel
       title={step === 'verdict' ? copy.attest.action : copy.attest.review}
       marker={copy.attest.step[step === 'verdict' ? 0 : 1]}
-      onClose={() => {
-        // The attempt stops at its next step, so a late signature sends nothing.
-        attest.cancel()
-        props.onClose()
-      }}
-      closeDisabled={isLocked(attest.state)}
+      onClose={close}
     >
       {walletGate(user, () => disconnect()) ?? (step === 'verdict' ? verdict : review)}
     </Panel>

@@ -4,12 +4,14 @@ import {
   account,
   activeChallengeOf,
   addresses,
+  applyVerdict,
   attest,
   chainClient,
   commitVote,
   createBounty,
   createTestDb,
   distribute,
+  markDisputed,
   openChallenge,
   resolveChallenge,
   targetAddress,
@@ -22,11 +24,16 @@ const all = () => {
   return { core: found.core, court: found.court, vault: found.vault }
 }
 
+/** The Core alone, which is what a database of an older build read. */
+const coreOnly = () => ({ core: all().core })
+
 const FIRST = targetAddress(0xa1)
 const SECOND = targetAddress(0xa2)
 const THIRD = targetAddress(0xa3)
 const FOURTH = targetAddress(0xa4)
 const FIFTH = targetAddress(0xa5)
+const SIXTH = targetAddress(0xa6)
+const SEVENTH = targetAddress(0xa7)
 
 const TABLES = [
   'cursor',
@@ -84,6 +91,61 @@ test('rebuilding with all three contracts yields identical tables', async () => 
   // The rebuild holds the rows of the three contracts, not only the ones of the Core.
   expect(first).toContain('challenges (')
   expect(first).toContain('payouts (')
+  await close()
+})
+
+test('a database that read the Core alone fills the bounty when the Vault is read too', async () => {
+  const { db, close } = await createTestDb()
+  await attest({ from: 0, contract: SIXTH })
+  await createBounty({ from: 5, targetId: targetIdOf(SIXTH), slots: 3 })
+  await attest({ from: 2, contract: SIXTH })
+  await attest({ from: 3, contract: SIXTH })
+  await attest({ from: 4, contract: SIXTH })
+
+  // The first run reads the Core alone, so the bounty of the Vault is not read yet.
+  await indexOnce({ client: chainClient(), sql: db, addresses: coreOnly() })
+  expect(await db.query('SELECT id FROM bounties')).toHaveLength(0)
+
+  // The second run reads the Vault too. The Core events are in the raw log already, so their
+  // handlers are skipped and the votes that came after the bounty are never offered to it.
+  await indexOnce({ client: chainClient(), sql: db, addresses: all() })
+
+  const fillers = await db.query<{ guardian: string }>(
+    'SELECT guardian FROM bounty_fillers WHERE bounty_id = (SELECT id FROM bounties WHERE requester = $1)',
+    [account(5).address.toLowerCase()],
+  )
+  expect(fillers.map((row) => row.guardian).sort()).toEqual(
+    [account(2), account(3), account(4)].map((who) => who.address.toLowerCase()).sort(),
+  )
+  await close()
+})
+
+test('the moment of a verdict is filled when the chain is read again', async () => {
+  const { db, close } = await createTestDb()
+  const targetId = targetIdOf(SEVENTH)
+  await attest({ from: 0, contract: SEVENTH, verdict: 2, flags: 1 })
+  await markDisputed({ from: 0, targetId, challengeId: 99n })
+  await applyVerdict({ from: 0, targetId, challengeId: 99n, outcome: 1, flags: 4 })
+
+  await indexOnce({ client: chainClient(), sql: db, addresses: coreOnly() })
+  // A database that was built before the columns existed has the verdict in its log and nothing
+  // in its columns.
+  await db.query('UPDATE targets SET verdict_at = NULL, count_at_verdict = NULL WHERE target_id = $1', [
+    targetId,
+  ])
+  expect(await db.query('SELECT verdict_at FROM targets WHERE target_id = $1', [targetId])).toEqual([
+    { verdict_at: null },
+  ])
+
+  // The chain is read again from the start block, and the moment is filled from the log.
+  await indexOnce({ client: chainClient(), sql: db, addresses: all() })
+
+  const rows = await db.query<{ verdict_at: Date | null; count_at_verdict: number | null }>(
+    'SELECT verdict_at, count_at_verdict FROM targets WHERE target_id = $1',
+    [targetId],
+  )
+  expect(rows[0]?.verdict_at).not.toBeNull()
+  expect(rows[0]?.count_at_verdict).toBe(1)
   await close()
 })
 

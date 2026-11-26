@@ -71,7 +71,8 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
       { index: 1, shortProof: 'owner can mint', evidenceURI: '', txHash: `0x${'44'.repeat(32)}` },
     ],
     evidenceFrom: async () => [],
-    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0 }),
+    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0, lockedByChallengeId: 0n }),
+    binding: async () => null,
     ...overrides,
   }
 }
@@ -124,6 +125,32 @@ function skillTarget(report: ReturnType<typeof skillReport>, overrides: Partial<
   return coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: report.targetId as `0x${string}`, ...overrides })
 }
 
+test('the target, its votes and its tier are read at one block, so a page shows one moment', async () => {
+  const target = vi.fn(async () => coreTarget())
+  const tier = vi.fn(async () => 'UNRATED' as const)
+  const attestations = vi.fn(async () => [attestation()])
+  const bond = vi.fn(async () => ({ amount: 0n, withdrawalAvailableAt: 0, lockedByChallengeId: 0n }))
+  const publisher = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' as const
+  reader.current = fakeReader({
+    tierBlockNumber: async () => 77n,
+    target: vi.fn(async () => coreTarget({ publisher, publisherRole: 'VERIFIED_PUBLISHER' })),
+    tier,
+    attestations,
+    bond,
+  })
+
+  await loadTarget(targetId, null)
+
+  expect(tier).toHaveBeenCalledWith(targetId, 77n)
+  expect(attestations).toHaveBeenCalledWith(targetId, 2, 77n)
+  // A bond posted or withdrawn in the last blocks must not sit next to votes from before it.
+  expect(bond).toHaveBeenCalledWith(targetId, publisher, 77n)
+
+  reader.current = fakeReader({ tierBlockNumber: async () => 77n, target, tier, attestations })
+  await loadTarget(targetId, null)
+  expect(target).toHaveBeenCalledWith(targetId, 77n)
+})
+
 test('the tier comes from Core even when the row of the target disagrees', async () => {
   reader.current = fakeReader({ tier: async () => 'UNRATED' })
   const data = await loadTarget(targetId, null)
@@ -159,6 +186,7 @@ test('the detail of a target matches the read model schema', () => {
     attestations: [attestation()],
     scan: null,
     bond: 5_000_000_000_000_000n,
+    sandbox: null,
   })
   expect(TargetDetail.safeParse(detail).success).toBe(true)
   expect(detail.bond).toBe('5000000000000000')
@@ -339,6 +367,64 @@ test('a target without attestations never reads the event log', async () => {
   const data = await loadTarget(targetId, null)
   expect(evidence).not.toHaveBeenCalled()
   expect(data.evidenceFailed).toBe(false)
+})
+
+test('the page carries the word Core.attest takes: the padded address of a contract', async () => {
+  const data = await loadTarget(targetId, null)
+  expect(data.targetWord).toBe(`0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`)
+  expect(data.targetWord).not.toBe(targetId)
+})
+
+test('a contract the registry does not know yet takes its word from the scan', async () => {
+  reader.current = fakeReader({ target: async () => null })
+  scanner.scanContract.mockResolvedValue(contractReport(address))
+  const data = await loadTarget(targetId, address)
+  expect(data.targetWord).toBe(`0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`)
+})
+
+test('the word of a skill is its canonical bundle hash, and the same bundle is not a change', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  reader.current = fakeReader({
+    target: async () => coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: audited.source.kind === 'skill' ? audited.source.canonicalBundleHash : `0x${'00'.repeat(32)}` }),
+    tier: async () => 'COMMUNITY_SAFE',
+  })
+  scanner.scanSkill.mockResolvedValue(audited)
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.targetWord).toBe(audited.source.kind === 'skill' ? audited.source.canonicalBundleHash : null)
+  expect(data.bundleChanged).toBe(false)
+})
+
+test('a skill whose repository now holds another bundle is a change, whatever the tier says', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  const current = skillReport(`0x${'66'.repeat(32)}`)
+  reader.current = fakeReader({
+    target: async () => coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: audited.source.kind === 'skill' ? audited.source.canonicalBundleHash : `0x${'00'.repeat(32)}` }),
+    tier: async () => 'COMMUNITY_SAFE',
+  })
+  scanner.scanSkill.mockResolvedValue(current)
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.bundleChanged).toBe(true)
+  expect(data.detail?.tier).toBe('COMMUNITY_SAFE')
+})
+
+test('a target with no publisher never walks the event log for a binding', async () => {
+  const binding = vi.fn(async () => null)
+  reader.current = fakeReader({ binding })
+  await loadTarget(targetId, null)
+  expect(binding).not.toHaveBeenCalled()
+})
+
+test('a target with a publisher reads how it was bound', async () => {
+  const publisher = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as const
+  const bound = { publisher, role: 'VERIFIED_PUBLISHER', method: 'OWNER' } as const
+  const binding = vi.fn(async () => bound)
+  reader.current = fakeReader({
+    target: async () => coreTarget({ publisher, publisherRole: 'VERIFIED_PUBLISHER' }),
+    binding,
+  })
+  const page = await loadTarget(targetId, null)
+  expect(binding).toHaveBeenCalledTimes(1)
+  expect(page.binding).toEqual(bound)
 })
 
 test('the page carries the word Core.attest takes: the padded address of a contract', async () => {

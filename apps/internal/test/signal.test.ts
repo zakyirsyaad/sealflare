@@ -18,12 +18,12 @@ test('the signal splits weight-1 votes from weight-2-and-above votes', () => {
   expect(signal.newIds.flags).toBe(0)
 })
 
-test('a vote of weight 0 stays with the new holders, because it carries no standing', () => {
+test('a vote of weight 0 is counted with the Guardians, the same way the SDK counts it', () => {
   const signal = signalOf([{ verdict: 'CAUTION', weight: 0, flags: 0 }])
 
-  expect(signal.newIds.votes.caution).toBe(1)
-  expect(signal.newIds.weight.caution).toBe(0)
-  expect(signal.guardians.votes.caution).toBe(0)
+  expect(signal.newIds.votes.caution).toBe(0)
+  expect(signal.guardians.votes.caution).toBe(1)
+  expect(signal.guardians.weight.caution).toBe(0)
 })
 
 test('a vote with a verdict the read model does not know is refused', () => {

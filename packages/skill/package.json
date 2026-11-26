@@ -1,0 +1,26 @@
+{
+  "name": "@sealflare/skill",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The read only Sealflare companion skill for AI agents.",
+  "scripts": {
+    "scan-contract": "tsx scripts/scan-contract.ts",
+    "scan-skill": "tsx scripts/scan-skill.ts",
+    "prepare-attestation": "tsx scripts/prepare-attestation.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sealflare/guard": "workspace:*",
+    "@sealflare/scanner-core": "workspace:*",
+    "@sealflare/shared": "workspace:*",
+    "viem": "^2.58.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}

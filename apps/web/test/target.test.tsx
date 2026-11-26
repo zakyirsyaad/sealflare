@@ -16,6 +16,23 @@ const { wallet } = vi.hoisted(() => ({
 
 vi.mock('../lib/chain/userState', () => ({ useUserState: () => wallet.current }))
 
+const { sandbox } = vi.hoisted(() => ({
+  sandbox: { current: { run: null, busy: false, error: null, paused: false, start: vi.fn() } as Record<string, unknown> },
+}))
+
+vi.mock('../lib/sandbox/useSandboxRun', () => ({ useSandboxRun: () => sandbox.current }))
+
+// The attest panel stays mounted while its dialog is closed, so its wallet hooks run on every page.
+vi.mock('wagmi', () => ({
+  useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
+  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
+  useWaitForTransactionReceipt: () => ({ isSuccess: false, isError: false, error: null }),
+  useConnect: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+  useConnectors: () => [],
+  useDisconnect: () => ({ mutate: vi.fn() }),
+  useSwitchChain: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+}))
+
 const address = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
 const targetId = targetIdOfContract(address)
 const codehash = `0x${'22'.repeat(32)}` as const

@@ -1,0 +1,342 @@
+import { Hono, type Context } from 'hono'
+import { z } from 'zod'
+import { CONSTANTS } from '@sealflare/shared/rules'
+import { AddressSchema, Bytes32Schema, SandboxRunCreateRequest, type SandboxResult } from '@sealflare/shared/schemas'
+import type { Db } from '../db'
+import { fail, ok, type InternalErrorCode } from '../respond'
+import { cacheGet } from '../sandbox/cache'
+import type { ChainReader } from '../sandbox/chain'
+import { isPaused } from '../sandbox/pause'
+import { quotaLeft, releaseQuota, resetsAt, takeQuota } from '../sandbox/quota'
+import { enqueue, newRunId, readRun, type SandboxDeps } from '../sandbox/queue'
+import {
+  BundleMismatch,
+  NoGitHubToken,
+  NotASkill,
+  readReference,
+  readSkillMd,
+  SkillTooLarge,
+  SkillUnavailable,
+  type SkillDeps,
+} from '../sandbox/skills'
+import { readJson } from './json'
+import { commitNonce, releaseNonce, reserveNonce, type NonceRefusal } from './nonce'
+
+/**
+ * The sandbox routes of the internal service.
+ *
+ * The internal service is the door to Postgres, and it is also the door to the sandbox. It checks
+ * the signature and the Agent ID itself, so a request that reaches it over the inter-service key
+ * is refused when it was signed by an address without an Agent ID, when the signature was used
+ * before, or when it has expired.
+ */
+export interface SandboxRouteDeps {
+  sql: Db
+  now: () => Date
+  chain: ChainReader
+  skills: SkillDeps
+  probeSetVersion: string
+  modelId: string
+}
+
+/** The run the API reports after it was queued. */
+interface CreatedRun {
+  runId: string
+  status: 'queued'
+  queuePosition: number
+  quotaLeft: number
+}
+
+/** A request that is refused, with the code and the status the answer carries. */
+type FailureStatus = 400 | 403 | 429 | 500 | 502
+
+interface Refusal {
+  code: InternalErrorCode
+  message: string
+  status: FailureStatus
+}
+
+/** The address of the request, in the same shape as the address the chain answers with. */
+function sameAddress(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase()
+}
+
+/** The sandbox routes. */
+export function sandboxRoutes(deps: SandboxRouteDeps): Hono {
+  const app = new Hono()
+
+  app.post('/runs', (c) => createRun(c, deps))
+  app.get('/runs/:runId', (c) => runStatus(c, deps))
+  app.get('/quota/:address', (c) => quotaStatus(c, deps))
+  app.get('/cache/:bundleHash', (c) => cachedResult(c, deps))
+
+  return app
+}
+
+/**
+ * Queues a run of a skill.
+ *
+ * The cheap checks come first: the pause, the signature, the Agent ID and the nonce. The ones that
+ * cost the most, the fetch of the skill and a slot of the quota, come last. The Agent ID is a read
+ * of the chain, so it runs before the nonce, which only reads the database.
+ */
+async function createRun(c: Context, deps: SandboxRouteDeps): Promise<Response> {
+  const body = await readJson(c)
+  if (!body.ok) return c.json(fail('BAD_REQUEST', 'The request body is not valid JSON.'), 400)
+  const parsed = SandboxRunCreateRequest.safeParse(body.value)
+  if (!parsed.success) {
+    return c.json(fail('BAD_REQUEST', 'The request body does not match the schema.'), 400)
+  }
+
+  const answer = await prepare(deps, parsed.data)
+  if ('code' in answer) return c.json(fail(answer.code, answer.message), answer.status)
+  return c.json(ok(answer.data))
+}
+
+/**
+ * Does everything a request for a run needs, and answers with the run or with a refusal.
+ *
+ * The cheap checks come first: the pause, the signature, the Agent ID and the nonce. The ones that
+ * cost the most, a slot of the quota and the fetch of the skill, come last. The Agent ID is a read
+ * of the chain, so it runs before the nonce, which only reads the database.
+ */
+async function prepare(
+  deps: SandboxRouteDeps,
+  request: z.infer<typeof SandboxRunCreateRequest>,
+): Promise<{ data: CreatedRun } | Refusal> {
+  if (await isPaused(deps)) {
+    return { code: 'SANDBOX_PAUSED', message: 'The sandbox is paused for today.', status: 429 }
+  }
+  const refusal = await checkSignature(deps, request)
+  if (refusal !== null) return refusal
+
+  const reservation = await reserveNonce(
+    deps.sql,
+    { address: request.address, nonce: request.nonce, expiry: request.expiry },
+    deps.now(),
+  )
+  if (!reservation.reserved) return nonceRefusal(reservation.reason)
+
+  const cached = await cacheGet(deps, request.bundleHash, deps.probeSetVersion, deps.modelId)
+  if (cached !== null) {
+    const queued = await queueCached(deps, request, cached)
+    if ('code' in queued) {
+      await releaseNonce(deps.sql, { address: request.address, nonce: request.nonce })
+      return queued
+    }
+    await commitNonce(deps.sql, { address: request.address, nonce: request.nonce })
+    return queued
+  }
+
+  const queued = await queueRun(deps, request)
+  if ('code' in queued) {
+    await releaseNonce(deps.sql, { address: request.address, nonce: request.nonce })
+    return queued
+  }
+  await commitNonce(deps.sql, { address: request.address, nonce: request.nonce })
+  return queued
+}
+
+/**
+ * Checks the signature and the Agent ID.
+ *
+ * The signature is recovered with the chain id of the service, so a signature made for another
+ * chain never recovers here. The address that signed has to be the address of the request and has
+ * to hold an Agent ID.
+ */
+async function checkSignature(
+  deps: SandboxRouteDeps,
+  request: z.infer<typeof SandboxRunCreateRequest>,
+): Promise<Refusal | null> {
+  const signer = await deps.chain.recoverSigner({
+    bundleHash: request.bundleHash,
+    nonce: request.nonce,
+    expiry: request.expiry,
+    signature: request.signature,
+  })
+  if (signer === null || !sameAddress(signer, request.address)) {
+    return { code: 'SIGNATURE_INVALID', message: 'The signature does not match the address.', status: 400 }
+  }
+  const holder = await deps.chain.isAgentIdHolder(request.address)
+  if (!holder) {
+    return { code: 'NOT_AGENT_ID_HOLDER', message: 'This address does not hold an Agent ID.', status: 403 }
+  }
+  return null
+}
+
+/** The answer to a nonce that could not be reserved. */
+function nonceRefusal(reason: NonceRefusal): Refusal {
+  if (reason === 'expired') return { code: 'SIGNATURE_EXPIRED', message: 'The request has expired.', status: 400 }
+  if (reason === 'too_far_ahead') {
+    return { code: 'BAD_REQUEST', message: 'The request expires too far in the future.', status: 400 }
+  }
+  return { code: 'SIGNATURE_INVALID', message: 'The request was already used.', status: 400 }
+}
+
+/**
+ * Reads the SKILL.md of the skill.
+ *
+ * The file is read from the commit the source names and is compared with the hash the client
+ * signed, so the worker is never given a file that belongs to another bundle.
+ */
+async function readSkill(
+  deps: SandboxRouteDeps,
+  src: string,
+  bundleHash: string,
+): Promise<{ skillMd: string } | Refusal> {
+  let reference
+  try {
+    reference = readReference(src)
+  } catch {
+    return { code: 'BAD_REQUEST', message: 'The sandbox only runs on a skill.', status: 400 }
+  }
+  try {
+    return { skillMd: await readSkillMd(deps.skills, reference, bundleHash) }
+  } catch (error) {
+    if (error instanceof NotASkill) {
+      return { code: 'BAD_REQUEST', message: 'The sandbox only runs on a skill.', status: 400 }
+    }
+    if (error instanceof NoGitHubToken) {
+      return {
+        code: 'BAD_REQUEST',
+        message: 'The sandbox cannot read a skill because no GitHub token is configured.',
+        status: 400,
+      }
+    }
+    if (error instanceof BundleMismatch) {
+      return {
+        code: 'BAD_REQUEST',
+        message: 'The skill at the pinned commit is not the bundle that was signed.',
+        status: 400,
+      }
+    }
+    if (error instanceof SkillUnavailable) {
+      return { code: 'INTERNAL', message: 'The skill could not be read.', status: 502 }
+    }
+    if (error instanceof SkillTooLarge) {
+      return { code: 'BAD_REQUEST', message: error.message, status: 400 }
+    }
+    throw error
+  }
+}
+
+/**
+ * Puts a run in the queue.
+ *
+ * The slot of the quota is taken first, so an address that has no runs left never triggers a
+ * fetch of the repository. The skill is read after that, and the row of the run is written last.
+ *
+ * The fetch of the repository is not a call to the database, so it does not belong in a
+ * transaction. A transaction that waits for the network holds its connection and its locks for as
+ * long as the network takes. The slot of the quota is therefore given back with a second
+ * statement when the fetch or the insert fails, so a run that was never queued leaves no slot
+ * behind.
+ *
+ * The day the slot was taken on is written with the row of the run, so a slot that is given back
+ * later goes back to the day it was taken on and not to the day the row was written.
+ */
+async function queueRun(
+  deps: SandboxRouteDeps,
+  request: z.infer<typeof SandboxRunCreateRequest>,
+): Promise<{ data: CreatedRun } | Refusal> {
+  const quota = await takeQuota({ sql: deps.sql, now: deps.now }, request.address)
+  if (!quota.taken) {
+    return { code: 'QUOTA_EXHAUSTED', message: 'The daily sandbox runs are used up.', status: 429 }
+  }
+  const skill = await readSkill(deps, request.src, request.bundleHash)
+  if ('code' in skill) {
+    await releaseQuota({ sql: deps.sql, now: deps.now }, request.address, quota.day)
+    return skill
+  }
+  try {
+    const runId = newRunId()
+    const position = await enqueue(
+      {
+        sql: deps.sql,
+        now: deps.now,
+        probeSetVersion: deps.probeSetVersion,
+        modelId: deps.modelId,
+      },
+      {
+        runId,
+        address: request.address,
+        bundleHash: request.bundleHash,
+        src: request.src,
+        skillMd: skill.skillMd,
+        quotaDay: quota.day,
+      },
+    )
+    return { data: { runId, status: 'queued', queuePosition: position, quotaLeft: quota.left } }
+  } catch {
+    await releaseQuota({ sql: deps.sql, now: deps.now }, request.address, quota.day)
+    return { code: 'INTERNAL', message: 'The run could not be queued.', status: 500 }
+  }
+}
+
+/**
+ * Puts a run of a bundle that is already in the cache in the queue.
+ *
+ * The run carries the cached result, so the worker is never asked and no slot of the quota is
+ * taken. The queue finishes it with that result.
+ */
+async function queueCached(
+  deps: SandboxRouteDeps,
+  request: z.infer<typeof SandboxRunCreateRequest>,
+  cached: SandboxResult,
+): Promise<{ data: CreatedRun } | Refusal> {
+  const queue: SandboxDeps = {
+    sql: deps.sql,
+    now: deps.now,
+    probeSetVersion: deps.probeSetVersion,
+    modelId: deps.modelId,
+  }
+  try {
+    const runId = newRunId()
+    const position = await enqueue(queue, {
+      runId,
+      address: request.address,
+      bundleHash: request.bundleHash,
+      src: request.src,
+      skillMd: '',
+      quotaDay: null,
+      cached,
+    })
+    const left = await quotaLeft({ sql: deps.sql, now: deps.now }, request.address)
+    return { data: { runId, status: 'queued', queuePosition: position, quotaLeft: left } }
+  } catch {
+    return { code: 'INTERNAL', message: 'The run could not be queued.', status: 500 }
+  }
+}
+
+/** The state of a run. */
+async function runStatus(c: Context, deps: SandboxRouteDeps): Promise<Response> {
+  const runId = c.req.param('runId') ?? ''
+  if (!/^run_[0-9a-f]{24}$/.test(runId)) {
+    return c.json(fail('BAD_REQUEST', 'The run id is not a run id.'), 400)
+  }
+  const state = await readRun(
+    { sql: deps.sql, now: deps.now, probeSetVersion: deps.probeSetVersion, modelId: deps.modelId },
+    runId,
+  )
+  if (state === null) return c.json(fail('RUN_NOT_FOUND', 'There is no such run.'), 404)
+  return c.json(ok(state))
+}
+
+/** The runs an address has left today. */
+async function quotaStatus(c: Context, deps: SandboxRouteDeps): Promise<Response> {
+  const parsed = AddressSchema.safeParse(c.req.param('address'))
+  if (!parsed.success) return c.json(fail('BAD_REQUEST', 'The address is not an address.'), 400)
+
+  const left = await quotaLeft({ sql: deps.sql, now: deps.now }, parsed.data)
+  return c.json(ok({ left, limit: CONSTANTS.SANDBOX_DAILY_RUNS, resetsAt: resetsAt(deps.now()) }))
+}
+
+/** The result the cache holds for a bundle. */
+async function cachedResult(c: Context, deps: SandboxRouteDeps): Promise<Response> {
+  const parsed = Bytes32Schema.safeParse(c.req.param('bundleHash'))
+  if (!parsed.success) return c.json(fail('BAD_REQUEST', 'The bundle hash is not a 32 byte hex value.'), 400)
+
+  const result = await cacheGet(deps, parsed.data, deps.probeSetVersion, deps.modelId)
+  if (result === null) return c.json(fail('RESULT_NOT_CACHED', 'This result is no longer cached.'), 404)
+  return c.json(ok({ result }))
+}

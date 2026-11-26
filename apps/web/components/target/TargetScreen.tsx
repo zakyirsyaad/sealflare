@@ -9,8 +9,11 @@ import { TargetError } from './TargetError'
 import { TargetMissing } from './TargetMissing'
 import { TargetTabs } from './TargetTabs'
 import { copy } from '../../lib/copy'
+import type { SandboxSource } from '../../lib/sandbox/source'
 import { scanCurrentVersionHref } from '../../lib/currentVersion'
 import { shortAddress } from '../../lib/format'
+import type { Binding } from '../../lib/publish/binding'
+import type { PublisherBond } from '../../lib/publish/bond'
 
 export type TargetScreenProps = {
   targetId: string
@@ -29,6 +32,12 @@ export type TargetScreenProps = {
   failed: boolean
   /** The disputes of this target, or null when they could not be read. */
   challenges?: readonly ChallengeSummary[] | null
+  /** How the target was bound, read from the event log of Core. */
+  binding?: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond?: PublisherBond | null
+  /** The bundle the sandbox can run on, or null when this target has none. */
+  sandbox?: SandboxSource | null
 }
 
 /** The link names another bundle than the one the registry rated. */
@@ -48,6 +57,9 @@ function tabsOf(props: TargetScreenProps, detail: TargetDetail) {
     scan: props.scan,
     evidenceFailed: props.evidenceFailed,
     challenges: props.challenges,
+    binding: props.binding ?? null,
+    publisherBond: props.publisherBond ?? null,
+    sandbox: props.sandbox ?? null,
   }
 }
 

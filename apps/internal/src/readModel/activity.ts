@@ -1,7 +1,7 @@
 import { XP, weightOf } from '@sealflare/shared/rules'
 import { Bytes32Schema, type ActivityItem } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
-import { decimalString } from './targets'
+import { decimalString } from './values'
 import { needsActionFor } from './needsAction'
 
 /**
@@ -11,8 +11,8 @@ import { needsActionFor } from './needsAction'
  * ledger of the account and never kept as a number that can drift.
  */
 
-/** The scores at which a guardian earns the next weight. The weight itself comes from the rules. */
-const WEIGHT_SCORES = [0, 10, 25, 50, 100]
+/** How far the scan for the next weight goes. A score further below the first weight than this has none to name. */
+const MAX_SCAN_STEPS = 100_000
 
 /** What the activity of one account holds. */
 export interface ActivityReading {
@@ -95,13 +95,16 @@ async function readGuardian(
 /**
  * How many points are left to the next weight.
  *
- * The weight itself comes from the frozen rules, so only the scores of the weights are named
- * here. A guardian with the highest weight has no next weight.
+ * The thresholds are not copied here: the next weight is the first score above this one for which
+ * `weightOf` of the frozen rules gives a larger weight, so a change of a threshold there changes
+ * the distance here with it. A guardian with the highest weight has no next weight.
  */
 export function toNextWeight(score: number): number | null {
+  if (!Number.isInteger(score)) return null
   const weight = weightOf(score)
-  for (const candidate of WEIGHT_SCORES) {
-    if (candidate > score && weightOf(candidate) > weight) return candidate - score
+  if (weight === weightOf(Number.MAX_SAFE_INTEGER)) return null
+  for (let step = 1; step <= MAX_SCAN_STEPS; step += 1) {
+    if (weightOf(score + step) > weight) return step
   }
   return null
 }
@@ -237,7 +240,10 @@ async function readBounties(sql: Db, address: string): Promise<ActivityItem[]> {
     settled: boolean
     created_at: Date | string
   }>(
-    `SELECT b.target_id, b.label, b.settled, b.created_at FROM bounties b WHERE b.requester = $1`,
+    `SELECT b.target_id,
+       COALESCE(b.label, (SELECT t.label FROM targets t WHERE t.target_id = b.target_id), b.target_id) AS label,
+       b.settled, b.created_at
+     FROM bounties b WHERE b.requester = $1`,
     [address],
   )
   return rows.map((row) => ({

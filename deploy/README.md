@@ -7,8 +7,16 @@ Where Sealflare runs and how it was set up. Secrets never enter this folder; the
 ## Vercel
 
 Project `sealflare` in the `zakyirsyaads-projects` scope, linked to `zakyirsyaad/sealflare`,
-root directory `apps/web`, Node 24. Every push to `main` deploys production; every PR gets a
-preview.
+root directory `apps/web`, Node 24. Only `main` deploys, to production, and only when
+`apps/web` or a workspace package it depends on changed ("skip unaffected projects").
+
+Preview deployments are off (26 Nov). The Hobby plan allows 100 deployments a day, and one day of
+PR pushes made 88 previews, which blocked production deploys. Test PRs locally with
+`pnpm --filter ./apps/web dev`. To turn previews back on, for example on a paid plan:
+
+```bash
+echo '{"previewDeploymentsDisabled":false}' | vercel api /v9/projects/sealflare --scope zakyirsyaads-projects -X PATCH --input -
+```
 
 | Variable | Value |
 | :--- | :--- |

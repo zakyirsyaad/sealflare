@@ -27,9 +27,18 @@ const EXPECTED_TABLES = [
   'sandbox_runs',
   'sandbox_cache',
   'sandbox_quota',
+  'sandbox_pause',
 ]
 
-const MIGRATIONS = ['001_indexer.sql', '002_operational.sql', '003_guards.sql', '004_court_vault.sql']
+const MIGRATIONS = [
+  '001_indexer.sql',
+  '002_operational.sql',
+  '003_guards.sql',
+  '004_court_vault.sql',
+  '005_sandbox.sql',
+  '006_bounty_before_target.sql',
+  '007_verdict_moment.sql',
+]
 
 const MIGRATIONS_DIR = new URL('../migrations/', import.meta.url)
 
@@ -43,6 +52,18 @@ async function migrationHashes(): Promise<Map<string, string>> {
   }
   return hashes
 }
+
+test('a migration that was renamed runs on a database that ran its old name', async () => {
+  const { db, close } = await createTestDb()
+  // The last two files were renamed, so a database that ran the old names runs these ones as
+  // well. Every statement of them has to survive that.
+  for (const name of ['006_bounty_before_target.sql', '007_verdict_moment.sql']) {
+    const sql = await readFile(new URL(name, MIGRATIONS_DIR), 'utf8')
+    await db.exec(sql)
+    await db.exec(sql)
+  }
+  await close()
+})
 
 test('the migrations are applied exactly once when two processes start together', async () => {
   // PGlite is one connection, so it serialises the transactions by itself and this test cannot

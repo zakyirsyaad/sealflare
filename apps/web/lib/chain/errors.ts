@@ -95,3 +95,27 @@ export function isUserRejection(error: unknown): boolean {
     return false
   }
 }
+
+const REVERT_NAMES = new Set([
+  'ContractFunctionRevertedError',
+  'ContractFunctionExecutionError',
+  'CallExecutionError',
+  'ExecutionRevertedError',
+])
+
+/**
+ * Whether the chain refused the call because the contract reverted. A reverted call says something
+ * about the contract, while a network failure says nothing at all, so the two are never confused.
+ */
+export function isRevertError(error: unknown): boolean {
+  try {
+    for (const cause of causes(error)) {
+      const name = (cause as { name?: unknown }).name
+      if (typeof name === 'string' && REVERT_NAMES.has(name)) return true
+      if ((cause as { code?: unknown }).code === 3) return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}

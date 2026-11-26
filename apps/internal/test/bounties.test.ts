@@ -28,6 +28,25 @@ test('the bounty list is paged and the open bounty comes first', async () => {
   await close()
 })
 
+test('a bounty that came before its target is named by the id of the target, then by its label', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  const id = targetId(60)
+  await db.query(
+    `INSERT INTO bounties (id, target_id, label, requester, slots, amount, created_at, settled, start_index)
+     VALUES ('9', $1, NULL, $2, 3, 1000, '2026-11-25T10:00:00.000Z', false, 0)`,
+    [id, GUARDIAN],
+  )
+
+  const before = asAnswer<{ items: { label: string }[] }>(await body(await get(app, '/bounties')))
+  expect(before.data?.items[0]?.label).toBe(id)
+
+  await insertTarget(db, { id, label: 'owner/skill' })
+  const after = asAnswer<{ items: { label: string }[] }>(await body(await get(app, '/bounties')))
+  expect(after.data?.items[0]?.label).toBe('owner/skill')
+  await close()
+})
+
 test('the bounty list can be narrowed to one target', async () => {
   const { db, close } = await createTestDb()
   const { app } = testApp(db)

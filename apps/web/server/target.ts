@@ -1,12 +1,18 @@
 import 'server-only'
 import type { Hex } from 'viem'
-import { Bytes32Schema, decodeSrc, encodeSrc, TargetDetail, type AttestationRow, type ScanReport, type SignalGroup } from '@sealflare/shared/schemas'
+import { Bytes32Schema, decodeSrc, encodeSrc, TargetDetail, type AttestationRow, type SandboxResult, type ScanReport, type SignalGroup } from '@sealflare/shared/schemas'
 import { ZERO_ADDRESS, targetIdOfContract, type TrustTier } from '@sealflare/shared/rules'
 import { getChainReader, completeEvidence, type ChainReader, type CoreAttestation, type CoreTarget, type EvidenceRow } from './chain'
 import { readIndexedEvidence } from './indexedEvidence'
 import { getScan, getScanForSource, putScan, putScanForSource } from './scanStore'
 import { getScanEnvironment } from './scanner'
 import { contractWord } from '../lib/targetWord'
+import type { Binding } from '../lib/publish/binding'
+import type { PublisherBond } from '../lib/publish/bond'
+import { loadCachedSandbox } from './sandbox'
+import type { SandboxSource } from '../lib/sandbox/source'
+
+export type { SandboxSource }
 
 const ZERO_HASH = `0x${'0'.repeat(64)}` as const
 
@@ -105,6 +111,26 @@ export type DetailInput = {
   attestations: readonly CoreAttestation[]
   scan: ScanReport | null
   bond: bigint
+  /** The result the sandbox cache holds for this bundle, if there is one. */
+  sandbox: SandboxResult | null
+}
+
+/**
+ * The source the sandbox runs for a target.
+ *
+ * A contract is the address it is deployed at. A skill is the pinned reference of its bundle, and
+ * the link of the page names it only when it is a `gh:` reference with a commit. The page never
+ * shows this link as the source of the rated skill: the detail takes its source from the scan.
+ */
+export function detailSrcOf(target: CoreTarget | null, scan: ScanReport | null, src: string | null): string | null {
+  const isContract = (target?.targetType ?? scan?.targetType ?? 'SMART_CONTRACT') === 'SMART_CONTRACT'
+  if (isContract) {
+    if (target !== null) return addressOf(target)
+    return scan?.source.kind === 'contract' ? scan.source.address : null
+  }
+  if (scan !== null) return encodeSrc(scan.source)
+  const decoded = decodeSrc(src ?? '')
+  return decoded !== null && decoded.kind === 'skill' ? src : null
 }
 
 /** Builds the read model of a target. The tier is the one Core returned, never a recomputed one. */
@@ -149,8 +175,30 @@ export function buildDetail(input: DetailInput): TargetDetail {
     activeChallengeId: target && target.activeChallengeId > 0n ? target.activeChallengeId.toString() : null,
     attestationCount: input.attestations.length,
     scan,
-    sandbox: null,
+    sandbox: input.sandbox,
   }
+}
+
+
+/**
+ * The bundle the sandbox can run on.
+ *
+ * A scan knows both the commit of the bundle and the hash of that bundle, so a skill that was
+ * scanned can be run. Without a scan the registry still knows the hash of the pinned bundle, but
+ * not the commit it was pinned at, so the sandbox has nothing to run.
+ */
+export function sandboxSourceOf(
+  scan: ScanReport | null,
+  src: string | null,
+  pinnedHash: string,
+): SandboxSource | null {
+  if (scan !== null && scan.source.kind === 'skill') {
+    return { src: encodeSrc(scan.source), bundleHash: scan.source.canonicalBundleHash }
+  }
+  if (src === null || pinnedHash === ZERO_HASH) return null
+  const reference = decodeSrc(src)
+  if (reference === null || reference.kind !== 'skill') return null
+  return { src, bundleHash: pinnedHash }
 }
 
 type OnChainType = CoreTarget['targetType'] | null
@@ -210,6 +258,12 @@ export type TargetPageData = {
   /** The scanned bundle is another bundle than the one the registry sealed. */
   bundleChanged: boolean
   failed: boolean
+  /** How the target was bound, read from the event log. Null when the log does not say. */
+  binding: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond: PublisherBond | null
+  /** The bundle the sandbox can run on, or null when this target has none. */
+  sandbox: SandboxSource | null
 }
 
 /**
@@ -233,9 +287,13 @@ async function readEvidence(reader: ChainReader, targetId: Hex, createdAt: numbe
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
-  const target = await reader.target(targetId)
-  const tier = target ? await reader.tier(targetId) : 'UNRATED'
-  const attestations = target ? await reader.attestations(targetId, target.attestationCount) : []
+  // One block for the target, its votes, its tier and the bond of its publisher, so they come from
+  // the same moment. The event log (the evidence and the binding) is read up to the head: it holds
+  // links and the way the target was bound, not a number that can disagree with the votes.
+  const block = await reader.tierBlockNumber()
+  const target = await reader.target(targetId, block)
+  const tier = target ? await reader.tier(targetId, block) : 'UNRATED'
+  const attestations = target ? await reader.attestations(targetId, target.attestationCount, block) : []
   let evidence: EvidenceRow[] = []
   let evidenceFailed = false
   // A target without attestations has no event to read. The log is never walked for nothing.
@@ -248,8 +306,13 @@ async function readChain(reader: ChainReader, targetId: Hex) {
     }
   }
   const bond =
-    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher) : null
-  return { target, tier, attestations, evidence, evidenceFailed, bond }
+    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher, block) : null
+  // A target with no publisher has no PublisherBound event, so the log is not walked for it.
+  const binding =
+    target === null || target.publisher === ZERO_ADDRESS
+      ? null
+      : await reader.binding(targetId, target.createdAt, { publisher: target.publisher, role: target.publisherRole })
+  return { target, tier, attestations, evidence, evidenceFailed, bond, binding }
 }
 
 /**
@@ -271,6 +334,9 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     targetWord: null,
     bundleChanged: false,
     failed: false,
+    binding: null,
+    publisherBond: null,
+    sandbox: null,
   }
   if (!parsedId.success) return { ...empty, failed: true }
   const id = parsedId.data
@@ -293,6 +359,10 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   // bundle, and the page never offers it as a version of the rated one.
   const differentBundle = otherSkill
   const rows = attestationRows(chain.attestations, chain.evidence)
+  // A bundle that cannot be tied to this target never becomes the source of the page.
+  const pageSrc = differentBundle ? null : src
+  const sandboxSource = sandboxSourceOf(scan, detailSrcOf(chain.target, scan, pageSrc), chain.target?.target ?? ZERO_HASH)
+  const cached = await loadCachedSandbox(sandboxSource?.bundleHash ?? null)
   const built = buildDetail({
     targetId: id,
     target: chain.target,
@@ -300,11 +370,21 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     attestations: chain.attestations,
     scan,
     bond: chain.bond?.amount ?? 0n,
+    sandbox: cached,
   })
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
   const unbondingAt = chain.bond && chain.bond.withdrawalAvailableAt > 0 ? chain.bond.withdrawalAvailableAt : null
   const isContractTarget = (chain.target?.targetType ?? scan?.targetType ?? 'SMART_CONTRACT') === 'SMART_CONTRACT'
+  const publisherBond: PublisherBond | null =
+    chain.bond === null
+      ? null
+      : {
+          amount: chain.bond.amount.toString(),
+          withdrawalAvailableAt: unbondingAt,
+          lockedByChallengeId:
+            chain.bond.lockedByChallengeId > 0n ? chain.bond.lockedByChallengeId.toString() : null,
+        }
   return {
     targetId: id,
     detail,
@@ -318,5 +398,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     targetWord: targetWordOf(chain.target, scan, isContractTarget),
     bundleChanged: bundleChanged(chain.target, candidate),
     failed: false,
+    binding: chain.binding,
+    publisherBond,
+    sandbox: sandboxSource,
   }
 }

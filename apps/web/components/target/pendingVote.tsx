@@ -8,6 +8,8 @@ import type { Verdict } from '@sealflare/shared/rules'
 export type PendingVote = {
   verdict: Verdict
   txHash: string
+  /** The account that cast the vote. Another account of the same wallet did not vote. */
+  guardian: string
   /** The votes of this verdict that the page showed before the vote was cast. */
   baseline: number
 }
@@ -16,7 +18,7 @@ export type Signal = { newIds: SignalGroup; guardians: SignalGroup }
 
 type PendingVoteValue = {
   vote: PendingVote | null
-  register: (verdict: Verdict, txHash: string) => void
+  register: (verdict: Verdict, txHash: string, guardian: string) => void
 }
 
 const Context = createContext<PendingVoteValue>({ vote: null, register: () => {} })
@@ -48,8 +50,8 @@ export function PendingVoteProvider({ signal, children }: { signal: Signal; chil
   const [vote, setVote] = useState<PendingVote | null>(null)
   // The signal of the first render is the state before the vote. A later refresh must not move it.
   const before = useRef(signal)
-  const register = useCallback((verdict: Verdict, txHash: string) => {
-    setVote({ verdict, txHash, baseline: countVerdict(before.current, verdict) })
+  const register = useCallback((verdict: Verdict, txHash: string, guardian: string) => {
+    setVote({ verdict, txHash, guardian, baseline: countVerdict(before.current, verdict) })
   }, [])
   const value = useMemo(() => ({ vote, register }), [vote, register])
   return (

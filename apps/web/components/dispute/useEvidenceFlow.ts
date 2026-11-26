@@ -4,14 +4,8 @@ import { useSignTypedData, useWriteContract } from 'wagmi'
 import type { Address, Hex } from 'viem'
 import { useReceipt, writeStep, type TxRequest } from '../../lib/chain/useWriteTx'
 import { copy } from '../../lib/copy'
-import {
-  approveEvidence,
-  approveEvidenceUpload,
-  type AttestState,
-  type SignTypedDataAsync,
-  type WriteContractAsync,
-  type Step,
-} from '../attest/useAttest'
+import { approveEvidence, approveEvidenceUpload, type SignTypedDataAsync, type WriteContractAsync } from '../attest/report'
+import type { AttestState, Step } from '../attest/attest'
 import { useCancel, type Cancelled } from '../attest/cancel'
 import type { PreparedEvidence } from './evidence'
 

@@ -8,9 +8,9 @@ import { copy } from '../../lib/copy'
 import { formatUtc, isZeroHash, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
 import { ChallengeAction } from '../dispute/ChallengeAction'
-import { modulesLive } from '../../lib/chain/config'
 import { attestAvailability, type AttestAvailability } from '../attest/availability'
-import { usePendingVote } from './pendingVote'
+import { modulesLive } from '../../lib/chain/config'
+import { usePendingVote, type PendingVote } from './pendingVote'
 
 export type ActionColumnProps = {
   tier: TrustTier
@@ -48,6 +48,13 @@ function previousVote(address: string | undefined, attestations: AttestationRow[
   if (address === undefined) return null
   const row = attestations.find(item => item.guardian.toLowerCase() === address.toLowerCase())
   return row === undefined ? null : { verdict: row.verdict, txHash: row.txHash }
+}
+
+/** The vote of this session, when the connected account is the one that cast it. */
+function sessionVoteOf(address: string | undefined, vote: PendingVote | null): Vote | null {
+  if (vote === null || address === undefined) return null
+  if (vote.guardian.toLowerCase() !== address.toLowerCase()) return null
+  return { verdict: vote.verdict, txHash: vote.txHash }
 }
 
 function limitText(template: string, left: number | null): string {
@@ -180,9 +187,11 @@ export function ActionColumn(props: ActionColumnProps) {
   const { vote: sessionVote } = usePendingVote()
   const [open, setOpen] = useState(false)
   const left = user.kind === 'holder' ? user.attestationsLeft : null
-  const onChain = previousVote('address' in user ? user.address : undefined, props.attestations)
-  // The vote of this session counts before the indexer has read it from a final block.
-  const previous: Vote | null = onChain ?? (sessionVote === null ? null : { verdict: sessionVote.verdict, txHash: sessionVote.txHash })
+  const address = 'address' in user ? user.address : undefined
+  const onChain = previousVote(address, props.attestations)
+  // The vote of this session counts before the indexer has read it from a final block, but only
+  // for the account that cast it. Another account of the same wallet has not voted.
+  const previous: Vote | null = onChain ?? sessionVoteOf(address, sessionVote)
   const availability = attestAvailability({
     kind: user.kind,
     attestationsLeft: left,
@@ -211,7 +220,8 @@ export function ActionColumn(props: ActionColumnProps) {
         holder={user.kind === 'holder'}
         tier={props.tier}
       />
-      {open && <AttestPanel {...panelProps(props)} onClose={() => setOpen(false)} />}
+      {/* Mounted while closed too, so a vote that is on its way is not lost with the dialog. */}
+      <AttestPanel {...panelProps(props)} open={open} onClose={() => setOpen(false)} />
     </aside>
   )
 }

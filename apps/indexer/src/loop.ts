@@ -1,9 +1,9 @@
 import type { Address, Hex, PublicClient } from 'viem'
 import type { Db } from '@sealflare/internal/db'
-import { assertCursorStillOnChain, readCursor, writeCursor } from './cursor'
+import { assertCursorStillOnChain, cursorIdOf, readCursor, writeCursor } from './cursor'
 import { decodeRange, type AnyEvent, type IndexedAddresses } from './decodeAll'
 import { toJsonValue } from './decode'
-import { applyCoreEvent } from './handlers/core'
+import { applyCoreEvent, reconcileCoreEvent } from './handlers/core'
 import { applyCourtEvent } from './handlers/court'
 import { applyVaultEvent } from './handlers/vault'
 
@@ -44,7 +44,7 @@ export async function indexOnce(deps: IndexOnceDeps): Promise<IndexOnceResult> {
   const head = await deps.client.getBlock({ blockTag: 'finalized' })
   const finalized = head.number
 
-  const cursorId = deps.addresses.core.toLowerCase()
+  const cursorId = cursorIdOf(deps.addresses)
   const cursor = await readCursor(deps.sql, cursorId)
   if (cursor) await assertCursorStillOnChain(deps.client, cursor)
 
@@ -62,8 +62,13 @@ export async function indexOnce(deps: IndexOnceDeps): Promise<IndexOnceResult> {
 
   await deps.sql.transaction(async (tx) => {
     for (const entry of events) {
-      if (!(await recordEvent(tx, entry))) continue
-      await applyEvent(tx, entry)
+      if (await recordEvent(tx, entry)) {
+        await applyEvent(tx, entry)
+      } else {
+        // The event was read before, so the state its handler wrote is still there and the handler
+        // is skipped. A column that was added after that run is filled here.
+        await reconcileEvent(tx, entry)
+      }
     }
     await writeCursor(tx, cursorId, to, lastBlockHash)
   })
@@ -84,6 +89,11 @@ async function applyEvent(tx: Db, entry: AnyEvent): Promise<void> {
   if (entry.kind === 'core') return applyCoreEvent(tx, entry.event)
   if (entry.kind === 'court') return applyCourtEvent(tx, entry.event)
   return applyVaultEvent(tx, entry.event)
+}
+
+/** Fills what an event that was read before can still fill. */
+async function reconcileEvent(tx: Db, entry: AnyEvent): Promise<void> {
+  if (entry.kind === 'core') return reconcileCoreEvent(tx, entry.event)
 }
 
 /**

@@ -113,7 +113,7 @@ test('a vote the wallet cancelled is a failure, never a pending vote', async () 
   await submit()
   await waitFor(() => expect(wagmi.receiptParams.at(-1)?.onReplaced).toBeTypeOf('function'), { timeout: 5_000 })
   act(() => wagmi.receiptParams.at(-1)?.onReplaced?.({ reason: 'cancelled', replacedTransaction: { hash: txHash } }))
-  expect(await screen.findByRole('alert', {}, { timeout: 5_000 })).toHaveTextContent(copy.errors.txReplaced)
+  expect(await screen.findByRole('alert', {}, { timeout: 5_000 })).toHaveTextContent(copy.attest.replaced)
   expect(screen.queryByRole('button', { name: copy.attest.pending })).toBeNull()
 }, 20_000)
 

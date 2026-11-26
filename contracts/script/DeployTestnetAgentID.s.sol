@@ -23,7 +23,7 @@ contract TestnetAgentID is IAgentID {
 }
 
 /// Deploys TestnetAgentID to BSC testnet:
-///   forge script DeployTestnetAgentID --root contracts --rpc-url $BSC_TESTNET_RPC_URL --ledger --sender <address> --broadcast
+///   forge script DeployTestnetAgentID --root contracts --rpc-url $BSC_TESTNET_RPC_URL --account deployer --sender <address> --broadcast
 contract DeployTestnetAgentID is Script {
     function run() external returns (TestnetAgentID agentId) {
         vm.startBroadcast();

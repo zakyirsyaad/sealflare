@@ -1,6 +1,6 @@
 import { AddressSchema, type ActivityItem, type GuardianSummary } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
-import { decimalString } from './targets'
+import { decimalString } from './values'
 import { activityOf } from './activity'
 
 /**

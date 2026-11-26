@@ -101,11 +101,20 @@ test('an upheld verdict confirms the danger and adds the flags of the verdict', 
     confirmed_danger: boolean
     active_flags: number
     active_challenge_id: string | null
-  }>('SELECT confirmed_danger, active_flags, active_challenge_id FROM targets WHERE target_id = $1', [targetId])
+    count_at_verdict: number | null
+    verdict_at: Date | null
+  }>(
+    `SELECT confirmed_danger, active_flags, active_challenge_id, count_at_verdict, verdict_at
+     FROM targets WHERE target_id = $1`,
+    [targetId],
+  )
   expect(rows).toHaveLength(1)
   expect(rows[0]?.confirmed_danger).toBe(true)
   expect(rows[0]?.active_flags).toBe(5)
   expect(rows[0]?.active_challenge_id).toBeNull()
+  // The settlement pays a DANGER vote by its place before the verdict, so the count is kept.
+  expect(rows[0]?.count_at_verdict).toBe(1)
+  expect(rows[0]?.verdict_at).not.toBeNull()
 
   const onChain = await coreContract().read.getTarget([targetId])
   expect(onChain.confirmedDanger).toBe(true)

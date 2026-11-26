@@ -9,9 +9,11 @@ export type AttestButtonProps = {
   txHash: string | null
   onSubmit: () => void
   onRetry: () => void
-  /** The text of the button before it is pressed. */
+  /** Starts the attempt over, for a wallet prompt that never answers. */
+  onStartAgain?: () => void
+  /** The text on the button, when the flow is not an attestation. */
   label?: string
-  /** The button cannot be pressed even when nothing is running, for example while a fact is unknown. */
+  /** The button cannot be used, because the flow is not ready yet. */
   disabled?: boolean
 }
 
@@ -31,7 +33,7 @@ export function TransactionLink({ txHash, children }: { txHash: string; children
  * A vote that landed is shown with the label "Waiting for finality", because the indexer reads it
  * only when the block is final.
  */
-export function AttestButton({ state, error, txHash, onSubmit, onRetry, label = copy.attest.submit, disabled = false }: AttestButtonProps) {
+export function AttestButton({ state, error, txHash, onSubmit, onRetry, onStartAgain, label, disabled = false }: AttestButtonProps) {
   if (state === 'done') {
     return (
       <div className="sf-stack">
@@ -52,11 +54,19 @@ export function AttestButton({ state, error, txHash, onSubmit, onRetry, label = 
     )
   }
   const busy = state !== 'idle'
+  // Before anything was sent on-chain, the attempt may be abandoned. A wallet that never answers
+  // its prompt would otherwise hold the vote until the page is loaded again.
+  const abandonable = state === 'signing-evidence' || state === 'uploading'
   return (
     <div className="sf-stack">
       <Button variant="primary" className="sf-btn--block" disabled={busy || disabled} onClick={onSubmit}>
-        {busy ? copy.attest.pending : label}
+        {busy ? copy.attest.pending : (label ?? copy.attest.submit)}
       </Button>
+      {abandonable && onStartAgain !== undefined && (
+        <Button variant="secondary" onClick={onStartAgain}>
+          {copy.attest.startAgain}
+        </Button>
+      )}
       {busy && txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
     </div>
   )

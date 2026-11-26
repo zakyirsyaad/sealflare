@@ -8,6 +8,21 @@ export interface Cursor {
   lastBlockHash: Hex
 }
 
+/**
+ * The id of the cursor of a set of contracts.
+ *
+ * A range covers every contract that is read, so the cursor belongs to the whole set. A database
+ * that ran with the Core alone has a cursor of that set, and a run that also reads the Court and
+ * the Vault does not find it: it reads from the start block again, instead of skipping the events
+ * of the two new contracts. The events the Core already wrote are skipped by the raw log. The id of
+ * a Core alone is its address, so an existing database of that kind keeps its cursor.
+ */
+export function cursorIdOf(addresses: { core: string; court?: string | null; vault?: string | null }): string {
+  const core = addresses.core.toLowerCase()
+  if (!addresses.court && !addresses.vault) return core
+  return [core, addresses.court?.toLowerCase() ?? '-', addresses.vault?.toLowerCase() ?? '-'].join(':')
+}
+
 /** Reads where the indexer stopped. A chain that was never indexed has no cursor yet. */
 export async function readCursor(db: Db, id: string): Promise<Cursor | null> {
   const rows = await db.query<{ id: string; last_block: string; last_block_hash: string }>(

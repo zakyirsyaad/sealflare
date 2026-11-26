@@ -7,6 +7,7 @@ import type { TrustTier } from '@sealflare/shared/rules'
 import { TARGET_TYPES, TRUST_TIERS, VERDICTS } from '@sealflare/shared/rules'
 import { addresses } from '../lib/chain/addresses'
 import { expectedChainId } from '../lib/chain/config'
+import { bindMethodOf, publisherRoleOf, type BindMethod, type Binding, type PublisherRole } from '../lib/publish/binding'
 import { collectLogs, firstBlockAtOrAfter } from './logRange'
 
 /** The registry reads the chain. It never writes: every write comes from a wallet. */
@@ -43,26 +44,36 @@ export type CoreAttestation = {
 /** The parts of an attestation that only the event log carries. */
 export type EvidenceRow = { index: number; shortProof: string; evidenceURI: string; txHash: Hex }
 
-export type BondState = { amount: bigint; withdrawalAvailableAt: number }
+export type BondState = { amount: bigint; withdrawalAvailableAt: number; lockedByChallengeId: bigint }
 
 /** Everything the target page needs from the chain. */
 export interface ChainReader {
-  /** Null when the registry has never seen this target. */
-  target(targetId: Hex): Promise<CoreTarget | null>
-  /** The tier always comes from Core, never from a cached row. */
-  tier(targetId: Hex): Promise<TrustTier>
+  /** Null when the registry has never seen this target. Read at the block when one is given. */
+  target(targetId: Hex, blockNumber?: bigint): Promise<CoreTarget | null>
+  /**
+   * The tier always comes from Core, never from a cached row. A page passes the block it reads
+   * everything at, so it shows one moment; without one the tier is read a few blocks below the head.
+   */
+  tier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier>
   /** The tier at a fixed block, so every tier of one answer comes from the same moment. */
   tierAt(targetId: Hex, blockNumber: bigint): Promise<TrustTier>
   /** The block the tiers are read at, a few blocks below the head and shared by one answer. */
   tierBlockNumber(): Promise<bigint>
   /** Whether the address holds an Agent ID, which every signed request needs. */
   isAgentIdHolder(address: Address): Promise<boolean>
-  attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
+  attestations(targetId: Hex, count: number, blockNumber?: bigint): Promise<CoreAttestation[]>
   /** The evidence of the event log, read from the block the target was created in. Rejects when the log cannot be read in full. */
   evidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]>
   /** The evidence of the event log above a block, for the votes that are not final yet. */
   evidenceFrom(targetId: Hex, fromBlock: bigint): Promise<EvidenceRow[]>
-  bond(targetId: Hex, publisher: Address): Promise<BondState | null>
+  /** The bond of the publisher. A page passes the block it reads everything at. */
+  bond(targetId: Hex, publisher: Address, blockNumber?: bigint): Promise<BondState | null>
+  /**
+   * How the target was bound, read from the event log. Null when the log does not say. The
+   * publisher the target reports now is passed in, so a cached binding of a publisher that has
+   * since been replaced is never served.
+   */
+  binding(targetId: Hex, createdAt: number, current: CurrentPublisher): Promise<Binding | null>
 }
 
 /** How many attestation reads run at the same time. */
@@ -82,8 +93,6 @@ function rpcUrls(): string[] {
   return RpcUrls.parse(process.env.RPC_URLS)
 }
 
-const PUBLISHER_ROLES = ['NONE', 'THIRD_PARTY_SPONSOR', 'VERIFIED_PUBLISHER'] as const
-
 function pick<T>(list: readonly T[], index: number | bigint, what: string): T {
   const position = Number(index)
   const found = Number.isInteger(position) && position >= 0 ? list[position] : undefined
@@ -94,7 +103,7 @@ function pick<T>(list: readonly T[], index: number | bigint, what: string): T {
 /** The enums of Core come from the shared lists, and an index outside them throws instead of becoming undefined. */
 export const verdictOf = (index: number | bigint) => pick(VERDICTS, index, 'verdict')
 export const targetTypeOf = (index: number | bigint) => pick(TARGET_TYPES, index, 'target type')
-export const publisherRoleOf = (index: number | bigint) => pick(PUBLISHER_ROLES, index, 'publisher role')
+export { publisherRoleOf }
 
 function chainFor(chainId: number) {
   if (chainId === bsc.id) return bsc
@@ -105,16 +114,22 @@ function chainFor(chainId: number) {
 /**
  * How many calls the transport puts into one request, and how long it waits for the others.
  *
- * The calls of a list of targets come at the same time, so the transport sends them in one
- * request instead of one request each.
+ * Some providers refuse a large batch: the keyless endpoint that viem uses for BSC takes 25 calls
+ * and a free plan of another provider takes 3. viem copies the error of a refused batch to every
+ * call, and the fallback sends the same batch to the next url, so one such provider in the list
+ * would fail every read. The batch stays small, and the many reads of a list go out as Multicall3
+ * calls instead (see `getRpcClient`).
  */
-const BATCHING = { batch: { batchSize: 100, wait: 10 } } as const
+const BATCHING = { batch: { batchSize: 10, wait: 10 } } as const
 
 /**
  * The client of the chain.
  *
  * The client is built once and kept, because the batching of the transport only works inside one
- * client. A client of its own for every read would send every read in a request of its own.
+ * client. A client of its own for every read would send every read in a request of its own. The
+ * reads of one block that come at the same time are grouped into Multicall3 calls, so the tiers of
+ * a list are a few `eth_call`s and not one call each. viem reads the address of Multicall3 from the
+ * chain, and a chain without one, such as the local Anvil, is read with plain `eth_call`s.
  */
 let cached: { key: string; client: PublicClient } | null = null
 
@@ -126,7 +141,7 @@ export function getRpcClient(): PublicClient {
   const transport = urls.length === 0 ? http(undefined, BATCHING) : fallback(urls.map(url => http(url, BATCHING)))
   // The client is kept, so its cache is kept too. A block number that is cached would be read as
   // the head of the chain for the rest of the life of the process.
-  const built = createPublicClient({ chain, transport, cacheTime: 0 })
+  const built = createPublicClient({ chain, transport, cacheTime: 0, batch: { multicall: true } })
   cached = { key, client: built }
   return built
 }
@@ -159,12 +174,13 @@ function targetExists(target: CoreTarget): boolean {
   return target.createdAt > 0
 }
 
-async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
+async function readTarget(targetId: Hex, blockNumber?: bigint): Promise<CoreTarget | null> {
   const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getTarget',
     args: [targetId],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
   })
   const target = {
     targetType: targetTypeOf(raw.targetType),
@@ -186,12 +202,13 @@ async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
   return targetExists(target) ? target : null
 }
 
-async function readAttestation(targetId: Hex, index: number): Promise<CoreAttestation> {
+async function readAttestation(targetId: Hex, index: number, blockNumber?: bigint): Promise<CoreAttestation> {
   const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getAttestation',
     args: [targetId, index],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
   })
   return {
     guardian: raw.guardian,
@@ -206,11 +223,11 @@ async function readAttestation(targetId: Hex, index: number): Promise<CoreAttest
   }
 }
 
-async function readAttestations(targetId: Hex, count: number): Promise<CoreAttestation[]> {
+async function readAttestations(targetId: Hex, count: number, blockNumber?: bigint): Promise<CoreAttestation[]> {
   const rows: CoreAttestation[] = []
   for (let start = 0; start < count; start += READ_BATCH) {
     const indexes = Array.from({ length: Math.min(READ_BATCH, count - start) }, (_, offset) => start + offset)
-    rows.push(...(await Promise.all(indexes.map(index => readAttestation(targetId, index)))))
+    rows.push(...(await Promise.all(indexes.map(index => readAttestation(targetId, index, blockNumber)))))
   }
   return rows
 }
@@ -248,6 +265,7 @@ const evidenceCache = new Map<string, { block: bigint; rows: EvidenceRow[] }>()
 /** The read logs of the tests start from an empty cache, as a fresh process would. */
 export function clearEvidenceCache(): void {
   evidenceCache.clear()
+  bindings.clear()
 }
 
 /**
@@ -344,7 +362,7 @@ export function completeEvidence(rows: readonly EvidenceRow[], count: number): E
   throw new Error(`The event log of the target is not complete: the attestations ${missing.join(', ')} are missing.`)
 }
 
-async function readBond(targetId: Hex, publisher: Address): Promise<BondState | null> {
+async function readBond(targetId: Hex, publisher: Address, blockNumber?: bigint): Promise<BondState | null> {
   const vault = vaultAddress()
   if (vault === null) return null
   try {
@@ -353,8 +371,68 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
       abi: vaultAbi,
       functionName: 'bondOf',
       args: [targetId, publisher],
+      ...(blockNumber === undefined ? {} : { blockNumber }),
     })
-    return { amount: raw.amount, withdrawalAvailableAt: Number(raw.withdrawalAvailableAt) }
+    return {
+      amount: raw.amount,
+      withdrawalAvailableAt: Number(raw.withdrawalAvailableAt),
+      lockedByChallengeId: raw.lockedByChallengeId,
+    }
+  } catch {
+    return null
+  }
+}
+
+type PublisherBoundEvent = Extract<AbiEventItem, { name: 'PublisherBound' }>
+
+/**
+ * A confirmed binding, kept for the life of the process. A target can be bound again: a sponsor
+ * gives way to the verified publisher, and a verified publisher can be replaced by a fresh proof of
+ * the current `owner()`. So an entry only stands while the target still reports the same publisher
+ * and role, and it is dropped as soon as it does not.
+ */
+const bindings = new Map<string, Binding>()
+
+/** What `getTarget` says about the publisher now. */
+export type CurrentPublisher = { publisher: Address; role: PublisherRole }
+
+function stillBinds(known: Binding, current: CurrentPublisher): boolean {
+  return known.publisher.toLowerCase() === current.publisher.toLowerCase() && known.role === current.role
+}
+
+/**
+ * How the target was bound, read from the event log of Core. The last PublisherBound event wins,
+ * because every new bind replaces the one before it. A log that cannot be read leaves the method
+ * unknown: the page then says so instead of guessing.
+ */
+async function readBinding(targetId: Hex, createdAt: number, current: CurrentPublisher): Promise<Binding | null> {
+  const key = targetId.toLowerCase()
+  const known = bindings.get(key)
+  if (known !== undefined) {
+    if (stillBinds(known, current)) return known
+    bindings.delete(key)
+  }
+  try {
+    const head = await getRpcClient().getBlockNumber()
+    const from = await createdBlock(targetId, createdAt, head)
+    if (from > head) return null
+    const event = eventItem<PublisherBoundEvent>('PublisherBound')
+    const logs = await collectLogs(
+      (low, high) =>
+        getRpcClient().getLogs({ address: coreAddress(), event, args: { targetId }, fromBlock: low, toBlock: high }),
+      from,
+      head,
+    )
+    const last = logs.at(-1)
+    if (last === undefined) return null
+    const { publisher, role, method } = last.args
+    if (publisher === undefined || role === undefined || method === undefined) return null
+    const binding = { publisher, role: publisherRoleOf(role), method: bindMethodOf(method) }
+    // Only a binding that is still the current one and is confirmed is kept.
+    if (stillBinds(binding, current) && last.blockNumber !== null && last.blockNumber <= head - CONFIRMATIONS) {
+      bindings.set(targetId.toLowerCase(), binding)
+    }
+    return binding
   } catch {
     return null
   }
@@ -381,8 +459,16 @@ async function readTier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier>
  * The head of one node is not the head of the next one. A node that is a few blocks behind
  * cannot answer for a block it does not have, and a tier of the exact head is not worth an answer
  * that fails. Three blocks are enough for a node that lags a little.
+ *
+ * The local chain is the exception. It is one node that mines a block for every transaction, so it
+ * never lags behind itself, and three blocks there are three transactions: after the seed, the
+ * target of the last two would not exist yet at that block.
  */
-const TIER_MARGIN = 3n
+const LOCAL_CHAIN_ID = 31337
+
+export function tierMarginFor(chainId: number): bigint {
+  return chainId === LOCAL_CHAIN_ID ? 0n : 3n
+}
 
 /**
  * The block the tiers are read at.
@@ -392,14 +478,15 @@ const TIER_MARGIN = 3n
  */
 async function tierBlockNumber(): Promise<bigint> {
   const head = await getRpcClient().getBlockNumber()
-  return head > TIER_MARGIN ? head - TIER_MARGIN : 0n
+  const margin = tierMarginFor(expectedChainId)
+  return head > margin ? head - margin : 0n
 }
 
 /** The reader used by the target page. Every call goes out over a public RPC. */
 export function getChainReader(): ChainReader {
   return {
     target: readTarget,
-    tier: async targetId => readTier(targetId, await tierBlockNumber()),
+    tier: async (targetId, blockNumber) => readTier(targetId, blockNumber ?? (await tierBlockNumber())),
     tierAt: (targetId, blockNumber) => readTier(targetId, blockNumber),
     tierBlockNumber,
     isAgentIdHolder: async address => {
@@ -415,5 +502,6 @@ export function getChainReader(): ChainReader {
     evidence: readEvidence,
     evidenceFrom: readEvidenceFrom,
     bond: readBond,
+    binding: readBinding,
   }
 }
