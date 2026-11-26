@@ -115,6 +115,14 @@ function assertFileCount(paths: readonly string[]): void {
   }
 }
 
+/** The same count of bytes, taken from the sizes of a committed tree instead of from the files. */
+function assertWithinSize(files: readonly { path: string; size: number }[]): void {
+  const bytes = files.filter(file => file.path !== EXCLUDED_PATH).reduce((sum, file) => sum + file.size, 0)
+  if (bytes > CONSTANTS.MAX_BUNDLE_BYTES) {
+    throw new Error(`The folder holds more than ${CONSTANTS.MAX_BUNDLE_BYTES} bytes, which is more than a skill bundle may hold.`)
+  }
+}
+
 /** The bytes of the bundle, the way the registry counts them: the signature is left out. */
 function assertWithinBytes(entries: readonly BundleEntry[]): void {
   const bytes = entries
@@ -144,12 +152,13 @@ export async function readBundle(folder: string): Promise<LocalBundle> {
     return { hashed, extra: [], unread: 0, source: null }
   }
   const files = committedFiles(repository)
-  const hashed = bundleOf(repository, files)
-  if (hashed.length === 0) {
+  if (files.length === 0) {
     throw new Error('This folder is inside a git repository but holds no committed file, so it has no bundle to hash. Commit the files, or scan a folder outside git.')
   }
-  assertFileCount(hashed.map(entry => entry.path))
-  assertWithinBytes(hashed)
+  // The limits are checked on the tree, before a single blob is read.
+  assertFileCount(files.map(file => file.path))
+  assertWithinSize(files)
+  const hashed = bundleOf(repository, files)
   const { entries, unread } = await extraFiles(folder, repository, hashed)
   return { hashed, extra: entries, unread, source: sourceOf(repository) }
 }
@@ -162,7 +171,8 @@ export async function readBundle(folder: string): Promise<LocalBundle> {
  *
  * The number of files and the number of bytes are both capped. The size of a file is read before
  * its bytes are, so a huge file is never held in memory, and a file that does not fit is counted
- * as one that was not read.
+ * as one that was not read. A nested repository is counted the same way, because its files are not
+ * read either. The report treats every file that was not read as a file that was not scanned.
  */
 async function extraFiles(
   folder: string,
@@ -178,17 +188,20 @@ async function extraFiles(
   for (const path of stagedFiles(repository)) {
     if (!inBundle.has(path)) ordered.push(path)
   }
-  for (const path of untrackedFiles(repository, false)) {
-    if (!inBundle.has(path) && !ordered.includes(path)) ordered.push(path)
-  }
-  for (const path of untrackedFiles(repository, true)) {
-    if (!inBundle.has(path) && !ordered.includes(path)) ordered.push(path)
+  let unread = 0
+  for (const ignored of [false, true]) {
+    const listing = untrackedFiles(repository, ignored)
+    unread += listing.nested
+    for (const path of listing.paths) {
+      if (!inBundle.has(path) && !ordered.includes(path)) ordered.push(path)
+    }
   }
   const entries: BundleEntry[] = []
   let bytes = 0
-  let unread = 0
   for (const path of ordered) {
     const size = await sizeOf(folder, path)
+    // A file that is listed but no longer on disk holds nothing that could be read or hidden.
+    if (size === 'gone') continue
     if (size === null || entries.length >= MAX_EXTRA_FILES || bytes + size > MAX_EXTRA_BYTES) {
       unread += 1
       continue
@@ -205,17 +218,18 @@ async function extraFiles(
 }
 
 /**
- * The size of a file in bytes, or null when it is not a file that can be read.
+ * The size of a file in bytes, `gone` when it is not on disk any more, or null when it is not a
+ * file that can be read.
  *
  * A folder is not a file, so it is never read. The size comes from the directory entry, so the
  * bytes of a file are not held in memory before it is known that it fits.
  */
-async function sizeOf(folder: string, path: string): Promise<number | null> {
+async function sizeOf(folder: string, path: string): Promise<number | 'gone' | null> {
   try {
     const info = await lstat(join(folder, path))
     if (info.isDirectory()) return null
     return info.size
-  } catch {
-    return null
+  } catch (failure) {
+    return (failure as NodeJS.ErrnoException).code === 'ENOENT' ? 'gone' : null
   }
 }

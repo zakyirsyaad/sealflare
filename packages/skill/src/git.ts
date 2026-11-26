@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import type { BundleEntry } from '@sealflare/shared/rules'
 import { toPosix } from './paths'
@@ -87,9 +87,25 @@ export type Repository = { root: string; prefix: string }
 export type BundleSource = { repo: string; commit: string; path: string }
 
 /**
- * The `.git` folder of the repository the folder sits in, or null when it sits in none.
+ * Whether a `.git` entry marks a repository: a folder that holds a `HEAD`, or the file that a
+ * linked work tree and a clone made with `--separate-git-dir` have, which says `gitdir: <path>`.
+ */
+function isGitMarker(candidate: string): boolean {
+  let info
+  try {
+    info = statSync(candidate)
+  } catch {
+    return false
+  }
+  if (info.isDirectory()) return existsSync(join(candidate, 'HEAD'))
+  if (!info.isFile() || info.size > 4096) return false
+  return readFileSync(candidate, 'utf8').startsWith('gitdir:')
+}
+
+/**
+ * The `.git` entry of the repository the folder sits in, or null when it sits in none.
  *
- * The folder is looked for in the folder itself and in its parents, so the answer does not depend
+ * The entry is looked for in the folder itself and in its parents, so the answer does not depend
  * on the language of git: the message of git is translated, and a folder outside git would look
  * like a broken repository for a user whose shell is in another language. A `.git` folder without a
  * `HEAD` is not a repository, so a bundle that ships one is read as a plain folder.
@@ -98,7 +114,7 @@ function gitFolderOf(folder: string): string | null {
   let current = realpathSync(folder)
   while (true) {
     const candidate = join(current, '.git')
-    if (existsSync(join(candidate, 'HEAD'))) return candidate
+    if (isGitMarker(candidate)) return candidate
     const parent = dirname(current)
     if (parent === current) return null
     current = parent
@@ -123,7 +139,7 @@ export function repositoryOf(folder: string): Repository | null {
   return { root, prefix: inside === '.' ? '' : inside }
 }
 
-type TreeFile = { path: string; mode: string; oid: string }
+type TreeFile = { path: string; mode: string; oid: string; size: number }
 
 /** The files of the committed tree of the repository, with the paths relative to the folder. */
 export function committedFiles(repository: Repository): TreeFile[] {
@@ -131,27 +147,35 @@ export function committedFiles(repository: Repository): TreeFile[] {
   if (!head.ok) {
     throw new Error('This git repository has no commit yet, so it has no bundle to hash. Commit the files, or scan a folder outside git.')
   }
-  const tree = git(repository.root, ['ls-tree', '-r', '-z', 'HEAD'])
+  const tree = git(repository.root, ['ls-tree', '-r', '-l', '-z', 'HEAD'])
   if (!tree.ok) throw new Error(`The committed tree could not be read: ${tree.why}`)
   return parseTree(tree.out.toString('utf8'), repository.prefix)
 }
 
-/** The records of `git ls-tree` are `<mode> <type> <oid>\t<path>`, separated by a NUL byte. */
+/**
+ * The records of `git ls-tree -l` are `<mode> <type> <oid> <size>\t<path>`, separated by a NUL
+ * byte. The size is padded with spaces, and it is a dash for a submodule. The sizes come from the
+ * tree, so the limits of a bundle are checked without reading a single blob.
+ */
 function parseTree(listing: string, prefix: string): TreeFile[] {
   const files: TreeFile[] = []
   for (const record of listing.split('\0')) {
     if (record.length === 0) continue
     const tab = record.indexOf('\t')
     if (tab < 0) continue
-    const [mode, , oid] = record.slice(0, tab).split(' ')
+    const [mode, , oid, size] = record.slice(0, tab).split(/ +/)
     const path = record.slice(tab + 1)
-    if (mode === undefined || oid === undefined) continue
+    if (mode === undefined || oid === undefined || size === undefined) continue
+    const bytes = size === '-' ? 0 : Number(size)
+    // A blob that git cannot read has the size BAD. A file is never dropped for that, because the
+    // bundle would then look smaller than it is.
+    if (!Number.isSafeInteger(bytes)) throw new Error(`A committed file could not be read: ${path} has no size.`)
     if (prefix === '') {
-      files.push({ path, mode, oid })
+      files.push({ path, mode, oid, size: bytes })
       continue
     }
     if (!path.startsWith(`${prefix}/`)) continue
-    files.push({ path: path.slice(prefix.length + 1), mode, oid })
+    files.push({ path: path.slice(prefix.length + 1), mode, oid, size: bytes })
   }
   return files
 }
@@ -178,38 +202,50 @@ export function bundleOf(repository: Repository, files: readonly TreeFile[]): Bu
   return entries
 }
 
-/** The files of the repository that are not in its committed tree, as paths relative to the folder. */
-export function untrackedFiles(repository: Repository, ignored: boolean): string[] {
+/** The files outside the bundle that git lists, and the nested repositories it lists as one entry. */
+export type Listing = { paths: string[]; nested: number }
+
+/**
+ * The files of the repository that are not in its committed tree, as paths relative to the folder.
+ *
+ * A listing that fails is an error. An empty list would hide every file that is not committed, and
+ * the report could then suggest Safe for a bundle whose scripts were never read.
+ */
+export function untrackedFiles(repository: Repository, ignored: boolean): Listing {
   const args = ['ls-files', '--others', '--exclude-standard', '-z']
   if (ignored) args.splice(2, 0, '--ignored')
   const result = git(repository.root, args)
-  if (!result.ok) return []
+  if (!result.ok) throw new Error(`The files outside the bundle could not be listed: ${result.why}`)
   return pathsOf(result.out, repository.prefix)
 }
 
 /** The files that are in the index of the repository but not in its committed tree. */
 export function stagedFiles(repository: Repository): string[] {
   const result = git(repository.root, ['ls-files', '--cached', '-z'])
-  if (!result.ok) return []
-  return pathsOf(result.out, repository.prefix)
+  if (!result.ok) throw new Error(`The files in the index could not be listed: ${result.why}`)
+  return pathsOf(result.out, repository.prefix).paths
 }
 
-/** The paths of a NUL separated listing of git, relative to the folder. */
-function pathsOf(out: Buffer, prefix: string): string[] {
+/**
+ * The paths of a NUL separated listing of git, relative to the folder.
+ *
+ * A nested repository is listed as a folder with a slash at the end. Its files belong to that
+ * repository, so the entry is not a path, but it is counted, because the files inside it were
+ * never read.
+ */
+function pathsOf(out: Buffer, prefix: string): Listing {
   const paths: string[] = []
+  let nested = 0
   for (const path of out.toString('utf8').split('\0')) {
     if (path.length === 0) continue
-    // A nested repository is listed as a folder with a slash at the end. Its files belong to that
-    // repository and not to this one, so the entry is left out.
-    if (path.endsWith('/')) continue
-    if (prefix === '') {
-      paths.push(path)
+    if (prefix !== '' && !path.startsWith(`${prefix}/`)) continue
+    if (path.endsWith('/')) {
+      nested += 1
       continue
     }
-    if (!path.startsWith(`${prefix}/`)) continue
-    paths.push(path.slice(prefix.length + 1))
+    paths.push(prefix === '' ? path : path.slice(prefix.length + 1))
   }
-  return paths
+  return { paths, nested }
 }
 
 /**

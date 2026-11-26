@@ -121,9 +121,9 @@ export async function scanSkillReport(input: { folder: string; guard: Guard }): 
   const extra = await scanExtra(bundle.extra, manifest)
   const checks: Check[] = report.checks.map(check => {
     if (extra.flagged.has(check.id)) return { ...check, status: 'flagged' as const }
-    // A file that could not be scanned, and a part that could not be scanned at all, mean that the
-    // bundle was not fully checked. A check that did not run is never a pass.
-    if ((extra.failed || extra.skipped > 0) && check.status === 'passed') return { ...check, status: 'failed' as const }
+    // A file that could not be scanned or was not read, and a part that could not be scanned at
+    // all, mean that the bundle was not fully checked. A check that did not run is never a pass.
+    if ((extra.failed || extra.skipped > 0 || bundle.unread > 0) && check.status === 'passed') return { ...check, status: 'failed' as const }
     return check
   })
   const findings = [...report.findings, ...extra.findings]

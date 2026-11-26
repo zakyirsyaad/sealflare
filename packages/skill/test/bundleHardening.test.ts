@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rm, symlink, truncate, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { bundleIdentity, CONSTANTS } from '@sealflare/shared/rules'
@@ -230,16 +230,20 @@ describe('a git work tree is hashed the way the registry hashes the tree of a re
     }
   })
 
-  test('a nested repository is left out, because its files belong to it', async () => {
+  test('a nested repository is not read as files, but it is counted, so the report cannot say Safe', async () => {
     const folder = await gitSkillIn(await temp())
     await mkdir(join(folder, 'vendor', 'dep'), { recursive: true })
     await writeFile(join(folder, 'vendor', 'dep', 'index.js'), 'module.exports = 1\n')
     execFileSync('git', ['init', '-q'], { cwd: join(folder, 'vendor', 'dep') })
 
     const bundle = await readBundle(folder)
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
 
     expect(bundle.extra.map(entry => entry.path)).not.toContain('vendor/dep/')
     expect(bundle.extra.map(entry => entry.path)).not.toContain('vendor/dep')
+    expect(bundle.unread).toBe(1)
+    expect(output).toContain('Files outside the bundle that were not read: 1')
+    expect(output).not.toContain('Suggested verdict: SAFE')
   })
 
   test('the target page of a bundle in a GitHub work tree carries the source of the bundle', async () => {
@@ -259,5 +263,105 @@ describe('a git work tree is hashed the way the registry hashes the tree of a re
 
     expect(output).toContain('Target page: /app/t/')
     expect(output).not.toContain('?src=')
+  })
+})
+
+describe('a file that was not read is never a pass', () => {
+  /** The folder is clean, so its report is the control for the tests below. */
+  test('a clean work tree is suggested as safe', async () => {
+    const folder = await gitSkillIn(await temp())
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain('Suggested verdict: SAFE')
+    expect(output).not.toContain('were not read')
+  })
+
+  test('an untracked file above the cap is never read, and the report cannot say Safe', async () => {
+    const folder = await gitSkillIn(await temp())
+    const payload = join(folder, 'payload.sh')
+    await writeFile(payload, '')
+    await truncate(payload, 9 * 1024 * 1024)
+
+    const bundle = await readBundle(folder)
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(bundle.unread).toBe(1)
+    expect(output).toContain('Files outside the bundle that were not read: 1')
+    expect(output).not.toContain('Suggested verdict: SAFE')
+  })
+
+  test('a file that comes after the cap of bytes or of files is not read either', async () => {
+    const folder = await gitSkillIn(await temp())
+    for (let index = 0; index < 505; index += 1) await writeFile(join(folder, `note${index}.txt`), 'x\n')
+
+    const output = await scanSkillReport({ folder, guard: fakeGuard() })
+
+    expect(output).toContain('Files outside the bundle that were not read: 5')
+    expect(output).not.toContain('Suggested verdict: SAFE')
+  })
+
+  test('a file that is listed but no longer on disk is nothing to read', async () => {
+    const folder = await gitSkillIn(await temp())
+    await writeFile(join(folder, 'gone.txt'), 'x\n')
+    gitIn(folder, ['add', '--', 'gone.txt'])
+    await rm(join(folder, 'gone.txt'))
+
+    const bundle = await readBundle(folder)
+
+    expect(bundle.unread).toBe(0)
+  })
+})
+
+describe('git that cannot list the files outside the bundle is an error', () => {
+  test('a corrupt index fails instead of hiding every file that is not committed', async () => {
+    const folder = await gitSkillIn(await temp())
+    await writeFile(join(folder, 'payload.sh'), `${PIPE_TO_SHELL}\n`)
+    await writeFile(join(folder, '.git', 'index'), 'DIRC')
+
+    await expect(readBundle(folder)).rejects.toThrow(/could not be listed/)
+  })
+})
+
+describe('a linked work tree is a work tree', () => {
+  test('the .git file of a linked work tree marks a repository, so only the committed files are hashed', async () => {
+    const main = await gitSkillIn(await temp())
+    const linked = join(await temp(), 'linked')
+    gitIn(main, ['worktree', 'add', '-q', linked, '-b', 'linked'])
+    await writeFile(join(linked, '.DS_Store'), 'junk\n')
+
+    const bundle = await readBundle(linked)
+
+    expect(bundle.hashed.map(entry => entry.path)).toEqual(['SKILL.md'])
+    expect(bundle.extra.map(entry => entry.path)).toContain('.DS_Store')
+  })
+
+  test('a clone made with a separate git directory is a work tree too', async () => {
+    const folder = await skillIn(await temp(), {})
+    const gitDir = join(await temp(), 'repo.git')
+    execFileSync('git', ['init', '-q', '-b', 'main', `--separate-git-dir=${gitDir}`], { cwd: folder })
+    gitIn(folder, ['add', '--', 'SKILL.md'])
+    gitIn(folder, ['-c', 'user.email=test@example.com', '-c', 'user.name=test', 'commit', '-q', '-m', 'first'])
+    await writeFile(join(folder, '.DS_Store'), 'junk\n')
+
+    const bundle = await readBundle(folder)
+
+    expect(bundle.hashed.map(entry => entry.path)).toEqual(['SKILL.md'])
+  })
+})
+
+describe('the limits of a bundle are checked on the tree, before a blob is read', () => {
+  test('a committed file above the byte limit is refused', async () => {
+    const folder = await gitSkillIn(await temp(), { 'big.bin': 'x'.repeat(CONSTANTS.MAX_BUNDLE_BYTES + 1) }, ['SKILL.md', 'big.bin'])
+
+    await expect(readBundle(folder)).rejects.toThrow(/more than \d+ bytes/)
+  })
+
+  test('more committed files than a bundle may hold are refused', async () => {
+    const files: Record<string, string> = {}
+    for (let index = 0; index < CONSTANTS.MAX_BUNDLE_FILES + 1; index += 1) files[`f${index}.txt`] = 'x\n'
+    const folder = await gitSkillIn(await temp(), files, ['SKILL.md', ...Object.keys(files)])
+
+    await expect(readBundle(folder)).rejects.toThrow(/more than \d+ files/)
   })
 })
