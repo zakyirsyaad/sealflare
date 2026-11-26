@@ -4,14 +4,14 @@ import { createApp } from './app'
 import { cleanup, createPostgresDb, migrate } from './db'
 import { parseEnv, sandboxConfig } from './env'
 import { createChainReader } from './sandbox/chain'
-import { pollOnce, type PollerDeps } from './sandbox/poller'
+import { runQueue, type PollerDeps } from './sandbox/poller'
 import { createWorkerClient } from './sandbox/workerClient'
 
 /** How often the expired nonces and the old rate rows are removed. */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
-/** How often the queue looks at the worker. */
-const POLL_INTERVAL_MS = 3_000
+/** Whether the service is on its way down. The queue stops after the pass it is in. */
+let stopping = false
 
 const env = parseEnv(process.env)
 const { db, close } = createPostgresDb(env.DATABASE_URL)
@@ -45,8 +45,8 @@ const app = createApp({
             coreAddress: config.coreAddress,
           }),
           skills: {
-            fetcher: createGitHubFetcher(config.githubToken === undefined ? {} : { token: config.githubToken }),
-            ...(config.githubToken === undefined ? {} : { token: config.githubToken }),
+            fetcher: createGitHubFetcher({ token: config.githubToken }),
+            token: config.githubToken,
           },
           probeSetVersion: config.probeSetVersion,
           modelId: config.modelId,
@@ -76,13 +76,16 @@ const poller: PollerDeps | null =
 if (poller === null) {
   console.warn('the sandbox is not configured, so the sandbox routes are not mounted')
 } else {
-  const queueTimer = setInterval(() => {
-    pollOnce(poller).catch((error: unknown) => console.error('the sandbox queue failed', error))
-  }, POLL_INTERVAL_MS)
-  queueTimer.unref()
+  // The queue waits for every pass before it starts the next one, so two passes never read the
+  // same run at the same time.
+  void runQueue(poller, {
+    isStopped: () => stopping,
+    onError: (error: unknown) => console.error('the sandbox queue failed', error),
+  })
 }
 
 const stop = async (): Promise<void> => {
+  stopping = true
   clearInterval(timer)
   server.close()
   await close()

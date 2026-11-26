@@ -45,6 +45,7 @@ const SANDBOX = {
   WORKER_BEARER_KEY: SAMPLE,
   SANDBOX_PROBE_SET_VERSION: 'v1-5b7afb275dd1bf5827eb568bb11b729f',
   SANDBOX_MODEL_ID: 'sealflare-sim-v1',
+  GITHUB_TOKEN: 'github-token',
 }
 
 test('the sandbox is only started when every variable is there', () => {
@@ -52,6 +53,11 @@ test('the sandbox is only started when every variable is there', () => {
   expect(sandboxConfig({ ...SANDBOX, SANDBOX_PROBE_SET_VERSION: undefined })).toBeNull()
   expect(sandboxConfig({ ...SANDBOX, SANDBOX_MODEL_ID: undefined })).toBeNull()
   expect(sandboxConfig({ ...SANDBOX, WORKER_URL: undefined })).toBeNull()
+})
+
+test('the sandbox needs a GitHub token, because a skill cannot be read without one', () => {
+  expect(sandboxConfig({ ...SANDBOX, GITHUB_TOKEN: undefined })).toBeNull()
+  expect(sandboxConfig(SANDBOX)?.githubToken).toBe(SANDBOX.GITHUB_TOKEN)
 })
 
 test('the probe set version and the model have no default', () => {

@@ -52,7 +52,7 @@ export interface SandboxConfig {
   workerKey: string
   probeSetVersion: string
   modelId: string
-  githubToken?: string
+  githubToken: string
 }
 
 /**
@@ -60,6 +60,10 @@ export interface SandboxConfig {
  *
  * Every variable has to be there. A sandbox that is half configured would answer requests it
  * cannot carry out, so the service refuses to start it instead.
+ *
+ * The GitHub token is one of them. Without it the sandbox cannot read a skill, and a request that
+ * cannot be read is a mistake of the operator and not of the caller, so it must never reach the
+ * caller as a refusal of the request.
  */
 export function sandboxConfig(env: SandboxEnv): SandboxConfig | null {
   if (
@@ -68,7 +72,8 @@ export function sandboxConfig(env: SandboxEnv): SandboxConfig | null {
     env.WORKER_URL === undefined ||
     env.WORKER_BEARER_KEY === undefined ||
     env.SANDBOX_PROBE_SET_VERSION === undefined ||
-    env.SANDBOX_MODEL_ID === undefined
+    env.SANDBOX_MODEL_ID === undefined ||
+    env.GITHUB_TOKEN === undefined
   ) {
     return null
   }
@@ -84,7 +89,7 @@ export function sandboxConfig(env: SandboxEnv): SandboxConfig | null {
     workerKey: env.WORKER_BEARER_KEY,
     probeSetVersion: env.SANDBOX_PROBE_SET_VERSION,
     modelId: env.SANDBOX_MODEL_ID,
-    ...(env.GITHUB_TOKEN === undefined ? {} : { githubToken: env.GITHUB_TOKEN }),
+    githubToken: env.GITHUB_TOKEN,
   }
 }
 

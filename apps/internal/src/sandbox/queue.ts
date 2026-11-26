@@ -50,6 +50,12 @@ export interface RunRow {
   read_failures: number
   /** The moment the run was seen as done without a transcript. The transcript is waited for. */
   evidence_since: string | null
+  /** The moment the worker refused the run for the first time because it was busy. */
+  busy_since: string | null
+  /** The moment the run showed a new probe run for the last time. */
+  progress_at: string | null
+  /** The moment the run failed its deadline while the worker was still going. */
+  late_since: string | null
 }
 
 /** What the API shows about a run. */
@@ -105,16 +111,14 @@ export async function nextQueuedRun(deps: SandboxDeps): Promise<RunRow | null> {
 }
 
 /**
- * The oldest run that waited longer than it may wait.
+ * The run that failed its deadline and that is still being read.
  *
- * A run that waits for good holds a slot of the quota and never ends, so it is failed as an
- * infrastructure failure instead.
+ * The worker may still be going with such a run, so it is read until the worker says it is done
+ * and a violation it finds at the end still reaches the cache.
  */
-export async function expiredQueuedRun(deps: SandboxDeps, limitMs: number): Promise<RunRow | null> {
-  const before = new Date(deps.now().getTime() - limitMs).toISOString()
+export async function lateRun(deps: SandboxDeps): Promise<RunRow | null> {
   const rows = await deps.sql.query<RunRow>(
-    `SELECT * FROM sandbox_runs WHERE status = 'queued' AND created_at < $1 ORDER BY seq LIMIT 1`,
-    [before],
+    `SELECT * FROM sandbox_runs WHERE late_since IS NOT NULL AND status = 'incomplete' ORDER BY seq LIMIT 1`,
   )
   return rows[0] ?? null
 }

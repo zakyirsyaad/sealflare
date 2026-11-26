@@ -29,8 +29,14 @@ export function resetsAt(now: Date): string {
  * The row is written in one statement, so two requests that arrive together cannot both take the
  * last run. The check constraint of the table is the second guard: it refuses a count above the
  * limit even if the statement is wrong.
+ *
+ * The day the run was taken on is returned with it, so a run that is given back before it was
+ * queued goes back to the same day.
  */
-export async function takeQuota(deps: QuotaDeps, address: string): Promise<{ taken: boolean; left: number }> {
+export async function takeQuota(
+  deps: QuotaDeps,
+  address: string,
+): Promise<{ taken: boolean; left: number; day: string }> {
   const day = utcDay(deps.now())
   const rows = await deps.sql.query<{ used: number }>(
     `INSERT INTO sandbox_quota (address, day, used) VALUES ($1, $2::date, 1)
@@ -40,8 +46,22 @@ export async function takeQuota(deps: QuotaDeps, address: string): Promise<{ tak
     [address, day, CONSTANTS.SANDBOX_DAILY_RUNS],
   )
   const row = rows[0]
-  if (row === undefined) return { taken: false, left: 0 }
-  return { taken: true, left: CONSTANTS.SANDBOX_DAILY_RUNS - row.used }
+  if (row === undefined) return { taken: false, left: 0, day }
+  return { taken: true, left: CONSTANTS.SANDBOX_DAILY_RUNS - row.used, day }
+}
+
+/**
+ * Gives a run of the quota back before the run was ever queued.
+ *
+ * A run that is refused after the slot was taken, for example because the skill could not be
+ * read, gives the slot back here. The count never goes below zero, so a slot that was never
+ * taken is never given twice.
+ */
+export async function releaseQuota(deps: QuotaDeps, address: string, day: string): Promise<void> {
+  await deps.sql.query('UPDATE sandbox_quota SET used = GREATEST(used - 1, 0) WHERE address = $1 AND day = $2::date', [
+    address,
+    day,
+  ])
 }
 
 /**

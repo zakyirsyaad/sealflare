@@ -243,8 +243,8 @@ test('a repository that answers too slowly is refused and takes no quota', async
 
   const runs = await db.query('SELECT * FROM sandbox_runs')
   expect(runs).toHaveLength(0)
-  const quota = await db.query('SELECT * FROM sandbox_quota')
-  expect(quota).toHaveLength(0)
+  const quota = await db.query<{ used: number }>('SELECT used FROM sandbox_quota')
+  expect(quota[0]?.used ?? 0).toBe(0)
   await close()
 })
 
@@ -258,8 +258,8 @@ test('a run without a GitHub token is refused and takes no quota', async () => {
 
   const runs = await db.query('SELECT * FROM sandbox_runs')
   expect(runs).toHaveLength(0)
-  const quota = await db.query('SELECT * FROM sandbox_quota')
-  expect(quota).toHaveLength(0)
+  const quota = await db.query<{ used: number }>('SELECT used FROM sandbox_quota')
+  expect(quota[0]?.used ?? 0).toBe(0)
   await close()
 })
 

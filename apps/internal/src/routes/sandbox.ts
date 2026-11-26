@@ -7,7 +7,7 @@ import { fail, ok, type InternalErrorCode } from '../respond'
 import { cacheGet } from '../sandbox/cache'
 import type { ChainReader } from '../sandbox/chain'
 import { isPaused } from '../sandbox/pause'
-import { quotaLeft, resetsAt, takeQuota } from '../sandbox/quota'
+import { quotaLeft, releaseQuota, resetsAt, takeQuota } from '../sandbox/quota'
 import { enqueue, newRunId, readRun, type SandboxDeps } from '../sandbox/queue'
 import {
   BundleMismatch,
@@ -220,57 +220,51 @@ async function readSkill(
   }
 }
 
-/** A refusal that is thrown inside the transaction, so everything in it is rolled back. */
-class RefusedError extends Error {
-  constructor(readonly refusal: Refusal) {
-    super(refusal.message)
-    this.name = 'RefusedError'
-  }
-}
-
 /**
  * Puts a run in the queue.
  *
  * The slot of the quota is taken first, so an address that has no runs left never triggers a
  * fetch of the repository. The skill is read after that, and the row of the run is written last.
- * Everything happens in one transaction: a run that cannot be read leaves no row and no slot
- * behind, because the transaction is rolled back.
+ *
+ * The fetch of the repository is not a call to the database, so it does not belong in a
+ * transaction. A transaction that waits for the network holds its connection and its locks for as
+ * long as the network takes. The slot of the quota is therefore given back with a second
+ * statement when the fetch or the insert fails, so a run that was never queued leaves no slot
+ * behind.
  */
 async function queueRun(
   deps: SandboxRouteDeps,
   request: z.infer<typeof SandboxRunCreateRequest>,
 ): Promise<{ data: CreatedRun } | Refusal> {
-  const queue: SandboxDeps = {
-    sql: deps.sql,
-    now: deps.now,
-    probeSetVersion: deps.probeSetVersion,
-    modelId: deps.modelId,
+  const quota = await takeQuota({ sql: deps.sql, now: deps.now }, request.address)
+  if (!quota.taken) {
+    return { code: 'QUOTA_EXHAUSTED', message: 'The daily sandbox runs are used up.', status: 429 }
+  }
+  const skill = await readSkill(deps, request.src, request.bundleHash)
+  if ('code' in skill) {
+    await releaseQuota({ sql: deps.sql, now: deps.now }, request.address, quota.day)
+    return skill
   }
   try {
-    return await deps.sql.transaction(async tx => {
-      const scoped: SandboxDeps = { ...queue, sql: tx }
-      const quota = await takeQuota(scoped, request.address)
-      if (!quota.taken) {
-        throw new RefusedError({
-          code: 'QUOTA_EXHAUSTED',
-          message: 'The daily sandbox runs are used up.',
-          status: 429,
-        })
-      }
-      const skill = await readSkill(deps, request.src, request.bundleHash)
-      if ('code' in skill) throw new RefusedError(skill)
-      const runId = newRunId()
-      const position = await enqueue(scoped, {
+    const runId = newRunId()
+    const position = await enqueue(
+      {
+        sql: deps.sql,
+        now: deps.now,
+        probeSetVersion: deps.probeSetVersion,
+        modelId: deps.modelId,
+      },
+      {
         runId,
         address: request.address,
         bundleHash: request.bundleHash,
         src: request.src,
         skillMd: skill.skillMd,
-      })
-      return { data: { runId, status: 'queued', queuePosition: position, quotaLeft: quota.left } }
-    })
-  } catch (error) {
-    if (error instanceof RefusedError) return error.refusal
+      },
+    )
+    return { data: { runId, status: 'queued', queuePosition: position, quotaLeft: quota.left } }
+  } catch {
+    await releaseQuota({ sql: deps.sql, now: deps.now }, request.address, quota.day)
     return { code: 'INTERNAL', message: 'The run could not be queued.', status: 500 }
   }
 }

@@ -38,6 +38,19 @@ ALTER TABLE sandbox_runs ADD COLUMN read_failures integer NOT NULL DEFAULT 0;
 -- after the run itself, so the run is followed until the transcript shows up.
 ALTER TABLE sandbox_runs ADD COLUMN evidence_since timestamptz;
 
+-- The moment the worker refused the run for the first time because it was busy. The deadline of
+-- the queue is measured from it and not from the moment the run was queued, because a run that
+-- waits behind a run of ours has not waited for the worker at all.
+ALTER TABLE sandbox_runs ADD COLUMN busy_since timestamptz;
+
+-- The moment the run showed a new probe run for the last time. The deadline of the run is
+-- measured from it, so a run that is still moving is never failed.
+ALTER TABLE sandbox_runs ADD COLUMN progress_at timestamptz;
+
+-- The moment a run failed its deadline while the worker was still going. Such a run is still read
+-- until the worker says it is done, so a violation it finds at the end still reaches the cache.
+ALTER TABLE sandbox_runs ADD COLUMN late_since timestamptz;
+
 -- The sandbox is paused for the rest of the day when the worker reached its daily cost limit. The
 -- day is the key, so the pause ends by itself when the day ends.
 CREATE TABLE sandbox_pause (

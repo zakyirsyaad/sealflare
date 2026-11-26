@@ -1,11 +1,13 @@
 import { expect, test } from 'vitest'
-import type { SandboxResult, WorkerRunStatus } from '@sealflare/shared/schemas'
-import { pollOnce, type PollerDeps } from '../src/sandbox/poller'
+import type { ProbeResult, SandboxResult, WorkerRunStatus } from '@sealflare/shared/schemas'
+import { PROBE_IDS } from '@sealflare/shared/schemas'
+import { pollOnce, runQueue, type PollerDeps } from '../src/sandbox/poller'
 import { body, createTestDb, get, post } from './helpers'
 import {
   NOW,
   bundle,
   cleanResult,
+  failedResult,
   fakeWorker,
   hashOf,
   sandboxFixture,
@@ -68,6 +70,17 @@ function pollerAt(
   now: () => Date,
 ): PollerDeps {
   return { sql: db, now, probeSetVersion: 'v1', modelId: 'model-1', worker }
+}
+
+/** The probe results of a run that made progress: the first probes are finished. */
+function probesOf(count: number): ProbeResult[] {
+  return PROBE_IDS.map((probeId, index): ProbeResult => ({
+    probeId,
+    runs:
+      index < count
+        ? ([0, 1, 2] as const).map(runIndex => ({ index: runIndex, outcome: 'clean' as const, violations: [] }))
+        : [],
+  }))
 }
 
 test('quota comes back for an infrastructure failure and not for a skill_content failure', async () => {
@@ -260,6 +273,9 @@ test('a run that waits longer than it may wait ends and gives the quota back', a
   const { app } = sandboxFixture(db, { worker })
 
   await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  // The first refusal of the worker starts the wait. A run that waits behind a run of ours has
+  // not waited for the worker at all, so the wait is measured from the refusal.
+  await pollOnce(poller(db, worker))
   const later = new Date(NOW.getTime() + 31 * 60_000)
   await pollOnce(pollerAt(db, worker, () => later))
 
@@ -285,6 +301,119 @@ test('a run that takes longer than it may take ends and gives the quota back', a
   expect(failed[0]?.status).toBe('incomplete')
   expect(failed[0]?.failure_cause).toBe('infrastructure')
   expect(await used(db)).toBe(0)
+  await close()
+})
+
+test('a run that keeps moving is never failed by the deadline', async () => {
+  const { db, close } = await createTestDb()
+  let reads = 0
+  const worker = fakeWorker({
+    answer: runId => {
+      reads += 1
+      return { runId, state: 'running', currentProbe: PROBE_IDS[0], probes: probesOf(reads) }
+    },
+  })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  // The run keeps showing new probe runs, so the deadline never applies to it.
+  const later = new Date(NOW.getTime() + 25 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => later))
+  const evenLater = new Date(NOW.getTime() + 45 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => evenLater))
+
+  const moving = await runs(db)
+  expect(moving[0]?.status).toBe('running')
+  expect(await used(db)).toBe(1)
+  await close()
+})
+
+test('a run that failed its deadline is still read, and a violation at the end reaches the cache', async () => {
+  const { db, close } = await createTestDb()
+  const violation: ProbeResult = {
+    probeId: 'indirect_injection',
+    runs: [
+      { index: 0, outcome: 'violation', violations: [{ tool: 'transfer', args: { to: '0x0' }, rule: 'no-transfer' }] },
+    ],
+  }
+  let reads = 0
+  const worker = fakeWorker({
+    answer: runId => {
+      reads += 1
+      if (reads === 1) return { runId, state: 'running', probes: [] }
+      return { runId, state: 'done', probes: [violation], result: failedResult(BUNDLE_HASH) }
+    },
+  })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+
+  // The run stops moving, so it fails its deadline and gives the quota back.
+  const later = new Date(NOW.getTime() + 21 * 60_000)
+  await pollOnce(pollerAt(db, worker, () => later))
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+  expect(await used(db)).toBe(0)
+
+  // The worker is still going with it, so it is read again. A violation it finds now is kept.
+  await pollOnce(pollerAt(db, worker, () => later))
+  const ended = await runs(db)
+  expect(ended[0]?.status).toBe('incomplete')
+  const result = ended[0]?.result as SandboxResult
+  expect(result.status).toBe('SANDBOX_FUZZ_FAILED')
+  expect(result.probes[0]?.runs[0]?.violations[0]?.rule).toBe('no-transfer')
+
+  const cached = await db.query<{ status: string }>('SELECT status FROM sandbox_cache')
+  expect(cached).toHaveLength(1)
+  expect(cached[0]?.status).toBe('SANDBOX_FUZZ_FAILED')
+  await close()
+})
+
+test('the quota of a failed run comes back only once', async () => {
+  const { db, close } = await createTestDb()
+  const worker = fakeWorker({ unreachable: true })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  await pollOnce(poller(db, worker))
+  for (let attempt = 0; attempt < 3; attempt += 1) await pollOnce(poller(db, worker))
+
+  const failed = await runs(db)
+  expect(failed[0]?.status).toBe('incomplete')
+  expect(await used(db)).toBe(0)
+
+  // The run is read again and again, but the slot of the quota comes back only once.
+  await pollOnce(poller(db, worker))
+  await pollOnce(poller(db, worker))
+  expect(await used(db)).toBe(0)
+  await close()
+})
+
+test('the queue waits for every pass before it starts the next one', async () => {
+  const { db, close } = await createTestDb()
+  const worker = fakeWorker({ answer: runId => ({ runId, state: 'running', probes: [] }) })
+  const { app } = sandboxFixture(db, { worker })
+
+  await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+
+  let passes = 0
+  const waits: string[] = []
+  await runQueue(poller(db, worker), {
+    intervalMs: 0,
+    sleep: async () => {
+      waits.push('wait')
+      passes += 1
+    },
+    isStopped: () => passes >= 2,
+  })
+
+  // Every pass is over before the next one starts, so two passes never read the same run.
+  expect(waits).toEqual(['wait', 'wait'])
+  expect(worker.started).toHaveLength(1)
+  expect(worker.answered).toHaveLength(1)
   await close()
 })
 
