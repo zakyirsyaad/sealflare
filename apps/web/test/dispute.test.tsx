@@ -354,3 +354,21 @@ test('a skill is named by its repository on the dispute page, and an address is 
   dispute()
   expect(screen.getByRole('heading', { level: 1 }).parentElement).toHaveTextContent('0x60b9…022f')
 })
+
+test('the jury box offers "Join the jury" during the commit phase and never a direction', () => {
+  wagmi.reads.current.phaseOf = 1
+  dispute()
+  const jury = screen.getByRole('complementary', { name: copy.dispute.jury })
+  expect(within(jury).getByRole('button', { name: copy.jury.join })).toBeInTheDocument()
+  expect(within(jury).queryByText(copy.jury.uphold)).toBeNull()
+  expect(within(jury).queryByText(copy.jury.reject)).toBeNull()
+})
+
+test('the jury box offers "Reveal my vote" in the reveal phase to a juror who committed', () => {
+  wagmi.reads.current.phaseOf = 2
+  wagmi.reads.current.getJuror = { committed: true, revealed: false, uphold: false, weight: 3, commitHash: `0x${'ab'.repeat(32)}` }
+  dispute({ detail: detail({ phase: 'REVEAL' }) })
+  const jury = screen.getByRole('complementary', { name: copy.dispute.jury })
+  expect(within(jury).getByRole('button', { name: copy.jury.reveal })).toBeInTheDocument()
+  expect(within(jury).queryByRole('button', { name: copy.jury.join })).toBeNull()
+})

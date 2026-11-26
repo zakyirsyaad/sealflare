@@ -5,6 +5,7 @@ import { CORE, COURT, ME, txHash } from './dispute.fixtures'
 /** The wallet, the chain reads and the evidence upload that every dispute test stands on. */
 export const wagmi = {
   signTypedDataAsync: vi.fn(),
+  signMessageAsync: vi.fn(),
   writeContractAsync: vi.fn(),
   reads: { current: {} as Record<string, unknown> },
   readCalls: [] as { functionName: string; args?: readonly unknown[] }[],
@@ -16,6 +17,7 @@ export const uploadEvidence = vi.fn()
 
 export const wagmiModule = {
   useSignTypedData: () => ({ signTypedDataAsync: wagmi.signTypedDataAsync }),
+  useSignMessage: () => ({ signMessageAsync: wagmi.signMessageAsync }),
   useWriteContract: () => ({ writeContractAsync: wagmi.writeContractAsync }),
   useWaitForTransactionReceipt: () => wagmi.receipt.current,
   useReadContract: (params: { functionName: string; args?: readonly unknown[] }) => {
@@ -64,6 +66,8 @@ export function resetDispute() {
     nextExpireForfeitBps: 2000,
     cooldownEndsAt: 0n,
     activeChallengeOf: 0n,
+    jurorStatus: 0,
+    getJuror: { committed: false, revealed: false, uphold: false, weight: 0, commitHash: `0x${'00'.repeat(32)}` },
     pendingPenalties: 0,
     getTarget: { attestationCount: 5 },
   }

@@ -7,6 +7,7 @@ import { modulesLive } from '../../lib/chain/config'
 import { copy } from '../../lib/copy'
 import type { PublisherRole } from '../../server/disputes'
 import { EvidenceBox } from './EvidenceBox'
+import { JuryActions } from '../jury/JuryActions'
 import { JuryBox, JurorsTable } from './JuryBox'
 import { Outcomes } from './Outcomes'
 import { PayoutTable } from './PayoutTable'
@@ -14,7 +15,7 @@ import { PhaseStrip } from './PhaseStrip'
 import { ReplyBox } from './ReplyBox'
 import { SettleActions } from './SettleActions'
 import { outcomeWord, phaseWord, targetLabel, verdictText } from './labels'
-import { useChallengeChain } from './useChallengeChain'
+import { useChallengeChain, type ChallengeChain } from './useChallengeChain'
 import { useNow } from './useNow'
 
 export type DisputeScreenProps = {
@@ -68,6 +69,29 @@ function Header({ detail, phase, outcome }: { detail: ChallengeDetail; phase: Ch
   )
 }
 
+/** The column beside the evidence: the jury, what a juror can do, and what anyone can do to close the dispute. */
+function Side({ detail, chain, phase }: { detail: ChallengeDetail; chain: ChallengeChain; phase: ChallengeDetail['phase'] | 'NONE' }) {
+  return (
+    <div className="sf-dispute__side">
+      <JuryBox phase={phase} commits={chain.commits ?? detail.commits} reveals={chain.reveals ?? detail.reveals}>
+        <JuryActions
+          challengeId={detail.id}
+          phase={chain.phase}
+          commitEndsAt={detail.commitEndsAt}
+          revealEndsAt={detail.revealEndsAt}
+        />
+      </JuryBox>
+      <SettleActions
+        challengeId={detail.id}
+        targetId={detail.targetId}
+        phase={chain.phase}
+        outcome={chain.outcome}
+        reveals={chain.reveals}
+      />
+    </div>
+  )
+}
+
 /** The dispute, read from the index and followed on the chain. The phase is the Court's. */
 function DisputeBody({ detail, publisherRole, publisher }: DisputeScreenProps & { detail: ChallengeDetail }) {
   const now = useNow()
@@ -104,16 +128,7 @@ function DisputeBody({ detail, publisherRole, publisher }: DisputeScreenProps & 
           {closed && <Verdict detail={detail} outcome={outcome} />}
           {phase !== 'COMMIT' && phase !== 'NONE' && <JurorsTable jurors={detail.jurors} />}
         </div>
-        <div className="sf-dispute__side">
-          <JuryBox phase={phase} commits={chain.commits ?? detail.commits} reveals={chain.reveals ?? detail.reveals} />
-          <SettleActions
-            challengeId={detail.id}
-            targetId={detail.targetId}
-            phase={chain.phase}
-            outcome={chain.outcome}
-            reveals={chain.reveals}
-          />
-        </div>
+        <Side detail={detail} chain={chain} phase={phase} />
       </div>
     </div>
   )
