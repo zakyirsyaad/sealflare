@@ -124,6 +124,19 @@ function skillTarget(report: ReturnType<typeof skillReport>, overrides: Partial<
   return coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: report.targetId as `0x${string}`, ...overrides })
 }
 
+test('the target, its votes and its tier are read at one block, so a page shows one moment', async () => {
+  const target = vi.fn(async () => coreTarget())
+  const tier = vi.fn(async () => 'UNRATED' as const)
+  const attestations = vi.fn(async () => [attestation()])
+  reader.current = fakeReader({ tierBlockNumber: async () => 77n, target, tier, attestations })
+
+  await loadTarget(targetId, null)
+
+  expect(target).toHaveBeenCalledWith(targetId, 77n)
+  expect(tier).toHaveBeenCalledWith(targetId, 77n)
+  expect(attestations).toHaveBeenCalledWith(targetId, 2, 77n)
+})
+
 test('the tier comes from Core even when the row of the target disagrees', async () => {
   reader.current = fakeReader({ tier: async () => 'UNRATED' })
   const data = await loadTarget(targetId, null)

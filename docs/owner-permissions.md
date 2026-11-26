@@ -41,7 +41,8 @@ those two moments:
 - Attestations, publisher binding, XP settlement, tiers and `IFirewall` work in full.
 - Disputes, warranty bonds and bounties do not exist yet, so `warrantyBondActive` reads 0 and no
   target can be confirmed dangerous.
-- The deployer key is the only privileged key in the system. It is kept on a hardware wallet.
+- The deployer key is the only privileged key in the system. It is a fresh account used for
+  nothing else, held as a password-encrypted Foundry keystore on the founder's machine.
   Whoever holds it in this window chooses which Court and Vault are wired in. Once
   `setModules` has run, the key has no power left.
 

@@ -37,15 +37,15 @@ describe('the tiers of a list of targets', () => {
     expect(tierAt.mock.calls[0]![1]).toBe(96n)
   })
 
-  test('the reads of a batch leave at the same time, so they go out in one request', async () => {
+  test('the reads of a batch leave at the same time, so the client can group them', async () => {
     const { reader, tierAt, peak } = readerWith(250)
     const targets = Array.from({ length: 250 }, (_, index) => id(index + 1))
 
     await tiersAt(reader, targets, Date.now() + 5_000)
 
     expect(tierAt).toHaveBeenCalledTimes(250)
-    // A whole batch is read at the same time, so the transport of the chain puts them in one
-    // request instead of one request each.
+    // A whole batch is read at the same time, so the client of the chain can group the reads of
+    // one block into Multicall3 calls instead of sending one call each.
     expect(peak()).toBe(100)
   })
 
