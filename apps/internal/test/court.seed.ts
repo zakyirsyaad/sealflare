@@ -131,13 +131,14 @@ export async function insertBond(
     requestedAt?: string | null
     withdrawableAt?: string | null
     finalizedAt?: string | null
+    locked?: boolean
     createdAt?: string
   },
 ): Promise<void> {
   await db.query(
     `INSERT INTO bonds (target_id, depositor, amount, requested_at, withdrawable_at, finalized_at,
        locked, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, false, $7)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       seed.targetId,
       seed.depositor,
@@ -145,6 +146,7 @@ export async function insertBond(
       seed.requestedAt ?? null,
       seed.withdrawableAt ?? null,
       seed.finalizedAt ?? null,
+      seed.locked ?? false,
       seed.createdAt ?? '2026-11-25T10:00:00.000Z',
     ],
   )

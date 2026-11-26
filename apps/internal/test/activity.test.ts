@@ -85,16 +85,73 @@ test('a challenge past the reveal phase appears as CAN_CLOSE', async () => {
   await close()
 })
 
+test('a challenge past the reveal phase without a quorum appears as CAN_CLOSE', async () => {
+  const { db, close } = await createTestDb()
+  const id = targetId(41)
+  await insertTarget(db, { id })
+  await insertChallenge(db, {
+    id: '23',
+    targetId: id,
+    challenger: GUARDIAN,
+    reveals: 0,
+    commitEndsAt: '2026-11-25T12:00:00.000Z',
+    revealEndsAt: '2026-11-26T00:00:00.000Z',
+  })
+
+  const activity = await readActivity(db, GUARDIAN)
+  const actions = activity.needsAction.filter((action) => action.kind === 'CAN_CLOSE')
+  expect(actions).toHaveLength(1)
+  expect(actions[0]).toMatchObject({ targetId: id, challengeId: '23' })
+  await close()
+})
+
 test('a SAFE vote older than 48 hours appears as XP_CLAIMABLE', async () => {
   const { db, close } = await createTestDb()
   const id = targetId(34)
   await insertTarget(db, { id })
-  await insertVote(db, { targetId: id, index: 0, guardian: GUARDIAN, verdict: 'SAFE', at: '2026-11-24T10:00:00.000Z' })
+  await insertVote(db, {
+    targetId: id,
+    index: 0,
+    guardian: GUARDIAN,
+    verdict: 'SAFE',
+    safeOrdinal: 1,
+    at: '2026-11-24T10:00:00.000Z',
+  })
 
   const activity = await readActivity(db, GUARDIAN)
   const actions = activity.needsAction.filter((action) => action.kind === 'XP_CLAIMABLE')
   expect(actions).toHaveLength(1)
   expect(actions[0]).toMatchObject({ targetId: id, dueAt: '2026-11-26T10:00:00.000Z' })
+  await close()
+})
+
+test('a SAFE vote that earns no XP does not appear as XP_CLAIMABLE', async () => {
+  const { db, close } = await createTestDb()
+  const id = targetId(42)
+  await insertTarget(db, { id })
+  // A vote past the slots that are rewarded earns nothing.
+  await insertVote(db, {
+    targetId: id,
+    index: 0,
+    guardian: GUARDIAN,
+    verdict: 'SAFE',
+    safeOrdinal: 11,
+    at: '2026-11-24T10:00:00.000Z',
+  })
+  // A vote that was cast during a dispute earns nothing either.
+  await insertVote(db, {
+    targetId: id,
+    index: 1,
+    guardian: GUARDIAN,
+    verdict: 'SAFE',
+    safeOrdinal: 2,
+    castDuringDispute: true,
+    at: '2026-11-24T10:00:00.000Z',
+  })
+
+  const activity = await readActivity(db, GUARDIAN)
+  const actions = activity.needsAction.filter((action) => action.kind === 'XP_CLAIMABLE')
+  expect(actions).toEqual([])
   await close()
 })
 
@@ -113,6 +170,24 @@ test('a bond withdrawal past 7 days appears as BOND_READY', async () => {
   const actions = activity.needsAction.filter((action) => action.kind === 'BOND_READY')
   expect(actions).toHaveLength(1)
   expect(actions[0]).toMatchObject({ targetId: id, dueAt: '2026-11-25T10:00:00.000Z' })
+  await close()
+})
+
+test('a bond that a dispute holds does not appear as BOND_READY', async () => {
+  const { db, close } = await createTestDb()
+  const id = targetId(43)
+  await insertTarget(db, { id })
+  await insertBond(db, {
+    targetId: id,
+    depositor: GUARDIAN,
+    requestedAt: '2026-11-18T10:00:00.000Z',
+    withdrawableAt: '2026-11-25T10:00:00.000Z',
+    locked: true,
+  })
+
+  const activity = await readActivity(db, GUARDIAN)
+  const actions = activity.needsAction.filter((action) => action.kind === 'BOND_READY')
+  expect(actions).toEqual([])
   await close()
 })
 
@@ -206,5 +281,24 @@ test('the history holds the votes, the jury seats, the disputes, the bounties an
   expect(activity.history[0]?.at).toBe('2026-11-25T10:00:00.000Z')
   const dispute = activity.history.find((item) => item.kind === 'challenge')
   expect(dispute?.xp).toBe(5)
+  await close()
+})
+
+test('a tie costs the challenger no XP', async () => {
+  const { db, close } = await createTestDb()
+  const id = targetId(44)
+  await insertTarget(db, { id })
+  await insertChallenge(db, {
+    id: '24',
+    targetId: id,
+    challenger: GUARDIAN,
+    outcome: 'TIED',
+    createdAt: '2026-11-25T09:00:00.000Z',
+  })
+
+  const activity = await readActivity(db, GUARDIAN)
+  const dispute = activity.history.find((item) => item.kind === 'challenge')
+  expect(dispute?.result).toBe('Tied')
+  expect(dispute?.xp).toBeNull()
   await close()
 })

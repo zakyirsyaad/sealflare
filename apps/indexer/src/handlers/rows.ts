@@ -36,6 +36,14 @@ export async function requireChallenge(tx: Db, id: bigint, contract = 'event'): 
   if (!rows[0]?.found) throw missingRow('challenge', id.toString(), contract)
 }
 
+export async function requireBounty(tx: Db, id: bigint | string, contract = 'event'): Promise<void> {
+  const rows = await tx.query<{ found: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM bounties WHERE id = $1) AS found',
+    [id.toString()],
+  )
+  if (!rows[0]?.found) throw missingRow('bounty', id.toString(), contract)
+}
+
 /**
  * The event names a row the database does not have.
  *

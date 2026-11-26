@@ -1,6 +1,7 @@
 import type { Db } from '@sealflare/internal/db'
 import { CHALLENGE_OUTCOMES, nameOf } from '../enums'
 import type { TimedCourtEvent } from '../decodeCourt'
+import { proofText } from '../proof'
 import { labelOfTarget, missingRow, requireChallenge, requireTarget } from './rows'
 
 /**
@@ -54,7 +55,7 @@ async function applyChallengeOpened(tx: Db, event: TimedCourtEvent & { name: 'Ch
       label,
       event.args.challenger.toLowerCase(),
       event.args.flags,
-      event.args.shortProof,
+      proofText(event.args.shortProof),
       event.args.evidenceURI,
       at(event.args.commitEndsAt),
       at(event.args.revealEndsAt),

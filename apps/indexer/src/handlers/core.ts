@@ -2,6 +2,7 @@ import type { Address, Hex } from 'viem'
 import { weightOf } from '@sealflare/shared/rules'
 import type { Db } from '@sealflare/internal/db'
 import type { TimedEvent } from '../decode'
+import { proofText } from '../proof'
 import { CHALLENGE_OUTCOMES, PUBLISHER_ROLES, SCORE_REASONS, TARGET_TYPE_NAMES, VERDICT_NAMES, nameOf } from '../enums'
 import { missingRow, requireGuardian, requireTarget } from './rows'
 import { fillBountySlot } from './vault'
@@ -97,7 +98,7 @@ async function applyAttested(tx: Db, event: TimedEvent & { name: 'Attested' }): 
       event.args.weight,
       event.args.index,
       event.args.safeOrdinal,
-      event.args.shortProof,
+      proofText(event.args.shortProof),
       event.args.evidenceURI,
       duringDispute,
       event.at.toISOString(),

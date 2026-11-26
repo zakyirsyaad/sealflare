@@ -127,6 +127,9 @@ export async function challengeDetail(sql: Db, id: string, now: Date): Promise<u
   const phase = phaseOf({ outcome: row.outcome, ...windows }, now)
   const jurors = await listJurors(sql, id, phase)
   const payouts = await listPayouts(sql, id)
+  // The contract does not require an evidence URI, but the frozen answer does. A dispute that was
+  // opened without one therefore does not fit the answer, and the route refuses it instead of
+  // sending an empty URI. The application always pins the evidence before it opens a dispute.
   const evidenceURI = row.evidence_uri ?? ''
 
   return {

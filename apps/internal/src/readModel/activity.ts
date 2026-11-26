@@ -1,4 +1,4 @@
-import { weightOf } from '@sealflare/shared/rules'
+import { XP, weightOf } from '@sealflare/shared/rules'
 import { Bytes32Schema, type ActivityItem } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
 import { decimalString } from './targets'
@@ -153,17 +153,23 @@ async function readJurors(sql: Db, address: string): Promise<ActivityItem[]> {
     kind: 'juror',
     targetId: Bytes32Schema.parse(row.target_id),
     label: row.label,
-    result: row.revealed ? (row.uphold === true ? 'UPHELD' : 'REJECTED') : 'COMMITTED',
+    result: resultOfVote(row.revealed, row.uphold),
     xp: null,
     at: isoDate(row.at),
   }))
+}
+
+/** What a seat in a jury says. A vote that was not revealed yet only says that it was cast. */
+function resultOfVote(revealed: boolean, uphold: boolean | null): string {
+  if (!revealed) return 'Commit cast'
+  return uphold === true ? 'Vote upheld' : 'Vote rejected'
 }
 
 /**
  * The disputes an account opened.
  *
  * The XP of a dispute comes from the rules: winning it is worth five points and losing it costs
- * five. A dispute that ended in an expiry costs nothing.
+ * five. A dispute that ended in a tie or in an expiry costs nothing.
  */
 async function readChallenges(sql: Db, address: string): Promise<ActivityItem[]> {
   const rows = await sql.query<{
@@ -183,16 +189,30 @@ async function readChallenges(sql: Db, address: string): Promise<ActivityItem[]>
       kind: 'challenge',
       targetId: Bytes32Schema.parse(row.target_id),
       label: row.label,
-      result: row.outcome,
+      result: resultOfChallenge(row.outcome),
       xp: xpOfChallenge(row.outcome),
       at: isoDate(row.created_at as Date | string),
     }))
 }
 
-/** The XP a dispute is worth for the challenger. */
+/** What a dispute ended in. */
+function resultOfChallenge(outcome: string): string {
+  if (outcome === 'UPHELD') return 'Upheld'
+  if (outcome === 'REJECTED') return 'Rejected'
+  if (outcome === 'TIED') return 'Tied'
+  if (outcome === 'EXPIRED') return 'Expired'
+  return 'Open'
+}
+
+/**
+ * The XP a dispute is worth for the challenger.
+ *
+ * The contract only changes the score of a dispute that ended in a verdict. A tie and an expiry
+ * change nothing, so the history shows no XP for them either.
+ */
 function xpOfChallenge(outcome: string): number | null {
-  if (outcome === 'UPHELD') return 5
-  if (outcome === 'REJECTED' || outcome === 'TIED') return -5
+  if (outcome === 'UPHELD') return XP.CHALLENGER_WON
+  if (outcome === 'REJECTED') return XP.CHALLENGER_LOST
   return null
 }
 
@@ -211,7 +231,7 @@ async function readBounties(sql: Db, address: string): Promise<ActivityItem[]> {
     kind: 'bounty',
     targetId: Bytes32Schema.parse(row.target_id),
     label: row.label,
-    result: row.settled ? 'SETTLED' : 'OPEN',
+    result: row.settled ? 'Bounty settled' : 'Bounty created',
     xp: null,
     at: isoDate(row.created_at),
   }))
@@ -250,10 +270,10 @@ function resultOfBond(row: {
   requested_at: Date | string | null
   finalized_at: Date | string | null
 }): string {
-  if (row.finalized_at !== null) return 'WITHDRAWN'
-  if (row.requested_at !== null) return 'WITHDRAWAL_REQUESTED'
-  if (decimalString(row.amount) === '0') return 'SLASHED'
-  return 'DEPOSITED'
+  if (row.finalized_at !== null) return 'Bond finalized'
+  if (row.requested_at !== null) return 'Withdrawal requested'
+  if (decimalString(row.amount) === '0') return 'Bond slashed'
+  return 'Bond deposited'
 }
 
 /** A timestamp as an ISO string, whatever the driver handed back. */

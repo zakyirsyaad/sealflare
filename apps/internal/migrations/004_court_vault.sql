@@ -27,6 +27,13 @@ ALTER TABLE bonds ADD COLUMN created_at timestamptz;
 -- The target a score change belongs to.
 ALTER TABLE score_changes ADD COLUMN target_id text;
 
+-- The phase of a challenge moves with the clock: the commit window ends, then the reveal window
+-- ends. The indexer only sees the events, so the phase of a row is the phase the challenge was
+-- in when the last event came. The read model derives the phase of a dispute from its windows,
+-- because that is the phase the dispute is in right now.
+COMMENT ON COLUMN challenges.phase IS
+  'The phase the challenge was in when the last event of the indexer came. The read model derives the phase of a dispute from its windows.';
+
 -- The payouts of a challenge. The rows hold the payouts of that challenge alone, so a challenge
 -- never shows the money of another one.
 CREATE TABLE payouts (
@@ -43,6 +50,7 @@ CREATE INDEX payouts_challenge_idx ON payouts (challenge_id);
 
 -- What the escrow of a challenge holds. Every movement is a row of its own, so the escrow is
 -- the sum over the rows of that challenge and a range that is read twice counts nothing twice.
+-- No route reads this table yet: it is the ledger the escrow of a dispute is read from later.
 CREATE TABLE escrow_movements (
   challenge_id text NOT NULL,
   tx_hash text NOT NULL,

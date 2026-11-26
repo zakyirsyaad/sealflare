@@ -90,4 +90,15 @@ describe('one bounty', () => {
     const body = await response.json()
     expect(body.error.code).toBe('NOT_FOUND')
   })
+
+  test('an id that is not a plain id never reaches the internal service', async () => {
+    internalGet.mockReset()
+    const response = await detailRoute(request('/api/bounties/..%2Fhealth'), {
+      params: Promise.resolve({ id: '../health' }),
+    })
+    expect(response.status).toBe(400)
+    const body = await response.json()
+    expect(body.error.code).toBe('BAD_REQUEST')
+    expect(internalGet).not.toHaveBeenCalled()
+  })
 })

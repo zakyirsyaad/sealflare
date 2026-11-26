@@ -66,6 +66,26 @@ test('a challenge row follows ChallengeOpened, VoteCommitted, VoteRevealed, Chal
   await close()
 })
 
+test('the short proof of a dispute is kept as the text it is', async () => {
+  const target = targetAddress(0x86)
+  const { db, close } = await createTestDb()
+  await attest({ from: 0, contract: target })
+  await openChallenge({
+    from: 1,
+    targetId: targetIdOf(target),
+    shortProof: `0x${Buffer.from('UNLIMITED_APPROVAL_REQUEST').toString('hex')}` as `0x${string}`,
+  })
+  const id = await activeChallengeOf(targetIdOf(target))
+
+  await indexOnce({ client: chainClient(), sql: db, addresses: all() })
+
+  const challenges = await db.query<{ short_proof: string }>('SELECT short_proof FROM challenges WHERE id = $1', [
+    id.toString(),
+  ])
+  expect(challenges[0]?.short_proof).toBe('UNLIMITED_APPROVAL_REQUEST')
+  await close()
+})
+
 test('the direction of a vote stays empty until the juror reveals it', async () => {
   const target = targetAddress(0x82)
   const { db, close } = await createTestDb()

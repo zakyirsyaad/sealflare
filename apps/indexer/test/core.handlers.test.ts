@@ -16,7 +16,7 @@ const FOURTH = targetAddress(0x24)
 test('an attestation becomes a row with its frozen weight, both ordinals and its short proof', async () => {
   const { db, close } = await createTestDb()
   const guardian = account(0).address.toLowerCase()
-  await attest({ from: 0, contract: FIRST, verdict: 0, shortProof: '0x1234', evidenceURI: 'ipfs://proof' })
+  await attest({ from: 0, contract: FIRST, verdict: 0, shortProof: '0x554e4558', evidenceURI: 'ipfs://proof' })
   await attest({ from: 1, contract: FIRST, verdict: 0 })
 
   const result = await indexOnce({ client: chainClient(), sql: db, addresses: { core: core() } })
@@ -43,7 +43,8 @@ test('an attestation becomes a row with its frozen weight, both ordinals and its
   expect(rows[0]?.weight).toBe(1)
   expect(rows[0]?.attestation_index).toBe(0)
   expect(rows[0]?.safe_ordinal).toBe(1)
-  expect(rows[0]?.short_proof).toBe('0x1234')
+  // The proof is bytes on chain and text in the row.
+  expect(rows[0]?.short_proof).toBe('UNEX')
   expect(rows[0]?.evidence_uri).toBe('ipfs://proof')
   expect(rows[1]?.attestation_index).toBe(1)
   expect(rows[1]?.safe_ordinal).toBe(2)

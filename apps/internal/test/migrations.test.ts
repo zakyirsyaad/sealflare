@@ -19,6 +19,8 @@ const EXPECTED_TABLES = [
   'bounties',
   'bounty_fillers',
   'balances',
+  'payouts',
+  'escrow_movements',
   'scan_cache',
   'rate',
   'nonces',

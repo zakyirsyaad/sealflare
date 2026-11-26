@@ -309,6 +309,7 @@ export async function openChallenge(options: {
   from?: number
   targetId: Hex
   flags?: number
+  shortProof?: Hex
   evidenceURI?: string
   value?: bigint
 }) {
@@ -321,7 +322,7 @@ export async function openChallenge(options: {
       options.targetId,
       options.flags ?? 0,
       `0x${'00'.repeat(32)}` as Hex,
-      '0x',
+      options.shortProof ?? '0x',
       options.evidenceURI ?? '',
     ],
     value: options.value ?? 0n,

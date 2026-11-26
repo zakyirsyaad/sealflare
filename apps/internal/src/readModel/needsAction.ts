@@ -1,4 +1,4 @@
-import { CONSTANTS } from '@sealflare/shared/rules'
+import { CONSTANTS, REWARDED_SAFE_SLOTS, XP, attestationXp } from '@sealflare/shared/rules'
 import { Bytes32Schema, type NeedsAction } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
 
@@ -62,7 +62,7 @@ async function revealDue(sql: Db, address: string, now: Date): Promise<NeedsActi
     targetId: Bytes32Schema.parse(row.target_id),
     challengeId: row.challenge_id,
     dueAt: isoDate(row.reveal_ends_at),
-    detail: 'Your vote in this challenge has to be revealed before the reveal window closes.',
+    detail: 'Reveal your vote before the reveal window closes.',
   }))
 }
 
@@ -91,26 +91,33 @@ async function replyDue(sql: Db, address: string, now: Date): Promise<NeedsActio
 }
 
 /**
- * A dispute that can be closed, because the reveal window is over and enough jurors revealed.
+ * A dispute that can be closed, because the reveal window is over.
  *
  * The dispute is closable by anyone, but the action is only shown to the challenger and to the
  * jurors of that dispute, because they are the ones who wait for it.
+ *
+ * A dispute with a quorum is closed with a verdict. A dispute without one is closed by an
+ * expiry, which the contract allows and which the detail says, so the reader knows which one
+ * waits for them.
  */
 async function canClose(sql: Db, address: string, now: Date): Promise<NeedsAction[]> {
-  const rows = await sql.query<{ id: string; target_id: string; reveal_ends_at: Date | string }>(
-    `SELECT c.id, c.target_id, c.reveal_ends_at
+  const rows = await sql.query<{ id: string; target_id: string; reveal_ends_at: Date | string; reveals: number }>(
+    `SELECT c.id, c.target_id, c.reveal_ends_at, c.reveals
      FROM challenges c
-     WHERE c.outcome = 'PENDING' AND c.reveal_ends_at <= $2 AND c.reveals >= $3
+     WHERE c.outcome = 'PENDING' AND c.reveal_ends_at <= $2
        AND (c.challenger = $1 OR EXISTS (
          SELECT 1 FROM jurors j WHERE j.challenge_id = c.id AND j.address = $1))`,
-    [address, now.toISOString(), CONSTANTS.MIN_REVEALS],
+    [address, now.toISOString()],
   )
   return rows.map((row) => ({
     kind: 'CAN_CLOSE',
     targetId: Bytes32Schema.parse(row.target_id),
     challengeId: row.id,
     dueAt: isoDate(row.reveal_ends_at),
-    detail: 'The reveal window of this challenge is over, so it can be closed.',
+    detail:
+      row.reveals >= CONSTANTS.MIN_REVEALS
+        ? 'The reveal window of this challenge is over, so it can be closed.'
+        : 'The reveal window of this challenge is over and no quorum was reached, so it can be closed by an expiry.',
   }))
 }
 
@@ -118,36 +125,43 @@ async function canClose(sql: Db, address: string, now: Date): Promise<NeedsActio
  * A safe vote that has waited out its 48 hours and can be settled.
  *
  * A vote on a target that is confirmed dangerous, or on a target with an open dispute, cannot be
- * settled, so it is not offered here.
+ * settled, so it is not offered here. A vote that earns no XP is not offered either: the
+ * settlement would settle it for nothing. The XP comes from the frozen rules, so the detail can
+ * name it.
  */
 async function xpClaimable(sql: Db, address: string, now: Date): Promise<NeedsAction[]> {
-  const rows = await sql.query<{ target_id: string; at: Date | string }>(
-    `SELECT a.target_id, a.at
+  const rows = await sql.query<{ target_id: string; at: Date | string; safe_ordinal: number }>(
+    `SELECT a.target_id, a.at, a.safe_ordinal
      FROM attestations a JOIN targets t ON t.target_id = a.target_id
      WHERE a.guardian = $1 AND a.verdict = 'SAFE' AND a.settled = false
+       AND a.cast_during_dispute = false AND a.safe_ordinal > 0 AND a.safe_ordinal <= $4
        AND t.confirmed_danger = false AND t.active_challenge_id IS NULL
        AND a.at + ($2::bigint * interval '1 second') <= $3`,
-    [address, SETTLE_DELAY.toString(), now.toISOString()],
+    [address, SETTLE_DELAY.toString(), now.toISOString(), REWARDED_SAFE_SLOTS],
   )
-  return rows.map((row) => ({
-    kind: 'XP_CLAIMABLE',
-    targetId: Bytes32Schema.parse(row.target_id),
-    dueAt: isoDate(addSeconds(row.at, SETTLE_DELAY)),
-    detail: 'This safe vote has waited out its 48 hours, so its XP can be settled.',
-  }))
+  return rows.map((row) => {
+    const xp = attestationXp({ verdict: 'SAFE', safeOrdinal: row.safe_ordinal, eligible: true, confirmedDanger: false })
+    return {
+      kind: 'XP_CLAIMABLE',
+      targetId: Bytes32Schema.parse(row.target_id),
+      dueAt: isoDate(addSeconds(row.at, SETTLE_DELAY)),
+      detail: `Claim ${xp} XP from your ${xp === XP.EARLY_SAFE ? 'early' : 'confirming'} SAFE attestation.`,
+    }
+  })
 }
 
 /**
  * A bond whose withdrawal may be finalized.
  *
  * The bond stays slashable until it is finalized, so the action waits for the whole unbonding
- * window of seven days.
+ * window of seven days. A bond that a dispute holds is locked, and the Vault refuses to
+ * finalize it, so it is not offered.
  */
 async function bondReady(sql: Db, address: string, now: Date): Promise<NeedsAction[]> {
   const rows = await sql.query<{ target_id: string; withdrawable_at: Date | string }>(
     `SELECT target_id, withdrawable_at FROM bonds
      WHERE depositor = $1 AND requested_at IS NOT NULL AND withdrawable_at IS NOT NULL
-       AND finalized_at IS NULL AND withdrawable_at <= $2`,
+       AND finalized_at IS NULL AND locked = false AND withdrawable_at <= $2`,
     [address, now.toISOString()],
   )
   return rows.map((row) => ({
@@ -176,7 +190,7 @@ async function bountySettleable(sql: Db, address: string, now: Date): Promise<Ne
     targetId: Bytes32Schema.parse(row.target_id),
     bountyId: row.id,
     dueAt: isoDate(row.settleable_at),
-    detail: 'This bounty can be settled, and the slots that filled are paid out.',
+    detail: 'Settle the bounty and pay the fillers.',
   }))
 }
 

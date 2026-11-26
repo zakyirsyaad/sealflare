@@ -63,7 +63,7 @@ export async function listBounties(
        b.settled, (SELECT count(*)::int FROM bounty_fillers f WHERE f.bounty_id = b.id) AS filled
      FROM bounties b
      WHERE ($1::text IS NULL OR b.target_id = $1) AND ($2::text IS NULL OR b.requester = $2)
-     ORDER BY b.settled ASC, b.created_at DESC, b.id DESC
+     ORDER BY b.settled ASC, b.created_at DESC, length(b.id) DESC, b.id DESC
      LIMIT $3 OFFSET $4`,
     [filters.targetId ?? null, filters.requester ?? null, limit, (page - 1) * limit],
   )

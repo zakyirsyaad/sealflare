@@ -2,7 +2,7 @@ import type { Address, Hex } from 'viem'
 import { CONSTANTS } from '@sealflare/shared/rules'
 import type { Db } from '@sealflare/internal/db'
 import type { TimedVaultEvent } from '../decodeVault'
-import { labelOfTarget, requireTarget } from './rows'
+import { labelOfTarget, requireBounty, requireTarget } from './rows'
 
 /**
  * Writes one Vault event into the database.
@@ -68,12 +68,14 @@ async function applyBondDeposited(tx: Db, event: TimedVaultEvent & { name: 'Bond
  *
  * A bond row is written by the deposit alone, so an event for a bond the database does not have
  * changes nothing. That is what the local stub does: it reports the life of a bond that was
- * never deposited.
+ * never deposited. The target of the bond is required all the same, because a target that the
+ * database does not have means that the indexer started too late.
  */
 async function applyBondWithdrawalRequested(
   tx: Db,
   event: TimedVaultEvent & { name: 'BondWithdrawalRequested' },
 ): Promise<void> {
+  await requireTarget(tx, event.args.targetId, 'Vault')
   await tx.query(
     `UPDATE bonds SET requested_at = $3, withdrawable_at = $4
      WHERE target_id = $1 AND depositor = $2`,
@@ -88,6 +90,7 @@ async function applyBondWithdrawalRequested(
 
 /** The bond left the Vault. The amount is credited to the balance of its owner. */
 async function applyBondWithdrawn(tx: Db, event: TimedVaultEvent & { name: 'BondWithdrawn' }): Promise<void> {
+  await requireTarget(tx, event.args.targetId, 'Vault')
   await tx.query(
     `UPDATE bonds SET amount = 0, withdrawable_at = NULL, finalized_at = $3
      WHERE target_id = $1 AND depositor = $2`,
@@ -97,6 +100,7 @@ async function applyBondWithdrawn(tx: Db, event: TimedVaultEvent & { name: 'Bond
 
 /** The bond of the publisher of record is locked for the duration of a dispute. */
 async function applyBondLocked(tx: Db, event: TimedVaultEvent & { name: 'BondLocked' }): Promise<void> {
+  await requireTarget(tx, event.args.targetId, 'Vault')
   await tx.query(
     `UPDATE bonds SET locked = true, locked_by_challenge_id = $3
      WHERE target_id = $1 AND depositor = $2`,
@@ -108,6 +112,7 @@ async function applyBondLocked(tx: Db, event: TimedVaultEvent & { name: 'BondLoc
  * The dispute is over: part of the bond was slashed into the escrow and the rest stays a bond.
  */
 async function applyBondSettled(tx: Db, event: TimedVaultEvent & { name: 'BondSettled' }): Promise<void> {
+  await requireTarget(tx, event.args.targetId, 'Vault')
   await tx.query(
     `UPDATE bonds SET amount = $3, locked = false, locked_by_challenge_id = NULL
      WHERE target_id = $1 AND depositor = $2`,
@@ -170,6 +175,7 @@ async function applyBountyCreated(tx: Db, event: TimedVaultEvent & { name: 'Boun
 
 /** The bounty was paid out. */
 async function applyBountySettled(tx: Db, event: TimedVaultEvent & { name: 'BountySettled' }): Promise<void> {
+  await requireBounty(tx, event.args.id, 'Vault')
   await tx.query('UPDATE bounties SET settled = true WHERE id = $1', [event.args.id.toString()])
 }
 
