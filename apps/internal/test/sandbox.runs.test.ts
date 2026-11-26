@@ -3,6 +3,7 @@ import { CONSTANTS } from '@sealflare/shared/rules'
 import type { SandboxResult } from '@sealflare/shared/schemas'
 import { cachePut } from '../src/sandbox/cache'
 import { pollOnce } from '../src/sandbox/poller'
+import type { Db } from '../src/db'
 import { body, createTestDb, get, post } from './helpers'
 import {
   ADDRESS,
@@ -29,6 +30,37 @@ type StatusAnswer = {
 
 const entries = bundle()
 const BUNDLE_HASH = hashOf(entries)
+
+/**
+ * A database whose queue position cannot be read.
+ *
+ * The position of a run is read right after its row is written, so a failure there is a failure
+ * of the second statement of the queue.
+ */
+function dbWithoutPosition(db: Db): Db {
+  const fails = (text: string): boolean => text.includes('count(*)')
+  const refuse = (text: string): void => {
+    if (fails(text)) throw new Error('The position of the run cannot be read.')
+  }
+  return {
+    ...db,
+    async query<T>(text: string, params?: readonly unknown[]): Promise<T[]> {
+      refuse(text)
+      return db.query<T>(text, params)
+    },
+    async transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T> {
+      return db.transaction(tx =>
+        fn({
+          ...tx,
+          async query<R>(text: string, params?: readonly unknown[]): Promise<R[]> {
+            refuse(text)
+            return tx.query<R>(text, params)
+          },
+        }),
+      )
+    },
+  }
+}
 
 test('a cached failed result is returned without using quota or calling the worker', async () => {
   const { db, close } = await createTestDb()
@@ -108,6 +140,49 @@ test('quota is taken when the run is queued, and the sixth run in a UTC day is Q
   expect(quota[0]?.used).toBe(CONSTANTS.SANDBOX_DAILY_RUNS)
   const runs = await db.query('SELECT * FROM sandbox_runs')
   expect(runs).toHaveLength(CONSTANTS.SANDBOX_DAILY_RUNS)
+  await close()
+})
+
+test('the day of the quota of a run is the day the slot was taken, not the day the row was written', async () => {
+  const { db, close } = await createTestDb()
+  const clock = { at: new Date('2026-11-26T23:59:50.000Z') }
+  // The skill is read after the slot was taken, and the read takes the clock over midnight.
+  const { app } = sandboxFixture(db, {
+    now: () => clock.at,
+    onFetch: () => {
+      clock.at = new Date('2026-11-27T00:00:10.000Z')
+    },
+  })
+
+  const created = await post(
+    app,
+    '/sandbox/runs',
+    signedRequest({ bundleHash: BUNDLE_HASH, expiry: Math.floor(clock.at.getTime() / 1000) + 300 }),
+  )
+  expect(created.status).toBe(200)
+
+  const rows = await db.query<{ quota_day: string; created_at: string }>(
+    'SELECT quota_day, created_at FROM sandbox_runs',
+  )
+  expect(new Date(String(rows[0]?.created_at)).toISOString()).toBe('2026-11-27T00:00:10.000Z')
+  expect(new Date(String(rows[0]?.quota_day)).toISOString()).toBe('2026-11-26T00:00:00.000Z')
+  await close()
+})
+
+test('a run whose position cannot be read leaves no row and no slot of the quota behind', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = sandboxFixture(dbWithoutPosition(db))
+
+  const created = await post(app, '/sandbox/runs', signedRequest({ bundleHash: BUNDLE_HASH }))
+  expect(created.status).toBe(500)
+  expect((await body<ErrorAnswer>(created)).error.code).toBe('INTERNAL')
+
+  // The row of the run and the reading of its position are one thing, so a failure of the second
+  // leaves no run behind that would be read again and refunded twice.
+  const runs = await db.query('SELECT * FROM sandbox_runs')
+  expect(runs).toHaveLength(0)
+  const quota = await db.query<{ used: number }>('SELECT used FROM sandbox_quota')
+  expect(quota[0]?.used ?? 0).toBe(0)
   await close()
 })
 

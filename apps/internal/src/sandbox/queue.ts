@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { SandboxResult, type ProbeId } from '@sealflare/shared/schemas'
 import type { Db } from '../db'
-import { utcDay } from './quota'
 
 /**
  * The queue of sandbox runs.
@@ -142,10 +141,16 @@ export async function awaitingEvidenceRun(deps: SandboxDeps): Promise<RunRow | n
  * Puts a run in the queue.
  *
  * The row is written after the quota was taken, so a run that is in the queue has a slot
- * reserved for it. The queue position is stored as well, and read again whenever it is shown.
+ * reserved for it. The day the slot was taken on is stored with the row, so a slot that is given
+ * back goes back to the day it was taken on. The queue position is stored as well, and read again
+ * whenever it is shown.
  *
  * A run that comes from the cache carries its result with it and takes no slot of the quota: the
  * worker is never asked for it.
+ *
+ * The row and the reading of its position are one transaction. There is no call to the network
+ * between them, so the transaction is short. It keeps the two together: a run whose position
+ * cannot be read leaves no row behind, and the slot of the quota is given back.
  */
 export async function enqueue(
   deps: SandboxDeps,
@@ -155,34 +160,39 @@ export async function enqueue(
     bundleHash: string
     src: string
     skillMd: string
+    /** The day the slot of the quota was taken on. A run from the cache takes no slot. */
+    quotaDay: string | null
     cached?: SandboxResult | null
   },
 ): Promise<number> {
   const now = deps.now()
   const cached = input.cached ?? null
-  const rows = await deps.sql.query<RunRow>(
-    `INSERT INTO sandbox_runs
-       (run_id, address, bundle_hash, probe_set_version, model_id, status, src, skill_md,
-        quota_day, result, from_cache, created_at)
-     VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7, $8::date, $9, $10, $11)
-     RETURNING *`,
-    [
-      input.runId,
-      input.address,
-      input.bundleHash,
-      deps.probeSetVersion,
-      deps.modelId,
-      input.src,
-      input.skillMd,
-      cached === null ? utcDay(now) : null,
-      cached === null ? null : JSON.stringify(cached),
-      cached !== null,
-      now.toISOString(),
-    ],
-  )
-  const row = rows[0]
-  if (row === undefined) throw new Error('The run could not be queued.')
-  return positionOf(deps, row)
+  return deps.sql.transaction(async tx => {
+    const scoped: SandboxDeps = { ...deps, sql: tx }
+    const rows = await scoped.sql.query<RunRow>(
+      `INSERT INTO sandbox_runs
+         (run_id, address, bundle_hash, probe_set_version, model_id, status, src, skill_md,
+          quota_day, result, from_cache, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7, $8::date, $9, $10, $11)
+       RETURNING *`,
+      [
+        input.runId,
+        input.address,
+        input.bundleHash,
+        deps.probeSetVersion,
+        deps.modelId,
+        input.src,
+        input.skillMd,
+        input.quotaDay,
+        cached === null ? null : JSON.stringify(cached),
+        cached !== null,
+        now.toISOString(),
+      ],
+    )
+    const row = rows[0]
+    if (row === undefined) throw new Error('The run could not be queued.')
+    return positionOf(scoped, row)
+  })
 }
 
 /**

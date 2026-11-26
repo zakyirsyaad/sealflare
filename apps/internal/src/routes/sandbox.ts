@@ -231,6 +231,9 @@ async function readSkill(
  * long as the network takes. The slot of the quota is therefore given back with a second
  * statement when the fetch or the insert fails, so a run that was never queued leaves no slot
  * behind.
+ *
+ * The day the slot was taken on is written with the row of the run, so a slot that is given back
+ * later goes back to the day it was taken on and not to the day the row was written.
  */
 async function queueRun(
   deps: SandboxRouteDeps,
@@ -260,6 +263,7 @@ async function queueRun(
         bundleHash: request.bundleHash,
         src: request.src,
         skillMd: skill.skillMd,
+        quotaDay: quota.day,
       },
     )
     return { data: { runId, status: 'queued', queuePosition: position, quotaLeft: quota.left } }
@@ -294,6 +298,7 @@ async function queueCached(
       bundleHash: request.bundleHash,
       src: request.src,
       skillMd: '',
+      quotaDay: null,
       cached,
     })
     const left = await quotaLeft({ sql: deps.sql, now: deps.now }, request.address)

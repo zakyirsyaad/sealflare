@@ -100,13 +100,17 @@ export function signedRequest(options: {
 }
 
 /** The fake repository. It records every bundle that was asked for. */
-export function fakeFetcher(entries: BundleEntry[], options: { hang?: boolean } = {}): RepoFetcher & { asked: SkillRef[] } {
+export function fakeFetcher(
+  entries: BundleEntry[],
+  options: { hang?: boolean; onFetch?: () => void } = {},
+): RepoFetcher & { asked: SkillRef[] } {
   const asked: SkillRef[] = []
   return {
     asked,
     listSkillFolders: async () => ({ commit: 'a'.repeat(40), folders: [''] }),
     fetchBundle: async (ref: SkillRef) => {
       asked.push(ref)
+      options.onFetch?.()
       if (options.hang === true) return new Promise<BundleEntry[]>(() => {})
       return entries
     },
@@ -189,15 +193,23 @@ export function sandboxFixture(
     token?: string | null
     hang?: boolean
     deadlineMs?: number
+    /** The clock of the service. A test that moves the clock itself passes one. */
+    now?: () => Date
+    /** What happens when the repository is asked for the skill. */
+    onFetch?: () => void
   } = {},
 ): SandboxFixture {
   const worker = options.worker ?? fakeWorker()
-  const fetcher = fakeFetcher(options.entries ?? bundle(), { hang: options.hang === true })
+  const fetcher = fakeFetcher(options.entries ?? bundle(), {
+    hang: options.hang === true,
+    ...(options.onFetch === undefined ? {} : { onFetch: options.onFetch }),
+  })
+  const now = options.now ?? ((): Date => NOW)
   const { app } = testApp(db, {
-    now: () => NOW,
+    now,
     sandbox: {
       sql: db,
-      now: () => NOW,
+      now,
       chain: fakeChain({ ...(options.signer === undefined ? {} : { signer: options.signer }), ...(options.holder === undefined ? {} : { holder: options.holder }) }),
       skills: {
         fetcher,
