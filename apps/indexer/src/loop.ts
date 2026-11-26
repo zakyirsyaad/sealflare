@@ -1,6 +1,6 @@
 import type { Address, Hex, PublicClient } from 'viem'
 import type { Db } from '@sealflare/internal/db'
-import { assertCursorStillOnChain, readCursor, writeCursor } from './cursor'
+import { assertCursorStillOnChain, cursorIdOf, readCursor, writeCursor } from './cursor'
 import { decodeRange, type AnyEvent, type IndexedAddresses } from './decodeAll'
 import { toJsonValue } from './decode'
 import { applyCoreEvent } from './handlers/core'
@@ -44,7 +44,7 @@ export async function indexOnce(deps: IndexOnceDeps): Promise<IndexOnceResult> {
   const head = await deps.client.getBlock({ blockTag: 'finalized' })
   const finalized = head.number
 
-  const cursorId = deps.addresses.core.toLowerCase()
+  const cursorId = cursorIdOf(deps.addresses)
   const cursor = await readCursor(deps.sql, cursorId)
   if (cursor) await assertCursorStillOnChain(deps.client, cursor)
 

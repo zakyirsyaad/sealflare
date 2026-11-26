@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
+import { toNextWeight } from '../src/readModel/activity'
 import { body, createTestDb, get, testApp } from './helpers'
-import { asAnswer, GUARDIAN, insertTarget, insertVote, targetId } from './targets.seed'
+import { asAnswer, GUARDIAN, GUARDIAN_B, insertTarget, insertVote, targetId } from './targets.seed'
 import { insertBalance, insertBond, insertBounty, insertChallenge, insertFiller, insertJuror } from './court.seed'
 
 /**
@@ -122,6 +123,66 @@ test('a SAFE vote older than 48 hours appears as XP_CLAIMABLE', async () => {
   const actions = activity.needsAction.filter((action) => action.kind === 'XP_CLAIMABLE')
   expect(actions).toHaveLength(1)
   expect(actions[0]).toMatchObject({ targetId: id, dueAt: '2026-11-26T10:00:00.000Z' })
+  await close()
+})
+
+test('the distance to the next weight follows the thresholds of the frozen rules', () => {
+  const distances = [-5, 0, 9, 10, 24, 25, 49, 50, 99, 100, 250].map((score) => toNextWeight(score))
+  expect(distances).toEqual([5, 10, 1, 15, 1, 25, 1, 50, 1, null, null])
+  // A score that is no whole number earns no weight, so it has no next one to name either.
+  expect(toNextWeight(2.5)).toBeNull()
+})
+
+/** A target the jury confirmed as dangerous: three votes were in when the verdict landed. */
+async function confirmedDangerTarget(db: Parameters<typeof insertTarget>[0], id: string, withMoment = true) {
+  await insertTarget(db, { id, confirmedDanger: true })
+  if (!withMoment) return
+  await db.query('UPDATE targets SET count_at_verdict = 3, verdict_at = $2 WHERE target_id = $1', [
+    id,
+    '2026-11-25T12:00:00.000Z',
+  ])
+}
+
+test('a DANGER vote cast before the verdict that confirmed the danger appears as XP_CLAIMABLE', async () => {
+  const { db, close } = await createTestDb()
+  const id = targetId(70)
+  await confirmedDangerTarget(db, id)
+  await insertVote(db, { targetId: id, index: 1, guardian: GUARDIAN, verdict: 'DANGER', safeOrdinal: 0 })
+
+  const activity = await readActivity(db, GUARDIAN)
+  const actions = activity.needsAction.filter((action) => action.kind === 'XP_CLAIMABLE')
+  expect(actions).toHaveLength(1)
+  expect(actions[0]).toMatchObject({ targetId: id, dueAt: '2026-11-25T12:00:00.000Z' })
+  await close()
+})
+
+test('a DANGER vote that settles for nothing does not appear as XP_CLAIMABLE', async () => {
+  const { db, close } = await createTestDb()
+  const id = targetId(71)
+  await confirmedDangerTarget(db, id)
+  // Cast after the verdict (index 3 is the fourth vote), cast during a dispute, and already settled.
+  await insertVote(db, { targetId: id, index: 3, guardian: GUARDIAN, verdict: 'DANGER', safeOrdinal: 0 })
+  await insertVote(db, { targetId: id, index: 1, guardian: GUARDIAN_B, verdict: 'DANGER', safeOrdinal: 0, castDuringDispute: true })
+  await insertVote(db, { targetId: id, index: 2, guardian: GUARDIAN, verdict: 'DANGER', safeOrdinal: 0, settled: true })
+
+  const activity = await readActivity(db, GUARDIAN)
+  expect(activity.needsAction.filter((action) => action.kind === 'XP_CLAIMABLE')).toHaveLength(0)
+  const other = await readActivity(db, GUARDIAN_B)
+  expect(other.needsAction.filter((action) => action.kind === 'XP_CLAIMABLE')).toHaveLength(0)
+  await close()
+})
+
+test('a DANGER vote on a target that is not confirmed, or whose verdict moment is unknown, offers nothing', async () => {
+  const { db, close } = await createTestDb()
+  const open = targetId(72)
+  const unknown = targetId(73)
+  await insertTarget(db, { id: open })
+  await confirmedDangerTarget(db, unknown, false)
+  await insertVote(db, { targetId: open, index: 0, guardian: GUARDIAN, verdict: 'DANGER', safeOrdinal: 0 })
+  await insertVote(db, { targetId: unknown, index: 1, guardian: GUARDIAN, verdict: 'DANGER', safeOrdinal: 0 })
+
+  const activity = await readActivity(db, GUARDIAN)
+  expect(activity.needsAction.filter((action) => action.kind === 'XP_CLAIMABLE')).toHaveLength(0)
   await close()
 })
 

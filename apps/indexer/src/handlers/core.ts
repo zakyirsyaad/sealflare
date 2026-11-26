@@ -66,6 +66,11 @@ async function applyTargetCreated(tx: Db, event: TimedEvent & { name: 'TargetCre
       event.blockNumber.toString(),
     ],
   )
+  // A bounty asked for before the target existed has no label yet, so it takes the one of the target.
+  await tx.query('UPDATE bounties SET label = $2 WHERE target_id = $1 AND label IS NULL', [
+    event.args.targetId,
+    address ?? event.args.target,
+  ])
 }
 
 async function applyGuardianCreated(tx: Db, event: TimedEvent & { name: 'GuardianCreated' }): Promise<void> {
@@ -255,6 +260,14 @@ async function applyVerdictApplied(tx: Db, event: TimedEvent & { name: 'VerdictA
   // confirms nothing new.
   if (outcome === 'UPHELD' && !before[0]?.confirmed_danger) {
     await addPendingPenalties(tx, event.args.targetId)
+    // CoreSettlement pays XP for a DANGER vote only when its index is below the count of votes at
+    // this verdict, so both the count and the moment are kept.
+    await tx.query(
+      `UPDATE targets SET verdict_at = $2,
+         count_at_verdict = (SELECT count(*)::int FROM attestations WHERE target_id = $1)
+       WHERE target_id = $1`,
+      [event.args.targetId, event.at.toISOString()],
+    )
   }
 }
 

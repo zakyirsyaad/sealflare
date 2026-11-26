@@ -65,6 +65,15 @@ export function missingRow(what: string, key: string, contract = 'event'): Fatal
  * The contract does not carry a name, so the label of the target is the label of every row that
  * points at it.
  */
+/**
+ * The label of a target Core may not have recorded yet, or null. A bounty can be asked for before
+ * the target exists, and it takes its label when `TargetCreated` arrives.
+ */
+export async function labelOfKnownTarget(tx: Db, targetId: string): Promise<string | null> {
+  const rows = await tx.query<{ label: string }>('SELECT label FROM targets WHERE target_id = $1', [targetId])
+  return rows[0]?.label ?? null
+}
+
 export async function labelOfTarget(tx: Db, targetId: string): Promise<string> {
   const rows = await tx.query<{ label: string }>('SELECT label FROM targets WHERE target_id = $1', [targetId])
   const label = rows[0]?.label

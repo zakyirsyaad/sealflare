@@ -2,7 +2,7 @@ import type { Address, Hex } from 'viem'
 import { CONSTANTS } from '@sealflare/shared/rules'
 import type { Db } from '@sealflare/internal/db'
 import type { TimedVaultEvent } from '../decodeVault'
-import { labelOfTarget, requireBounty, requireChallenge, requireTarget } from './rows'
+import { labelOfKnownTarget, requireBounty, requireChallenge, requireTarget } from './rows'
 
 /**
  * Writes one Vault event into the database.
@@ -149,9 +149,13 @@ async function applyBondSettled(tx: Db, event: TimedVaultEvent & { name: 'BondSe
 /**
  * A stake joined the escrow of a challenge.
  *
- * The stake is paid in the same transaction that opens the dispute, and the Court emits the
- * opening after the Vault has taken the stake. The row of the dispute is therefore written in
- * the same range, a moment later, and the escrow of a dispute is only read through it.
+ * The stake is paid in the same transaction as the event that names its challenge. The real Court
+ * emits that event first (`openChallenge` emits `ChallengeOpened` and `commitVote` emits
+ * `VoteCommitted` before either calls `depositStake`), but `CourtStub`, which the local chain and
+ * these tests run against, calls `depositStake` first. So the row of the dispute may not be there
+ * yet, and the stake is written without requiring it. Requiring it, so that a late `START_BLOCK`
+ * is caught here too, needs the stub to emit first, which is a change in `contracts/` for the
+ * founder.
  */
 async function applyStakeDeposited(tx: Db, event: TimedVaultEvent & { name: 'StakeDeposited' }): Promise<void> {
   await addToEscrow(tx, event, event.args.challengeId, event.args.amount)
@@ -183,8 +187,10 @@ async function applyDistributed(tx: Db, event: TimedVaultEvent & { name: 'Distri
 
 /** A bounty was created. Its slots fill from the attestations that come after it. */
 async function applyBountyCreated(tx: Db, event: TimedVaultEvent & { name: 'BountyCreated' }): Promise<void> {
-  await requireTarget(tx, event.args.targetId, 'Vault')
-  const label = await labelOfTarget(tx, event.args.targetId)
+  // The target may not exist yet: `createBounty` reads a target Core has not recorded as one with
+  // no attestations, so asking for the first ones on a new contract is normal. The label follows
+  // when `TargetCreated` arrives, and a missing row here must never stop the indexer.
+  const label = await labelOfKnownTarget(tx, event.args.targetId)
   const createdAt = event.at.toISOString()
   await tx.query(
     `INSERT INTO bounties (id, target_id, label, requester, slots, amount, created_at, settleable_at, settled, start_index)

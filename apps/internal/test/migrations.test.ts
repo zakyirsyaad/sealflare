@@ -29,7 +29,14 @@ const EXPECTED_TABLES = [
   'sandbox_quota',
 ]
 
-const MIGRATIONS = ['001_indexer.sql', '002_operational.sql', '003_guards.sql', '004_court_vault.sql']
+const MIGRATIONS = [
+  '001_indexer.sql',
+  '002_operational.sql',
+  '003_guards.sql',
+  '004_court_vault.sql',
+  '005_bounty_before_target.sql',
+  '006_verdict_moment.sql',
+]
 
 const MIGRATIONS_DIR = new URL('../migrations/', import.meta.url)
 

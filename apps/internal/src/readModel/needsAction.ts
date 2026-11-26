@@ -38,6 +38,7 @@ export async function needsActionFor(sql: Db, address: string, now: Date): Promi
     ...(await replyDue(sql, lower, now)),
     ...(await canClose(sql, lower, now)),
     ...(await xpClaimable(sql, lower, now)),
+    ...(await dangerXpClaimable(sql, lower)),
     ...(await bondReady(sql, lower, now)),
     ...(await bountySettleable(sql, lower, now)),
   ]
@@ -148,6 +149,34 @@ async function xpClaimable(sql: Db, address: string, now: Date): Promise<NeedsAc
       detail: `Claim ${xp} XP from your ${xp === XP.EARLY_SAFE ? 'early' : 'confirming'} SAFE attestation.`,
     }
   })
+}
+
+/**
+ * A DANGER vote on a target that a jury confirmed as dangerous, which can be settled for XP.
+ *
+ * CoreSettlement pays a DANGER vote once the danger is confirmed, but only when the vote was cast
+ * before that verdict (its index is below the number of votes at the verdict) and outside a
+ * dispute. Any other DANGER vote settles for nothing, so it is not offered. It is due from the
+ * moment of the verdict, with no waiting period. A target whose verdict moment is unknown, because
+ * it was confirmed before the indexer kept it, offers nothing instead of a guess.
+ */
+async function dangerXpClaimable(sql: Db, address: string): Promise<NeedsAction[]> {
+  const rows = await sql.query<{ target_id: string; verdict_at: Date | string }>(
+    `SELECT a.target_id, t.verdict_at
+     FROM attestations a JOIN targets t ON t.target_id = a.target_id
+     WHERE a.guardian = $1 AND a.verdict = 'DANGER' AND a.settled = false
+       AND a.cast_during_dispute = false
+       AND t.confirmed_danger = true AND t.verdict_at IS NOT NULL AND t.count_at_verdict IS NOT NULL
+       AND a.attestation_index < t.count_at_verdict`,
+    [address],
+  )
+  const xp = attestationXp({ verdict: 'DANGER', safeOrdinal: 0, eligible: true, confirmedDanger: true })
+  return rows.map((row) => ({
+    kind: 'XP_CLAIMABLE',
+    targetId: Bytes32Schema.parse(row.target_id),
+    dueAt: isoDate(row.verdict_at),
+    detail: `Claim ${xp} XP from your DANGER attestation, which the jury confirmed.`,
+  }))
 }
 
 /**
