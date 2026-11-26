@@ -15,6 +15,12 @@ pnpm --filter @sealflare/internal start
 
 The service listens on port 3040 by default. `PORT` changes it.
 
+`SANDBOX_PROBE_SET_VERSION` and `SANDBOX_MODEL_ID` name the probe set and the model the sandbox
+runs now. Both are optional, but a clean sandbox result is only shown when both are set and the
+stored result comes from that version. Without them no clean result is shown, because a result of
+an unknown version cannot be called current. A failed result is kept whatever version produced it,
+so a fuzz failure is never hidden.
+
 Every request except `GET /health` needs the key:
 
 ```bash
@@ -35,8 +41,38 @@ line. Generate one with `openssl rand -base64 48`.
 | `POST /nonce/release` | Gives a reservation back, so a request that failed can be signed again. |
 | `PUT /scans/:targetId` | Stores the last scan of a target. |
 | `GET /scans/:targetId` | Returns the last scan of a target, or 404 `RESULT_NOT_CACHED`. |
+| `GET /targets` | The list of targets, newest vote first. `page`, `limit`, `type` and `address` narrow it. |
+| `GET /targets/tier-candidates` | The targets that still need their tier, at most 500 of them. |
+| `GET /targets/:targetId` | One target with its signal, its scan and its sandbox result. |
+| `GET /targets/:targetId/attestations` | The votes of a target, in the order the contract numbered them. |
 
 Every answer has the same shape: `{ success: true, data }` or `{ success: false, error }`.
+
+The answers that come from indexed data carry `meta.finalizedBlock`, the last final block the
+indexer has read, and a list carries `meta.page` as well. The tier of a target is not one of
+them: the tier is read from `Core.tierOf` and never computed from the indexed rows, so the
+internal answers carry `tier: null` and the public API fills it.
+
+The query of a list is read with the same shared schema the public API uses, so the two cannot
+drift apart. A query the schema refuses is 400 `BAD_REQUEST`. The tier filter is refused the
+same way, with a message that says why: the tier is read from the chain, so the internal service
+cannot answer it and will not drop it silently either.
+
+Every answer is read in one snapshot, so the rows and the block they were read at cannot come
+from two different moments. The number of rows a list holds is counted on its own, so a page
+past the end of the list still names the real total.
+
+The source of a contract is its address. The source of a skill is the pinned GitHub reference
+of its cached scan, because the contract only knows the bundle hash. A skill that was never
+scanned has no source, and the answer says so instead of making something up.
+
+The signal of a target is split in the two rows the interface shows: the new Agent ID holders,
+who vote with weight 1, and the experienced Guardians, who vote with weight 2 or more. Every
+group shows the votes per verdict, the total weight and the flags that were reported. The
+signal is never one number.
+
+The candidate list holds at most 500 candidates. More than that is 503 `INTERNAL`, and the
+caller has to narrow the filters.
 
 The rate window is at most one hour. The caller hashes the address of the caller with a daily
 salt, and the key is exactly 64 hex characters (one SHA-256 or keccak output). An address is 40

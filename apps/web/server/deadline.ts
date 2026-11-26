@@ -7,16 +7,22 @@
  */
 export const DEADLINE_MS = 8_000
 
+/** The moment a request that starts now has to be answered by. Created once, at the start of the route. */
+export function deadlineFromNow(): number {
+  return Date.now() + DEADLINE_MS
+}
+
 /**
  * The work of a request, with a deadline.
  *
- * The work is not cancelled when the deadline passes, because the chain reads cannot be
- * withdrawn. The answer goes out without them.
+ * The deadline is a moment, created once by the route and passed down, so the reads inside the
+ * work stop at the same moment the answer goes out. The work is not cancelled when the deadline
+ * passes, because the chain reads cannot be withdrawn. The answer goes out without them.
  */
-export async function withDeadline<T>(work: Promise<T>): Promise<T> {
+export async function withDeadline<T>(work: Promise<T>, deadlineAt: number = deadlineFromNow()): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('The deadline of the request passed.')), DEADLINE_MS)
+    timer = setTimeout(() => reject(new Error('The deadline of the request passed.')), Math.max(0, deadlineAt - Date.now()))
   })
   try {
     return await Promise.race([work, deadline])

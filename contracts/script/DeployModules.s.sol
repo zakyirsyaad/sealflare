@@ -11,8 +11,8 @@ import {DeployCore} from "./DeployCore.s.sol";
 /// treasury) and Court(core, vault), calls setModules, and adds both to the file. After this
 /// the deployer holds no authority over any contract.
 ///
-/// Must be sent by the same hardware wallet that deployed Core:
-///   TREASURY=<address> forge script DeployModules --root contracts --rpc-url $BSC_RPC_URL --ledger --sender <address> --broadcast --verify
+/// Must be sent by the same deployer account that deployed Core:
+///   TREASURY=<address> forge script DeployModules --root contracts --rpc-url $BSC_RPC_URL --account deployer --sender <address> --broadcast --verify
 contract DeployModules is Script {
     error MissingTreasury();
     error NotCoreDeployer(address sender, address deployer);

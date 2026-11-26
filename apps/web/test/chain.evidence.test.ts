@@ -211,3 +211,70 @@ describe('the evidence of a target, read through a public-RPC-like node', () => 
     await expect((await reader()).evidence(old, T0, 0)).rejects.toThrow(RangeError)
   })
 })
+
+describe('the binding of a target', () => {
+  const publisherBound = coreAbi.find(item => item.type === 'event' && item.name === 'PublisherBound')!
+
+  const SPONSOR = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
+  const current = { publisher: GUARDIAN as Hex, role: 'VERIFIED_PUBLISHER' as const }
+
+  /** The role is the index of the enum of Core: 1 is a sponsor, 2 is the verified publisher. */
+  function boundLog(block: bigint, publisher: string = GUARDIAN, role = 2) {
+    const data = encodeAbiParameters(
+      publisherBound.inputs.filter(input => !input.indexed),
+      [role, 0] as never,
+    )
+    const topics = encodeEventTopics({
+      abi: coreAbi,
+      eventName: 'PublisherBound',
+      args: { targetId: TARGET, publisher },
+    } as never)
+    return {
+      address: CORE.toLowerCase(), blockHash: `0x${'11'.repeat(32)}`, blockNumber: numberToHex(block), data, logIndex: '0x0',
+      removed: false, topics, transactionHash: `0x${'9'.repeat(64)}`, transactionIndex: '0x0',
+    }
+  }
+
+  test('a confirmed binding is read once while the target still reports the same publisher', async () => {
+    state.logs = [boundLog(HEAD - 100n)] as never
+    const chain = await reader()
+    const first = await chain.binding(TARGET, timestampOf(CREATED_BLOCK), current)
+    expect(first?.publisher.toLowerCase()).toBe(GUARDIAN.toLowerCase())
+    const reads = state.logRanges.length
+    expect(reads).toBeGreaterThan(0)
+    await chain.binding(TARGET, timestampOf(CREATED_BLOCK), current)
+    expect(state.logRanges.length).toBe(reads)
+  })
+
+  test('a binding that is too close to the head is read again, because the block can still change', async () => {
+    state.logs = [boundLog(HEAD - 3n)] as never
+    const chain = await reader()
+    await chain.binding(TARGET, timestampOf(CREATED_BLOCK), current)
+    const reads = state.logRanges.length
+    await chain.binding(TARGET, timestampOf(CREATED_BLOCK), current)
+    expect(state.logRanges.length).toBeGreaterThan(reads)
+  })
+
+  test('a verified publisher that replaces another one is read from the log, not from the cache', async () => {
+    state.logs = [boundLog(HEAD - 100n)] as never
+    const chain = await reader()
+    await chain.binding(TARGET, timestampOf(CREATED_BLOCK), current)
+    // A fresh proof of the current owner() binds the target again, and the latest event wins.
+    state.logs = [boundLog(HEAD - 100n), boundLog(HEAD - 50n, SPONSOR)] as never
+    const replaced = await chain.binding(TARGET, timestampOf(CREATED_BLOCK), {
+      publisher: SPONSOR as Hex,
+      role: 'VERIFIED_PUBLISHER',
+    })
+    expect(replaced?.publisher.toLowerCase()).toBe(SPONSOR.toLowerCase())
+  })
+
+  test('a sponsor that gives way to the verified publisher is read from the log, not from the cache', async () => {
+    state.logs = [boundLog(HEAD - 100n, GUARDIAN, 1)] as never
+    const chain = await reader()
+    const sponsored = await chain.binding(TARGET, timestampOf(CREATED_BLOCK), { publisher: GUARDIAN as Hex, role: 'THIRD_PARTY_SPONSOR' })
+    expect(sponsored?.role).toBe('THIRD_PARTY_SPONSOR')
+    state.logs = [boundLog(HEAD - 100n, GUARDIAN, 1), boundLog(HEAD - 50n, GUARDIAN, 2)] as never
+    const upgraded = await chain.binding(TARGET, timestampOf(CREATED_BLOCK), current)
+    expect(upgraded?.role).toBe('VERIFIED_PUBLISHER')
+  })
+})

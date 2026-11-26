@@ -6,6 +6,8 @@ import { getChainReader, completeEvidence, type ChainReader, type CoreAttestatio
 import { readIndexedEvidence } from './indexedEvidence'
 import { getScan, getScanForSource, putScan, putScanForSource } from './scanStore'
 import { getScanEnvironment } from './scanner'
+import type { Binding } from '../lib/publish/binding'
+import type { PublisherBond } from '../lib/publish/bond'
 import { loadCachedSandbox } from './sandbox'
 import type { SandboxSource } from '../lib/sandbox/source'
 
@@ -229,6 +231,10 @@ export type TargetPageData = {
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
   failed: boolean
+  /** How the target was bound, read from the event log. Null when the log does not say. */
+  binding: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond: PublisherBond | null
   /** The bundle the sandbox can run on, or null when this target has none. */
   sandbox: SandboxSource | null
 }
@@ -254,9 +260,13 @@ async function readEvidence(reader: ChainReader, targetId: Hex, createdAt: numbe
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
-  const target = await reader.target(targetId)
-  const tier = target ? await reader.tier(targetId) : 'UNRATED'
-  const attestations = target ? await reader.attestations(targetId, target.attestationCount) : []
+  // One block for the target, its votes, its tier and the bond of its publisher, so they come from
+  // the same moment. The event log (the evidence and the binding) is read up to the head: it holds
+  // links and the way the target was bound, not a number that can disagree with the votes.
+  const block = await reader.tierBlockNumber()
+  const target = await reader.target(targetId, block)
+  const tier = target ? await reader.tier(targetId, block) : 'UNRATED'
+  const attestations = target ? await reader.attestations(targetId, target.attestationCount, block) : []
   let evidence: EvidenceRow[] = []
   let evidenceFailed = false
   // A target without attestations has no event to read. The log is never walked for nothing.
@@ -269,8 +279,13 @@ async function readChain(reader: ChainReader, targetId: Hex) {
     }
   }
   const bond =
-    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher) : null
-  return { target, tier, attestations, evidence, evidenceFailed, bond }
+    target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher, block) : null
+  // A target with no publisher has no PublisherBound event, so the log is not walked for it.
+  const binding =
+    target === null || target.publisher === ZERO_ADDRESS
+      ? null
+      : await reader.binding(targetId, target.createdAt, { publisher: target.publisher, role: target.publisherRole })
+  return { target, tier, attestations, evidence, evidenceFailed, bond, binding }
 }
 
 /**
@@ -290,6 +305,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     differentBundle: false,
     evidenceFailed: false,
     failed: false,
+    binding: null,
+    publisherBond: null,
     sandbox: null,
   }
   if (!parsedId.success) return { ...empty, failed: true }
@@ -329,6 +346,15 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
   const unbondingAt = chain.bond && chain.bond.withdrawalAvailableAt > 0 ? chain.bond.withdrawalAvailableAt : null
+  const publisherBond: PublisherBond | null =
+    chain.bond === null
+      ? null
+      : {
+          amount: chain.bond.amount.toString(),
+          withdrawalAvailableAt: unbondingAt,
+          lockedByChallengeId:
+            chain.bond.lockedByChallengeId > 0n ? chain.bond.lockedByChallengeId.toString() : null,
+        }
   return {
     targetId: id,
     detail,
@@ -340,6 +366,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     differentBundle,
     evidenceFailed: chain.evidenceFailed,
     failed: false,
+    binding: chain.binding,
+    publisherBond,
     sandbox: sandboxSource,
   }
 }

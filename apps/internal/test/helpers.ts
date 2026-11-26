@@ -73,11 +73,26 @@ export function countingDb(db: Db): { db: Db; calls: () => number } {
 
 export function testApp(
   db: Db,
-  options: { key?: string; now?: () => Date; sandbox?: SandboxRouteDeps } = {},
+  options: {
+    key?: string
+    now?: () => Date
+    sandbox?: SandboxRouteDeps
+    sandboxProbeSetVersion?: string
+    sandboxModelId?: string
+  } = {},
 ): { app: Hono; key: string } {
   const key = options.key ?? TEST_KEY
   return {
-    app: createApp({ sql: db, env: { internalKey: key }, now: options.now, sandbox: options.sandbox }),
+    app: createApp({
+      sql: db,
+      env: {
+        internalKey: key,
+        sandboxProbeSetVersion: options.sandboxProbeSetVersion,
+        sandboxModelId: options.sandboxModelId,
+      },
+      now: options.now,
+      sandbox: options.sandbox,
+    }),
     key,
   }
 }

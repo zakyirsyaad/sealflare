@@ -109,7 +109,10 @@ async function request<T>(
     throw new InternalServiceError('INTERNAL', 'The internal service did not answer with data.')
   }
   if (body.meta === undefined && !needsMeta) return { data: body.data as T, meta: {} }
-  const meta = ResponseMeta.safeParse(body.meta)
+  // Both fields of the shared meta are optional, but a read of indexed data that does not name the
+  // block it was read at cannot be told apart from one that was read a moment ago.
+  const shape = needsMeta ? ResponseMeta.required({ finalizedBlock: true }) : ResponseMeta
+  const meta = shape.safeParse(body.meta)
   if (!meta.success) {
     throw new InternalServiceError('INTERNAL', 'The internal service did not answer with a meta block.')
   }

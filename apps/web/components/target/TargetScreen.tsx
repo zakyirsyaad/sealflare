@@ -11,6 +11,8 @@ import { copy } from '../../lib/copy'
 import type { SandboxSource } from '../../lib/sandbox/source'
 import { scanCurrentVersionHref } from '../../lib/currentVersion'
 import { shortAddress } from '../../lib/format'
+import type { Binding } from '../../lib/publish/binding'
+import type { PublisherBond } from '../../lib/publish/bond'
 
 export type TargetScreenProps = {
   targetId: string
@@ -23,6 +25,10 @@ export type TargetScreenProps = {
   differentBundle: boolean
   evidenceFailed: boolean
   failed: boolean
+  /** How the target was bound, read from the event log of Core. */
+  binding?: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond?: PublisherBond | null
   /** The bundle the sandbox can run on, or null when this target has none. */
   sandbox?: SandboxSource | null
 }
@@ -67,7 +73,9 @@ export function TargetScreen(props: TargetScreenProps) {
           rows={props.attestations}
           scan={props.scan}
           evidenceFailed={props.evidenceFailed}
-          sandbox={props.sandbox}
+          binding={props.binding ?? null}
+          publisherBond={props.publisherBond ?? null}
+          sandbox={props.sandbox ?? null}
         />
       </section>
     </div>

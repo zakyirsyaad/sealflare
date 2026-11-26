@@ -189,6 +189,32 @@ describe('the public target API', () => {
     expect(body.data).toBeUndefined()
   })
 
+  test('the internal read and the tier reads share the one deadline of the route', async () => {
+    vi.useFakeTimers()
+    try {
+      const candidates = Array.from({ length: 250 }, (_, index) =>
+        summary({ targetId: `0x${String(index + 1).padStart(64, '0')}` }),
+      )
+      // The internal read takes 5 s and every batch of tiers takes 2 s, so the route has 3 s left
+      // when it reaches the tiers. A deadline that starts again there would run until 13 s.
+      internalGet.mockImplementation(
+        () => new Promise(resolve => setTimeout(() => resolve({ data: { items: candidates }, meta: { finalizedBlock: '12345' } }), 5_000)),
+      )
+      reader.tierAt.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve('COMMUNITY_SAFE'), 2_000)))
+
+      const pending = listRoute(request('/api/targets?tier=COMMUNITY_SAFE'))
+      await vi.advanceTimersByTimeAsync(8_000)
+      const response = await pending
+      await vi.advanceTimersByTimeAsync(20_000)
+
+      expect(response.status).toBe(503)
+      // The batches that started before the deadline were two. The third never started.
+      expect(reader.tierAt).toHaveBeenCalledTimes(200)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('the internal service being down is an error envelope, never an empty list', async () => {
     internalGet.mockRejectedValue(new InternalServiceError('INTERNAL', 'the service is down'))
     const response = await listRoute(request('/api/targets'))

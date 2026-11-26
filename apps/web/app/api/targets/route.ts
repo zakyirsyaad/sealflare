@@ -4,7 +4,7 @@ import type { TargetType, TrustTier } from '@sealflare/shared/rules'
 import { fail, ok } from '../../../server/respond'
 import { internalGet, InternalServiceError, InternalTargetSummary } from '../../../server/internal'
 import { withTiers } from '../../../server/tier'
-import { withDeadline } from '../../../server/deadline'
+import { deadlineFromNow, withDeadline } from '../../../server/deadline'
 
 /** The default size of a page. */
 const DEFAULT_LIMIT = 20
@@ -42,8 +42,9 @@ function readNumber(text: string | null): number | undefined {
 export async function GET(request: Request): Promise<Response> {
   const query = readQuery(new URL(request.url))
   if (!query.ok) return fail('BAD_REQUEST', 'The query of the target list is not valid.', 400)
+  const deadlineAt = deadlineFromNow()
   try {
-    return await withDeadline(answerTargets(query.value))
+    return await withDeadline(answerTargets(query.value, deadlineAt), deadlineAt)
   } catch (error) {
     if (error instanceof InternalServiceError) {
       // The internal service refused or could not answer. There is no list to show, so the answer
@@ -57,21 +58,24 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 /** The answer of the target list, with the tier of Core filled in. */
-async function answerTargets(query: z.infer<typeof ListQuery>): Promise<Response> {
+async function answerTargets(query: z.infer<typeof ListQuery>, deadlineAt: number): Promise<Response> {
   const { page, limit, address, type, tier } = query
   const current = page ?? 1
   const size = limit ?? DEFAULT_LIMIT
-  if (tier === undefined) return answerPage({ page: current, limit: size, address, type })
-  return answerFiltered({ page: current, limit: size, address, type, tier })
+  if (tier === undefined) return answerPage({ page: current, limit: size, address, type }, deadlineAt)
+  return answerFiltered({ page: current, limit: size, address, type, tier }, deadlineAt)
 }
 
 /** The page of the internal service, with the tier of every row of that page filled in. */
-async function answerPage(filters: {
-  page: number
-  limit: number
-  address?: string
-  type?: TargetType
-}): Promise<Response> {
+async function answerPage(
+  filters: {
+    page: number
+    limit: number
+    address?: string
+    type?: TargetType
+  },
+  deadlineAt: number,
+): Promise<Response> {
   const answer = await internalGet<{ items: unknown[] }>('/targets', {
     page: filters.page,
     limit: filters.limit,
@@ -80,7 +84,7 @@ async function answerPage(filters: {
   })
   const items = InternalTargetSummary.array().safeParse(answer.data.items)
   if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
-  const filled = await withTiers(items.data)
+  const filled = await withTiers(items.data, deadlineAt)
   if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
   const total = answer.meta.page?.total
   if (total === undefined) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
@@ -93,20 +97,23 @@ async function answerPage(filters: {
  * The candidates come from one snapshot of the internal service, the tiers are read from Core,
  * and only then the page is cut, so the total counts every row that matches.
  */
-async function answerFiltered(filters: {
-  page: number
-  limit: number
-  address?: string
-  type?: TargetType
-  tier: TrustTier
-}): Promise<Response> {
+async function answerFiltered(
+  filters: {
+    page: number
+    limit: number
+    address?: string
+    type?: TargetType
+    tier: TrustTier
+  },
+  deadlineAt: number,
+): Promise<Response> {
   const answer = await internalGet<{ items: unknown[] }>('/targets/tier-candidates', {
     address: filters.address,
     type: filters.type,
   })
   const items = InternalTargetSummary.array().safeParse(answer.data.items)
   if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
-  const filled = await withTiers(items.data)
+  const filled = await withTiers(items.data, deadlineAt)
   if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
   // The order of the internal service is kept, so the page of a filter is the page of the
   // unfiltered list with the rows that do not match taken out.
