@@ -322,6 +322,23 @@ The second round of the review found three more issues in this PR, one of them i
 - The test of the evidence reads a head that moves: a later view reads only the blocks that came
   after the last one, keeps the old rows, and a failed range leaves the cursor where it was.
 
+The review of the branch itself found five more problems, all fixed here.
+
+- The reason of a closed Attest button showed the placeholder `{chain}` on the target page. The name
+  of the chain is filled in now, the way the wallet does it.
+- The copy button of a skill copied `owner/repo`, which is not a link. The clipboard now gets the
+  https link of the repository.
+- Every read of the chain built a new public client, so one page view opened a connection per call.
+  The client is built once per chain and set of RPC urls, and a change of the urls builds a new one.
+  The head of the chain is read without the cache of the client, because the confirmed block that
+  the evidence read trusts is counted from it.
+- The window of the log read was 2,000,000 blocks, about seventeen days. It is 10,000,000 blocks
+  now, about three months with the 0.75 second blocks of BNB Chain. A target that is older than the
+  window is refused, and the page says that the links could not be read from the event log.
+- The Playwright check looked for the text "Trojan helper script" on the page that opens with the
+  findings tab, where no flag is shown. The check opens the attestations tab first, where the flags
+  of the seeded votes are.
+
 ### Verified result
 
 - TDD: the two new suites failed on the missing modules first. All 291 web tests pass across

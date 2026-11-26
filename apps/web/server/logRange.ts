@@ -1,7 +1,12 @@
 /** The widest block range a public RPC reliably answers for one `getLogs` call. */
 export const LOG_RANGE = 10_000n
-/** About 17 days of BSC blocks. A longer span is refused instead of being searched halfway. */
-export const MAX_LOG_RANGES = 200
+/**
+ * The window the registry can read: 1,000 ranges of 10,000 blocks, so ten million blocks. With the
+ * 0.75 second blocks of BNB Chain that is about three months of history. A target that is older
+ * than the window is refused instead of being searched halfway, and the page then says that the
+ * links are unknown instead of showing an empty list as if no proof was linked.
+ */
+export const MAX_LOG_RANGES = 1_000
 /** How many ranges are requested at the same time. */
 const PARALLEL = 4
 

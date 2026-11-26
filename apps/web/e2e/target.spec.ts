@@ -34,7 +34,11 @@ test('the target page fits a narrow screen and keeps the attest action at the bo
     .catch(() => false)
   test.skip(!found, 'The app is not built for the local chain: build it with NEXT_PUBLIC_CHAIN_ID=31337.')
   await expect(tier).toBeVisible()
+
+  // The flags of the seeded votes live in the attestations tab, so the tab is opened first.
+  await page.getByRole('tab', { name: /Attestations/ }).click()
   await expect(page.getByText('Trojan helper script').first()).toBeVisible()
+  await expect(page.getByText('Unlimited approval request').first()).toBeVisible()
 
   const actions = page.getByRole('complementary', { name: 'Attest' })
   await expect(actions).toBeVisible()
