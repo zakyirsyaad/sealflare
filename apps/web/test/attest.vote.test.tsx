@@ -220,13 +220,21 @@ test('a replacement that is not a speed-up is no vote', async () => {
   expect(screen.queryByRole('row', { name: /Your vote/ })).toBeNull()
 })
 
-test('a speed-up of the transaction is still the vote', async () => {
+test('a speed-up of the transaction is still the vote, and the link names the transaction that landed', async () => {
+  const sped = `0x${'99'.repeat(32)}`
   wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
   render(page(signal(0)))
   await vote()
-  wagmi.receipt.current = landed(CORE)
+  // The receipt of the replacement carries its own hash. The old one was dropped.
+  wagmi.receipt.current = {
+    isSuccess: true,
+    isError: false,
+    error: null,
+    data: { status: 'success', to: CORE, transactionHash: sped },
+  }
   act(() => wagmi.watched.current.onReplaced?.({ reason: 'repriced' }))
-  expect(await screen.findByRole('link', attested('Caution'))).toBeInTheDocument()
+  const link = await screen.findByRole('link', attested('Caution'))
+  expect(link).toHaveAttribute('href', `https://bscscan.com/tx/${sped}`)
 })
 
 test('another account of the wallet does not inherit the vote of this session', async () => {
@@ -237,4 +245,46 @@ test('another account of the wallet does not inherit the vote of this session', 
   view.rerender(page(signal(0)))
   expect(screen.queryByRole('link', attested('Caution'))).toBeNull()
   expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
+})
+
+test('another account of the wallet starts the panel over, so it can vote', async () => {
+  const other = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8'
+  const view = render(page(signal(0)))
+  await vote()
+  await screen.findByRole('link', attested('Caution'))
+  state.value = { ...state.value, address: other }
+  view.rerender(page(signal(0)))
+  // The panel of the first account is gone, so the second account starts at the first step.
+  expect(screen.getByRole('radio', { name: /^Caution/ })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  // The second account signs with its own account.
+  expect(wagmi.signTypedDataAsync).toHaveBeenLastCalledWith(expect.objectContaining({ account: other }))
+})
+
+test('a wallet prompt that never answers can be abandoned, and the vote may be started again', async () => {
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(() => {}))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  expect(await screen.findByRole('button', { name: copy.attest.pending })).toBeDisabled()
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.startAgain }))
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
+})
+
+test('closing the dialog before anything was sent abandons the attempt', async () => {
+  wagmi.signTypedDataAsync.mockReturnValue(new Promise<string>(() => {}))
+  render(page(signal(0)))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  await userEvent.click(screen.getByRole('radio', { name: /^Caution/ }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.review }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.submit }))
+  await screen.findByRole('button', { name: copy.attest.pending })
+  await userEvent.click(screen.getByRole('button', { name: copy.common.close }))
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
+  // The attempt was abandoned, so the vote may be started again.
+  expect(screen.getByRole('button', { name: copy.attest.submit })).toBeEnabled()
 })

@@ -9,6 +9,8 @@ export type AttestButtonProps = {
   txHash: string | null
   onSubmit: () => void
   onRetry: () => void
+  /** Starts the attempt over, for a wallet prompt that never answers. */
+  onStartAgain: () => void
 }
 
 /** The link to the transaction of the vote, once there is one. */
@@ -27,7 +29,7 @@ export function TransactionLink({ txHash, children }: { txHash: string; children
  * A vote that landed is shown with the label "Waiting for finality", because the indexer reads it
  * only when the block is final.
  */
-export function AttestButton({ state, error, txHash, onSubmit, onRetry }: AttestButtonProps) {
+export function AttestButton({ state, error, txHash, onSubmit, onRetry, onStartAgain }: AttestButtonProps) {
   if (state === 'done') {
     return (
       <div className="sf-stack">
@@ -48,11 +50,19 @@ export function AttestButton({ state, error, txHash, onSubmit, onRetry }: Attest
     )
   }
   const busy = state !== 'idle'
+  // Before anything was sent on-chain, the attempt may be abandoned. A wallet that never answers
+  // its prompt would otherwise hold the vote until the page is loaded again.
+  const abandonable = state === 'signing-evidence' || state === 'uploading'
   return (
     <div className="sf-stack">
       <Button variant="primary" className="sf-btn--block" disabled={busy} onClick={onSubmit}>
         {busy ? copy.attest.pending : copy.attest.submit}
       </Button>
+      {abandonable && (
+        <Button variant="secondary" onClick={onStartAgain}>
+          {copy.attest.startAgain}
+        </Button>
+      )}
       {busy && txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
     </div>
   )

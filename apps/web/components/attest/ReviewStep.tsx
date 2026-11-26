@@ -23,6 +23,8 @@ export type ReviewStepProps = {
   onSubmit: () => void
   onBack: () => void
   onRetry: () => void
+  /** Starts the attempt over, for a wallet prompt that never answers. */
+  onStartAgain: () => void
 }
 
 const reward: Record<Verdict, string> = {
@@ -136,6 +138,7 @@ export function ReviewStep(props: ReviewStepProps) {
           txHash={props.txHash}
           onSubmit={props.onSubmit}
           onRetry={props.onRetry}
+          onStartAgain={props.onStartAgain}
         />
         {/* After the vote was cast the summary describes it, so another choice cannot be made from here. */}
         <Button variant="secondary" disabled={isWorking(props.state) || props.state === 'done'} onClick={props.onBack}>

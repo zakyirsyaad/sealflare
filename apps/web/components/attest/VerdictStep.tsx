@@ -14,7 +14,7 @@ import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
 import { flagLabel, verdictLabel } from '../../lib/format'
 import { pickableVerdicts } from './availability'
-import { flagsOf, missingQuotes, quoteLimit, type Choice } from './choice'
+import { flagsOf, missingQuotes, quoteLimit, statementFits, type Choice } from './choice'
 
 export type VerdictStepProps = {
   choice: Choice
@@ -243,6 +243,12 @@ export function VerdictStep(props: VerdictStepProps) {
       <VerdictOptions {...props} />
       <FlagPicker {...props} />
       <QuoteFields {...props} />
+      {/* The quotes are never cut to make room, so the Guardian is told when they are too long. */}
+      {!statementFits(props.choice.flags, props.choice.quotes) && (
+        <p role="alert" className="sf-error">
+          {copy.attest.statementTooLong}
+        </p>
+      )}
       <footer className="sf-panel__footer">
         <Button variant="primary" disabled={!props.canContinue} onClick={props.onContinue}>
           {copy.attest.review}

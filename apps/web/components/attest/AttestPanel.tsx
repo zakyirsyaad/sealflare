@@ -131,19 +131,38 @@ export function AttestPanel(props: AttestPanelProps) {
   const [step, setStep] = useState<Step>('verdict')
   const [choice, setChoice] = useState<Choice>(emptyChoice)
   const { mutate: disconnect } = useDisconnect()
+  const connected = 'address' in user ? user.address : null
   const attest = useAttest({
     targetId: props.targetId,
     targetWord: props.targetWord,
     targetType: props.targetType,
     tier: props.tier,
     scan: props.scan,
-    address: 'address' in user ? user.address : null,
+    address: connected,
   })
   useRegisterVote(attest, user.recheck)
+
+  // The attempt belongs to the account that started it. Another account of the same wallet has a
+  // vote of its own to make, so the panel starts over for it. A vote that is still on its way is
+  // left alone, so the vote of the first account is still registered.
+  useEffect(() => {
+    if (attest.account === null || connected === null) return
+    if (connected.toLowerCase() === attest.account.toLowerCase()) return
+    if (attest.state !== 'done' && attest.state !== 'failed') return
+    attest.reset()
+    setStep('verdict')
+    setChoice(emptyChoice)
+  }, [attest.account, connected, attest.state, attest.reset])
 
   const submit = () => {
     if (choice.verdict === null) return
     void attest.submit({ verdict: choice.verdict, flags: choice.flags, quotes: choice.quotes })
+  }
+  const close = () => {
+    // Nothing was sent on-chain yet, so an attempt whose wallet prompt never answers may be
+    // abandoned. The late answer of that attempt is ignored.
+    if (attest.state === 'signing-evidence' || attest.state === 'uploading') attest.reset()
+    props.onClose()
   }
   const review = (
     <ReviewStep
@@ -161,6 +180,7 @@ export function AttestPanel(props: AttestPanelProps) {
         attest.reset()
         submit()
       }}
+      onStartAgain={attest.reset}
     />
   )
   const verdict = <VerdictPane props={props} choice={choice} setChoice={setChoice} onContinue={() => setStep('review')} />
@@ -169,7 +189,7 @@ export function AttestPanel(props: AttestPanelProps) {
     <Panel
       title={step === 'verdict' ? copy.attest.action : copy.attest.review}
       marker={copy.attest.step[step === 'verdict' ? 0 : 1]}
-      onClose={props.onClose}
+      onClose={close}
     >
       {walletGate(user, () => disconnect()) ?? (step === 'verdict' ? verdict : review)}
     </Panel>
