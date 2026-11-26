@@ -109,6 +109,9 @@ test('success asks the server for the page again, once', async () => {
   render(page(signal(0)))
   await vote()
   await screen.findByRole('row', { name: /Your vote: Caution/ })
+  // The row is on the screen before the effect that asks for the page again has run, so the
+  // refresh is waited for and not read from the screen alone.
+  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 5_000 })
   expect(refresh).toHaveBeenCalledTimes(1)
 })
 
