@@ -6,7 +6,7 @@ import type { Weight } from '@sealflare/shared/rules'
 import { ApiError } from '../../lib/api/client'
 import { loadGuardian } from '../../lib/api/lists'
 import { copy } from '../../lib/copy'
-import { shortAddress, timeAgo, verdictLabel } from '../../lib/format'
+import { shortAddress, targetLabel, timeAgo, verdictLabel } from '../../lib/format'
 import { useNow } from '../dispute/useNow'
 import { TargetTable, type TableColumn, type TableRow } from '../target/TargetTable'
 import { Chip } from '../ui/Chip'
@@ -60,7 +60,7 @@ function rowOf(item: ActivityItem, index: number, now: Date): TableRow {
       what: <span>{kindOf(item)}</span>,
       target: (
         <Link className="sf-mono sf-list__name" href={`/app/t/${item.targetId}`}>
-          {item.label}
+          {targetLabel(item.label)}
         </Link>
       ),
       result: <span className="sf-mono">{resultOf(item)}</span>,

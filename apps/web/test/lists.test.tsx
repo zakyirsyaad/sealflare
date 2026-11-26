@@ -5,8 +5,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ReactElement } from 'react'
 import { GuardianDetail, GuardianSummary, TargetSummary } from '@sealflare/shared/schemas'
+import { TRUST_TIERS } from '@sealflare/shared/rules'
 import { ApiError } from '../lib/api/client'
 import { copy } from '../lib/copy'
+import { VERDICT_TIERS } from '../lib/verdict'
 
 const { loadTargets, loadGuardians, loadGuardian } = vi.hoisted(() => ({
   loadTargets: vi.fn(),
@@ -155,6 +157,13 @@ describe('the explore list', () => {
     loadTargets.mockRejectedValue(new ApiError('BAD_REQUEST', 'The registry holds more targets than one filter can read.'))
     renderList(await ExplorePage({ searchParams: Promise.resolve({ verdict: 'SAFE' }) }))
     expect(await screen.findByText(copy.explore.tooMany)).toBeVisible()
+  })
+
+  test('the three verdicts hold every trust tier exactly once', () => {
+    // A tier that no verdict holds would vanish from every filtered list.
+    const held = Object.values(VERDICT_TIERS).flat()
+    expect([...held].sort()).toEqual([...TRUST_TIERS].sort())
+    for (const tiers of Object.values(VERDICT_TIERS)) expect(tiers.length).toBeGreaterThan(0)
   })
 })
 
@@ -312,6 +321,24 @@ describe('the states of every list', () => {
     renderList(await GuardiansPage({ searchParams: Promise.resolve({}) }))
     expect(await screen.findByText(copy.guardians.failed)).toBeVisible()
     expect(screen.getByRole('button', { name: copy.common.retry })).toBeEnabled()
+  })
+
+  test('a list that fails on a later read does not keep showing the old rows', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    loadTargets.mockResolvedValue({ items: [target()], total: 1, finalizedBlock: '12345' })
+    render(
+      <QueryClientProvider client={client}>
+        {await ExplorePage({ searchParams: Promise.resolve({}) })}
+      </QueryClientProvider>,
+    )
+    await screen.findByRole('table')
+    // The rows are on the screen and the next read fails.
+    loadTargets.mockRejectedValue(new ApiError('INTERNAL', 'The indexed targets cannot be read.'))
+    await client.invalidateQueries()
+    // The failure is shown instead of the rows, because a list that hides a failure would look
+    // like a registry without targets.
+    expect(await screen.findByText(copy.explore.failed)).toBeVisible()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })
 

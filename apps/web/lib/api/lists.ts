@@ -1,6 +1,15 @@
 import { z } from 'zod'
 import type { TargetType } from '@sealflare/shared/rules'
-import { AddressSchema, GuardianDetail, GuardianSummary, TargetSummary } from '@sealflare/shared/schemas'
+import {
+  AddressSchema,
+  GuardianDetailResponse,
+  GuardiansListResponse,
+  ResponseMeta,
+  TargetsListResponse,
+  type GuardianDetail,
+  type GuardianSummary,
+  type TargetSummary,
+} from '@sealflare/shared/schemas'
 import type { Verdict } from '../verdict'
 import { ApiError } from './client'
 
@@ -10,19 +19,6 @@ import { ApiError } from './client'
  * Every answer arrives in an envelope, so a failure of the service is an error and never an
  * empty list. A list that hides a failure would look like a registry without targets.
  */
-
-/** The block a list was read at, and the page of the list. */
-const Meta = z.object({
-  finalizedBlock: z.string().optional(),
-  page: z.object({ total: z.number().int().min(0), page: z.number().int().min(1), limit: z.number().int().min(1) }).optional(),
-})
-
-const Answer = z.object({
-  success: z.boolean(),
-  data: z.unknown().optional(),
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
-  meta: Meta.optional(),
-})
 
 /** One page of a list, with the total the server counted. */
 export type ListAnswer<T> = {
@@ -37,8 +33,16 @@ export type OneAnswer<T> = {
   finalizedBlock: string | null
 }
 
+/** The shape of an answer that carries data, or the error that says why it does not. */
+type AnswerShape<D> =
+  | { success: true; data: D; meta?: z.infer<typeof ResponseMeta> }
+  | { success: false; error: { code: string; message: string } }
+
 /** Reads a route of the public API and returns the data it holds. */
-async function get<T>(path: string, data: z.ZodType<T>): Promise<{ data: T; meta: z.infer<typeof Meta> }> {
+async function get<D>(
+  path: string,
+  schema: z.ZodType<AnswerShape<D>>,
+): Promise<{ data: D; meta: z.infer<typeof ResponseMeta> }> {
   let response: Response
   try {
     response = await fetch(path, { headers: { accept: 'application/json' } })
@@ -46,16 +50,13 @@ async function get<T>(path: string, data: z.ZodType<T>): Promise<{ data: T; meta
     throw new ApiError('INTERNAL', 'The registry could not be reached.')
   }
   const payload = await response.json().catch(() => null)
-  const answer = Answer.safeParse(payload)
-  if (!answer.success) throw new ApiError('INTERNAL', 'The server sent an answer that could not be read.')
-  if (!answer.data.success) {
-    const error = answer.data.error
-    if (!error) throw new ApiError('INTERNAL', 'The server sent an answer that could not be read.')
-    throw new ApiError(error.code, error.message)
-  }
-  const parsed = data.safeParse(answer.data.data)
+  // The answer is read with the frozen schema of the route, so an answer that does not fit it
+  // is refused instead of shown.
+  const parsed = schema.safeParse(payload)
   if (!parsed.success) throw new ApiError('INTERNAL', 'The server sent an answer that could not be read.')
-  return { data: parsed.data, meta: answer.data.meta ?? {} }
+  const answer = parsed.data
+  if (!answer.success) throw new ApiError(answer.error.code, answer.error.message)
+  return { data: answer.data, meta: answer.meta ?? {} }
 }
 
 /** The query of a page of a list. */
@@ -81,7 +82,7 @@ export async function loadTargets(query: {
   const params = pageQuery(query.page, query.limit)
   if (query.type !== undefined) params.set('type', query.type)
   if (query.verdict !== undefined) params.set('verdict', query.verdict)
-  const answer = await get(`/api/targets?${params.toString()}`, z.object({ items: TargetSummary.array() }))
+  const answer = await get(`/api/targets?${params.toString()}`, TargetsListResponse)
   const total = answer.meta.page?.total
   if (total === undefined) throw new ApiError('INTERNAL', 'The target list could not be read.')
   return { items: answer.data.items, total, finalizedBlock: answer.meta.finalizedBlock ?? null }
@@ -90,7 +91,7 @@ export async function loadTargets(query: {
 /** The Guardians of the registry, the ones with the highest score first. */
 export async function loadGuardians(query: { page: number; limit: number }): Promise<ListAnswer<GuardianSummary>> {
   const params = pageQuery(query.page, query.limit)
-  const answer = await get(`/api/guardians?${params.toString()}`, z.object({ items: GuardianSummary.array() }))
+  const answer = await get(`/api/guardians?${params.toString()}`, GuardiansListResponse)
   const total = answer.meta.page?.total
   if (total === undefined) throw new ApiError('INTERNAL', 'The guardian list could not be read.')
   return { items: answer.data.items, total, finalizedBlock: answer.meta.finalizedBlock ?? null }
@@ -100,6 +101,6 @@ export async function loadGuardians(query: { page: number; limit: number }): Pro
 export async function loadGuardian(address: string): Promise<OneAnswer<GuardianDetail>> {
   const parsed = AddressSchema.safeParse(address)
   if (!parsed.success) throw new ApiError('NOT_FOUND', 'There is no such Guardian.')
-  const answer = await get(`/api/guardians/${encodeURIComponent(parsed.data)}`, GuardianDetail)
+  const answer = await get(`/api/guardians/${encodeURIComponent(parsed.data)}`, GuardianDetailResponse)
   return { item: answer.data, finalizedBlock: answer.meta.finalizedBlock ?? null }
 }

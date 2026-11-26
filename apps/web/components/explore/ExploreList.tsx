@@ -6,7 +6,7 @@ import type { TargetSummary } from '@sealflare/shared/schemas'
 import { ApiError } from '../../lib/api/client'
 import { loadTargets } from '../../lib/api/lists'
 import { copy } from '../../lib/copy'
-import { formatBnb, shortAddress, tierLabel, timeAgo } from '../../lib/format'
+import { formatBnb, targetLabel, tierLabel, timeAgo } from '../../lib/format'
 import type { Verdict } from '../../lib/verdict'
 import { useNow } from '../dispute/useNow'
 import { PageLinks } from '../target/PageLinks'
@@ -50,7 +50,7 @@ const KINDS: { value: TargetType | null; label: string }[] = [
 ]
 
 /** The verdicts the list can be filtered by. */
-const VERDICTS: { value: Verdict | null; label: string }[] = [
+const VERDICT_FILTERS: { value: Verdict | null; label: string }[] = [
   { value: null, label: copy.explore.verdictAny },
   { value: 'SAFE', label: copy.explore.verdictSafe },
   { value: 'CAUTION', label: copy.explore.verdictCaution },
@@ -72,7 +72,7 @@ function hrefOf(state: ExploreListProps, changes: Partial<{ kind: TargetType | n
 
 /** The name a target is shown under: an address for a contract, the repository for a skill. */
 function nameOf(item: TargetSummary): string {
-  return item.targetType === 'SMART_CONTRACT' ? shortAddress(item.label) : item.label
+  return targetLabel(item.label)
 }
 
 /** What the publisher column says. A bond is only named when there is one. */
@@ -169,7 +169,7 @@ function ListHead({ state }: { state: ExploreListProps }) {
         <p className="sf-lead">{copy.explore.intro}</p>
       </div>
       <FilterGroup label={copy.explore.kindLabel} options={KINDS} current={state.kind} href={value => hrefOf(state, { kind: value, page: 1 })} />
-      <FilterGroup label={copy.explore.verdictLabel} options={VERDICTS} current={state.verdict} href={value => hrefOf(state, { verdict: value, page: 1 })} />
+      <FilterGroup label={copy.explore.verdictLabel} options={VERDICT_FILTERS} current={state.verdict} href={value => hrefOf(state, { verdict: value, page: 1 })} />
     </header>
   )
 }
@@ -186,7 +186,9 @@ export function ExploreList({ kind, verdict, page }: ExploreListProps) {
   const total = query.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const items = query.data === undefined ? [] : newestFirst(query.data.items)
-  const failed = query.isError && query.data === undefined
+  // A read that fails later hides the rows it had, because a list that hides a failure would
+  // look like a registry without targets.
+  const failed = query.isError
   const tooMany = query.error instanceof ApiError && query.error.code === 'BAD_REQUEST'
 
   return (
@@ -204,7 +206,7 @@ export function ExploreList({ kind, verdict, page }: ExploreListProps) {
           }
         />
       )}
-      {!query.isPending && items.length > 0 && (
+      {!query.isPending && !failed && items.length > 0 && (
         <TargetTable
           caption={copy.explore.caption}
           columns={COLUMNS}

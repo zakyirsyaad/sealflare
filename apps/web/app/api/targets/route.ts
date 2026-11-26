@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ListQuery } from '@sealflare/shared/schemas'
 import type { TargetType, TrustTier } from '@sealflare/shared/rules'
 import { fail, ok } from '../../../server/respond'
+import { copy } from '../../../lib/copy'
 import { internalGet, InternalServiceError, InternalTargetSummary } from '../../../server/internal'
 import { withTiers } from '../../../server/tier'
 import { deadlineFromNow, withDeadline } from '../../../server/deadline'
@@ -17,7 +18,7 @@ const DEFAULT_LIMIT = 20
  * filter that covers too many of them cannot be answered in one request, and the reader is
  * told to narrow it instead of being shown a failure without a reason.
  */
-const NARROW_MESSAGE = 'The registry holds more targets than one filter can read. Narrow the filter by kind.'
+const NARROW_MESSAGE = copy.explore.tooMany
 
 /** The query of the target list: the frozen one, plus the verdict a reader filters by. */
 type TargetQuery = z.infer<typeof ListQuery> & { verdict?: Verdict }

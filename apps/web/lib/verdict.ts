@@ -1,4 +1,4 @@
-import { VERDICTS, type TrustTier, type Verdict } from '@sealflare/shared/rules'
+import { type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import { VerdictSchema } from '@sealflare/shared/schemas'
 
 /**
@@ -8,7 +8,7 @@ import { VerdictSchema } from '@sealflare/shared/schemas'
  * vote can never drift apart. What the app adds is the group of trust tiers behind each of
  * them.
  */
-export { VERDICTS, VerdictSchema }
+export { VerdictSchema }
 export type { Verdict } from '@sealflare/shared/rules'
 
 /**

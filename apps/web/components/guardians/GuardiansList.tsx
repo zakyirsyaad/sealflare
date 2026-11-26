@@ -78,7 +78,9 @@ export function GuardiansList({ page }: GuardiansListProps) {
   const total = query.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const items = query.data === undefined ? [] : highestScoreFirst(query.data.items)
-  const failed = query.isError && query.data === undefined
+  // A read that fails later hides the rows it had, because a list that hides a failure would
+  // look like a registry without Guardians.
+  const failed = query.isError
 
   return (
     <div className="sf-list-page">
@@ -100,7 +102,7 @@ export function GuardiansList({ page }: GuardiansListProps) {
           }
         />
       )}
-      {!query.isPending && items.length > 0 && (
+      {!query.isPending && !failed && items.length > 0 && (
         <TargetTable
           caption={copy.guardians.caption}
           columns={COLUMNS}
