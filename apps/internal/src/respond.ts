@@ -13,12 +13,22 @@ import { ResponseMeta, UintStringSchema } from '@sealflare/shared/schemas'
 export const ReadMeta = ResponseMeta.extend({ finalizedBlock: UintStringSchema })
 export type ReadMeta = z.infer<typeof ReadMeta>
 
+/**
+ * The codes the internal service answers with. The first five are its own, and the sandbox codes
+ * are the ones of the public API, so the public route can pass them on without changing them.
+ */
 export const INTERNAL_ERROR_CODES = [
   'BAD_REQUEST',
   'UNAUTHORIZED',
   'NOT_FOUND',
   'RESULT_NOT_CACHED',
   'INTERNAL',
+  'SIGNATURE_INVALID',
+  'SIGNATURE_EXPIRED',
+  'NOT_AGENT_ID_HOLDER',
+  'QUOTA_EXHAUSTED',
+  'SANDBOX_PAUSED',
+  'RUN_NOT_FOUND',
 ] as const
 export type InternalErrorCode = (typeof INTERNAL_ERROR_CODES)[number]
 

@@ -224,6 +224,8 @@ describe('checkContract', () => {
 })
 
 describe('the README', () => {
+  // The type-check runs the compiler in a child process, which takes longer than the five seconds
+  // the test waits by default when the machine is busy.
   test('the example is three lines and type-checks', () => {
     const readme = readFileSync(join(packageDir, 'README.md'), 'utf8')
     const block = /```ts\n([\s\S]*?)\n```/.exec(readme)
@@ -263,5 +265,5 @@ describe('the README', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 })

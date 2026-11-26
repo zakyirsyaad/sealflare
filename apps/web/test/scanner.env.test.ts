@@ -6,6 +6,14 @@ const server = {
 }
 const ADDRESS = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
 
+/**
+ * How long a case of this file may take.
+ *
+ * Every case loads the whole scanner again, so a busy machine needs more than the default five
+ * seconds. The cases themselves take a fraction of a second.
+ */
+const TIMEOUT = 30_000
+
 async function load() {
   vi.resetModules()
   return (await import('../server/scanner')).getScanEnvironment
@@ -28,6 +36,7 @@ describe('choosing the scanner', () => {
       const getScanEnvironment = await load()
       expect(() => getScanEnvironment()).toThrow('SCANNER')
     },
+    TIMEOUT,
   )
 
   test('the error names the variable and nothing else from the environment', async () => {
