@@ -39,26 +39,25 @@ export type SettleWindow = Pick<BountySummary, 'createdAt' | 'settleableAt' | 's
 /**
  * The moment a bounty can be settled at the earliest.
  *
- * A bounty with all its slots filled waits 48 hours after the last slot, and a bounty that is
- * still missing slots is settled when it is 7 days old, with whatever it has. The indexer writes
- * the moment of a bounty when it is created, as seven days after the creation, and lowers it to
- * the earlier of that and 48 hours after the last slot once every slot is filled.
+ * The contract settles every bounty seven days after it was created, whatever its slots hold. A
+ * bounty with all its slots filled waits 48 hours after the last slot, and the indexer writes
+ * that moment as the moment of the bounty, the earlier of the two.
  *
- * A bounty that is still missing slots and whose moment the indexer did not write is settled
- * seven days after it was created, the same rule the contract uses. A full bounty without a
- * known moment is a hole in the data, and the app says so instead of naming a moment it cannot
- * know. A settled bounty has no moment left: it is paid out already.
+ * The 48 hours only ever apply to a bounty whose slots are full, so the moment of the indexer is
+ * only trusted for a full bounty. A bounty that is still missing slots, and a full bounty whose
+ * moment the indexer did not write, are settled seven days after they were created, the same
+ * rule the contract uses. A settled bounty has no moment left: it is paid out already.
  */
 export function settleAtOf(bounty: SettleWindow): Date | null {
   if (bounty.settled) return null
-  if (bounty.settleableAt !== null) {
-    const at = new Date(bounty.settleableAt)
-    return Number.isNaN(at.getTime()) ? null : at
-  }
-  if (bounty.filled >= bounty.slots) return null
   const created = new Date(bounty.createdAt)
   if (Number.isNaN(created.getTime())) return null
-  return new Date(created.getTime() + CONSTANTS.BOUNTY_TIMEOUT * 1000)
+  const deadline = new Date(created.getTime() + CONSTANTS.BOUNTY_TIMEOUT * 1000)
+  if (bounty.filled < bounty.slots) return deadline
+  const at = bounty.settleableAt === null ? null : new Date(bounty.settleableAt)
+  if (at === null || Number.isNaN(at.getTime())) return deadline
+  // The contract settles a bounty seven days after it was created, whatever the indexer says.
+  return new Date(Math.min(at.getTime(), deadline.getTime()))
 }
 
 /**

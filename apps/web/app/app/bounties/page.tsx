@@ -12,30 +12,21 @@ export default async function BountiesPage() {
   const live = publicEnv.NEXT_PUBLIC_MODULES_LIVE
   // While the vault is not live the page shows the empty state of the design, and the indexer is
   // not read at all: a service that is down must not change what the page says.
-  if (!live) {
-    return (
-      <>
-        <h1>{copy.bounty.title}</h1>
-        <p className="sf-lead">{copy.bounty.intro}</p>
-        <BountyList items={[]} live={false} />
-      </>
-    )
-  }
+  if (!live) return <BountyList items={[]} live={false} />
   let items: BountySummary[] | null = null
   try {
     items = await loadBounties()
   } catch {
     items = null
   }
+  if (items === null) {
+    return <ErrorState what={copy.bounty.readFailed} onChainSafe retryHref="/app/bounties" />
+  }
   return (
-    <>
-      <h1>{copy.bounty.title}</h1>
+    <section className="sf-stack">
+      <h1 className="sf-identity__label">{copy.bounty.title}</h1>
       <p className="sf-lead">{copy.bounty.intro}</p>
-      {items === null ? (
-        <ErrorState what={copy.bounty.readFailed} onChainSafe retryHref="/app/bounties" />
-      ) : (
-        <BountyList items={items} live />
-      )}
-    </>
+      <BountyList items={items} live />
+    </section>
   )
 }

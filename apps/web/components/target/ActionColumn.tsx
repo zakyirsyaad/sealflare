@@ -177,8 +177,8 @@ function SecondaryActions(props: ActionColumnProps & { onFundBounty: () => void 
       >
         {copy.target.fundBounty}
       </Button>
-      {/* The challenge action says it itself, unless a confirmed danger leaves it without a button. */}
-      {!modulesLive && props.tier === 'CONFIRMED_DANGER' && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
+      {/* Every action that waits for the vault says why it is closed. */}
+      {!modulesLive && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
     </>
   )
 }

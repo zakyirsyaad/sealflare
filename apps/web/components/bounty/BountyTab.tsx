@@ -8,7 +8,7 @@ import { moduleGate } from '../../lib/chain/modules'
 import { copy } from '../../lib/copy'
 import { formatBnb, formatDate, formatUtc } from '../../lib/format'
 import { settleAtOf } from '../../lib/bounty/settle'
-import { useChainTime } from '../../lib/bounty/chainTime'
+import { useChainTime, CHAIN_REFRESH } from '../../lib/bounty/chainTime'
 import { SettleButton } from './SettleButton'
 
 export type BountyTabProps = {
@@ -23,7 +23,8 @@ type Load = { status: 'loading' | 'ready' | 'failed'; bounty: BountySummary | nu
  * be filled. A target can have more than one bounty, and the newest one is the one that counts.
  */
 function pickBounty(items: readonly BountySummary[]): BountySummary | null {
-  return items.find(item => !item.settled) ?? items[0] ?? null
+  const newest = [...items].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+  return newest.find(item => !item.settled) ?? newest[0] ?? null
 }
 
 /** The answer of the public API, with the rows it holds. */
@@ -55,6 +56,8 @@ function BountyFacts({ bounty, now, failed }: { bounty: BountySummary; now: numb
         {copy.bounty.created}: {formatDate(bounty.createdAt)}
       </p>
       {settle !== null && <p>{settle}</p>}
+      {/* The moment is known, but the chain could not be read, so it is not known whether the
+          window has already passed. */}
       {failed && !bounty.settled && <p className="sf-lead">{copy.bounty.chainTimeFailed}</p>}
     </div>
   )
@@ -75,23 +78,32 @@ export function BountyTab({ targetId }: BountyTabProps) {
 
   useEffect(() => {
     let live = true
-    setLoad({ status: 'loading', bounty: null })
-    fetch(`/api/bounties?targetId=${encodeURIComponent(targetId)}`)
-      .then(response => {
-        if (!response.ok) throw new Error('the bounties could not be read')
-        return response.json() as Promise<unknown>
-      })
-      .then(body => {
-        const rows = rowsOf(body)
-        if (rows === null) throw new Error('the bounties could not be read')
-        if (!live) return
-        setLoad({ status: 'ready', bounty: pickBounty(rows) })
-      })
-      .catch(() => {
-        if (live) setLoad({ status: 'failed', bounty: null })
-      })
+    const read = (): void => {
+      // A bounty that is already on the page stays there while it is read again, so the tab does
+      // not blink every minute.
+      setLoad(previous => (previous.status === 'ready' ? previous : { status: 'loading', bounty: null }))
+      fetch(`/api/bounties?targetId=${encodeURIComponent(targetId)}`)
+        .then(response => {
+          if (!response.ok) throw new Error('the bounties could not be read')
+          return response.json() as Promise<unknown>
+        })
+        .then(body => {
+          const rows = rowsOf(body)
+          if (rows === null) throw new Error('the bounties could not be read')
+          if (!live) return
+          setLoad({ status: 'ready', bounty: pickBounty(rows) })
+        })
+        .catch(() => {
+          if (live) setLoad({ status: 'failed', bounty: null })
+        })
+    }
+    read()
+    // The rows are read again on the same rhythm as the clock of the chain, so a bounty that is
+    // filled while the tab is open is not stale.
+    const timer = setInterval(read, CHAIN_REFRESH)
     return () => {
       live = false
+      clearInterval(timer)
     }
   }, [targetId, tries])
 

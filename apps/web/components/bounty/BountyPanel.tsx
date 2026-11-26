@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useConnect, useConnectors } from 'wagmi'
 import type { Hex } from 'viem'
 import { CONSTANTS } from '@sealflare/shared/rules'
@@ -28,7 +28,7 @@ export type BountyPanelProps = {
 /** The wallet has to be connected before anything can be signed. */
 function ConnectSection() {
   const connectors = useConnectors()
-  const { mutate, isPending } = useConnect()
+  const { mutate, isPending, error } = useConnect()
   return (
     <section className="sf-stack">
       <h3 className="sf-stack__title">{copy.wallet.connectTitle}</h3>
@@ -42,12 +42,26 @@ function ConnectSection() {
           </li>
         ))}
       </ul>
+      {error !== null && error !== undefined && (
+        <p role="alert" className="sf-error">
+          {copy.wallet.connectFailed}
+        </p>
+      )}
     </section>
   )
 }
 
 /** The slots a bounty may have, as a radio group with the arrow keys of the radio pattern. */
-function SlotChoice({ slots, onChoose }: { slots: number; onChoose: (slots: number) => void }) {
+function SlotChoice({
+  slots,
+  hintId,
+  onChoose,
+}: {
+  slots: number
+  /** The id of the line that explains how many slots a bounty may have. */
+  hintId: string
+  onChoose: (slots: number) => void
+}) {
   const choices = slotChoices()
   const buttons = useRef<(HTMLButtonElement | null)[]>([])
   function move(index: number, step: number): void {
@@ -63,7 +77,7 @@ function SlotChoice({ slots, onChoose }: { slots: number; onChoose: (slots: numb
     move(index, forward ? 1 : -1)
   }
   return (
-    <section role="radiogroup" aria-label={copy.bounty.slotsLabel} className="sf-stack">
+    <section role="radiogroup" aria-label={copy.bounty.slotsLabel} aria-describedby={hintId} className="sf-stack">
       {choices.map((choice, index) => (
         <button
           key={choice}
@@ -108,6 +122,7 @@ function BountyForm(props: {
   slots: number
   amount: string
   error: string | null
+  hintId: string
   onSlots: (slots: number) => void
   onAmount: (amount: string) => void
 }) {
@@ -115,9 +130,11 @@ function BountyForm(props: {
     <div className="sf-stack">
       <div className="sf-field">
         <span className="sf-field__label">{copy.bounty.slotsLabel}</span>
-        <SlotChoice slots={props.slots} onChoose={props.onSlots} />
+        <SlotChoice slots={props.slots} hintId={props.hintId} onChoose={props.onSlots} />
       </div>
-      <p className="sf-lead">{copy.bounty.slotsHint.replace('{min}', String(SLOT_RANGE.min)).replace('{max}', String(SLOT_RANGE.max))}</p>
+      <p className="sf-lead" id={props.hintId}>
+        {copy.bounty.slotsHint.replace('{min}', String(SLOT_RANGE.min)).replace('{max}', String(SLOT_RANGE.max))}
+      </p>
       <label className="sf-field">
         <span className="sf-field__label">{copy.bounty.amountLabel}</span>
         <input
@@ -132,7 +149,11 @@ function BountyForm(props: {
       </label>
       <p className="sf-lead">{copy.bounty.amountHint.replace('{cap}', bountyCap())}</p>
       <p className="sf-lead">{copy.bounty.agentNotNeeded}</p>
-      {props.error !== null && <p role="alert">{props.error}</p>}
+      {props.error !== null && (
+        <p role="alert" className="sf-error">
+          {props.error}
+        </p>
+      )}
     </div>
   )
 }
@@ -150,12 +171,19 @@ function WriteStates({ status, error, txHash, onRetry }: { status: string; error
   if (status === 'failed') {
     return (
       <div className="sf-stack">
-        <p role="alert">{error ?? copy.errors.unknown}</p>
+        <p role="alert" className="sf-error">
+          {error ?? copy.errors.unknown}
+        </p>
+        {txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
         <Button variant="primary" onClick={onRetry}>
           {copy.common.retry}
         </Button>
       </div>
     )
+  }
+  // While the transaction waits for its confirmation, the reader can follow it.
+  if (status === 'sending' && txHash !== null) {
+    return <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>
   }
   return null
 }
@@ -182,23 +210,28 @@ function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>
   const [slots, setSlots] = useState<number>(SLOT_RANGE.min)
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const hintId = useId()
   const { state, createBounty } = useBounty()
   const gate = moduleGate(modulesLive)
-  const cap = bountyCap()
   const wei = parseBnb(amount)
   const connected = user.kind !== 'no-wallet' && user.kind !== 'wrong-network'
+  const busy = state.status === 'sending'
 
   async function fund(): Promise<void> {
+    if (slots < SLOT_RANGE.min || slots > SLOT_RANGE.max) {
+      setError(copy.bounty.slotsInvalid.replace('{min}', String(SLOT_RANGE.min)).replace('{max}', String(SLOT_RANGE.max)))
+      return
+    }
     if (wei === null || wei <= 0n) {
       setError(copy.bounty.amountInvalid)
       return
     }
     if (wei > CONSTANTS.MAX_BOUNTY) {
-      setError(copy.bounty.aboveCap.replace('{cap}', cap))
+      setError(copy.errors.BountyAboveCap)
       return
     }
     if (!withinBountyBounds(slots, wei)) {
-      setError(copy.bounty.amountInvalid)
+      setError(copy.bounty.boundsInvalid)
       return
     }
     setError(null)
@@ -206,7 +239,7 @@ function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>
   }
 
   return (
-    <Panel title={copy.target.fundBounty} onClose={onClose}>
+    <Panel title={copy.target.fundBounty} onClose={onClose} closeDisabled={busy}>
       {gate.disabled && <p className="sf-lead">{gate.reason}</p>}
       <Summary amount={wei !== null && wei > 0n ? formatBnb(wei) : null} />
       {!gate.disabled && user.kind === 'no-wallet' && <ConnectSection />}
@@ -214,11 +247,24 @@ function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>
       {!gate.disabled && connected && (
         <div className="sf-stack">
           {label !== undefined && <p className="sf-lead">{label}</p>}
-          <BountyForm slots={slots} amount={amount} error={error} onSlots={setSlots} onAmount={setAmount} />
-          <Button variant="primary" disabled={state.status !== 'idle'} onClick={() => void fund()}>
-            {copy.bounty.create}
-          </Button>
+          <BountyForm
+            slots={slots}
+            amount={amount}
+            error={error}
+            hintId={hintId}
+            onSlots={setSlots}
+            onAmount={setAmount}
+          />
           <WriteStates status={state.status} error={state.error} txHash={state.txHash} onRetry={() => void fund()} />
+          {/* The button is the only primary action of the panel, and it is locked while the
+              transaction is on its way. */}
+          <footer className="sf-panel__footer">
+            {(state.status === 'idle' || busy) && (
+              <Button variant="primary" disabled={busy} onClick={() => void fund()}>
+                {busy ? copy.attest.pending : copy.bounty.create}
+              </Button>
+            )}
+          </footer>
         </div>
       )}
     </Panel>

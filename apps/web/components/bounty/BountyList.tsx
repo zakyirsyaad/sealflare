@@ -13,10 +13,20 @@ export type BountyListProps = {
 
 const columns = [
   { key: 'target', label: copy.bounty.targetLabel },
-  { key: 'slots', label: copy.bounty.slotsLabel },
-  { key: 'amount', label: copy.bounty.amountLabel },
+  { key: 'slots', label: copy.bounty.colSlots },
+  { key: 'amount', label: copy.bounty.colAmount },
   { key: 'created', label: copy.bounty.created },
 ]
+
+/**
+ * Whether a bounty can still be filled.
+ *
+ * The screen of the bounties shows the open ones, the ones that still have a slot left, because
+ * a bounty that is full or settled cannot be filled any more.
+ */
+function isOpen(bounty: BountySummary): boolean {
+  return !bounty.settled && bounty.filled < bounty.slots
+}
 
 /**
  * The list of the bounties, the open ones first.
@@ -26,7 +36,8 @@ const columns = [
  */
 export function BountyList({ items, live }: BountyListProps) {
   if (!live) return <EmptyState title={copy.common.modulesNotLive} />
-  if (items.length === 0) {
+  const open = items.filter(isOpen)
+  if (open.length === 0) {
     return (
       <EmptyState
         title={copy.bounty.empty}
@@ -38,7 +49,7 @@ export function BountyList({ items, live }: BountyListProps) {
       />
     )
   }
-  const rows = items.map(item => ({
+  const rows = open.map(item => ({
     id: item.id,
     cells: {
       target: <Link href={`/app/t/${item.targetId}`}>{item.label}</Link>,
@@ -47,5 +58,9 @@ export function BountyList({ items, live }: BountyListProps) {
       created: formatDate(item.createdAt),
     },
   }))
-  return <Table caption={copy.bounty.title} columns={columns} rows={rows} />
+  return (
+    <div className="sf-frame sf-scroll">
+      <Table caption={copy.bounty.title} columns={columns} rows={rows} />
+    </div>
+  )
 }

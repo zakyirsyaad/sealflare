@@ -1,6 +1,7 @@
 'use client'
 import { BountySummary } from '@sealflare/shared/schemas'
 import { Button } from '../ui/Button'
+import { WrongNetwork } from '../wallet/WrongNetwork'
 import { TransactionLink } from '../attest/AttestButton'
 import { useUserState } from '../../lib/chain/userState'
 import { copy } from '../../lib/copy'
@@ -42,12 +43,19 @@ function WriteStates({ status, error, txHash, onRetry }: { status: string; error
   if (status === 'failed') {
     return (
       <div className="sf-stack">
-        <p role="alert">{error ?? copy.errors.unknown}</p>
+        <p role="alert" className="sf-error">
+          {error ?? copy.errors.unknown}
+        </p>
+        {txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
         <Button variant="primary" onClick={onRetry}>
           {copy.common.retry}
         </Button>
       </div>
     )
+  }
+  // While the transaction waits for its confirmation, the reader can follow it.
+  if (status === 'sending' && txHash !== null) {
+    return <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>
   }
   return null
 }
@@ -57,7 +65,8 @@ function WriteStates({ status, error, txHash, onRetry }: { status: string; error
  *
  * The button appears when the window of the bounty has passed, judged by the time of the chain.
  * Anybody may trigger it, and it costs gas. A visitor without a wallet is asked for one
- * instead, because the write cannot be signed without it.
+ * instead, because the write cannot be signed without it, and a wallet on the wrong network is
+ * offered the switch to BNB Smart Chain.
  */
 export function SettleButton({ bounty, now }: SettleButtonProps) {
   const { state, settleBounty } = useBounty()
@@ -66,10 +75,14 @@ export function SettleButton({ bounty, now }: SettleButtonProps) {
   if (now === null || id === null) return null
   if (!canSettle(bounty, new Date(now * 1000))) return null
   if (user.kind === 'no-wallet') return <p className="sf-lead">{copy.bounty.settleWalletNeeded}</p>
+  if (user.kind === 'wrong-network') return <WrongNetwork />
+  // While the wallet is still being read, nothing is offered that needs it.
+  if (user.kind === 'checking') return null
+  const busy = state.status === 'sending'
   return (
     <div className="sf-stack">
-      <Button variant="primary" disabled={state.status !== 'idle'} onClick={() => void settleBounty(id)}>
-        {copy.bounty.settle}
+      <Button variant="primary" disabled={busy} onClick={() => void settleBounty(id)}>
+        {busy ? copy.attest.pending : copy.bounty.settle}
       </Button>
       <p className="sf-lead">{copy.bounty.gas}</p>
       <WriteStates status={state.status} error={state.error} txHash={state.txHash} onRetry={() => void settleBounty(id)} />

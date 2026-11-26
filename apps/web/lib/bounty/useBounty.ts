@@ -27,26 +27,34 @@ function useBountyWrite() {
   const client = usePublicClient({ chainId: expectedChainId })
   const [state, setState] = useState<BountyWriteState>(IDLE)
 
-  function fail(error: unknown): void {
+  function fail(error: unknown, txHash: Hex | null): void {
     if (isUserRejection(error)) {
       setState(IDLE)
       return
     }
     const translated = translateContractError(error)
     const message = error instanceof WriteFailed ? error.message : (translated?.message ?? copy.errors.unknown)
-    setState({ status: 'failed', error: message, txHash: null })
+    // The transaction that failed keeps its hash, so the reader can look at it on the explorer.
+    setState({ status: 'failed', error: message, txHash })
   }
 
-  /** The write is a success only when the chain has confirmed the receipt. */
+  /**
+   * The write is a success only when the chain has confirmed the receipt.
+   *
+   * The hash is remembered as soon as the wallet has signed, so a transaction that is on its way
+   * can be followed while it waits for its confirmation.
+   */
   async function run(action: () => Promise<Hex>): Promise<boolean> {
     setState({ status: 'sending', error: null, txHash: null })
+    let txHash: Hex | null = null
     try {
-      const txHash = await action()
+      txHash = await action()
+      setState({ status: 'sending', error: null, txHash })
       await confirmWrite(client, txHash)
       setState({ status: 'done', error: null, txHash })
       return true
     } catch (error) {
-      fail(error)
+      fail(error, txHash)
       return false
     }
   }
@@ -109,6 +117,5 @@ export function useBounty() {
     state,
     createBounty,
     settleBounty,
-    reset: () => setState(IDLE),
   }
 }

@@ -6,7 +6,7 @@ import { expectedChainId } from '../chain/config'
 export type ChainTime = { now: number | null; failed: boolean }
 
 /** How often the time of the chain is read again, in milliseconds. */
-const REFRESH = 60_000
+export const CHAIN_REFRESH = 60_000
 
 /**
  * The timestamp of the latest block of the chain.
@@ -26,7 +26,12 @@ export function useChainTime(): ChainTime {
   const [time, setTime] = useState<ChainTime>({ now: null, failed: false })
   useEffect(() => {
     const reader = client
-    if (reader === undefined) return
+    if (reader === undefined) {
+      // Without a client the chain cannot be read, and the caller then offers nothing that
+      // depends on the time of the chain.
+      setTime({ now: null, failed: true })
+      return
+    }
     let live = true
     const read = (): void => {
       reader.getBlock().then(
@@ -39,7 +44,7 @@ export function useChainTime(): ChainTime {
       )
     }
     read()
-    const timer = setInterval(read, REFRESH)
+    const timer = setInterval(read, CHAIN_REFRESH)
     return () => {
       live = false
       clearInterval(timer)
