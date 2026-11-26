@@ -47,7 +47,7 @@ const label: Record<Verdict, string> = {
 }
 
 /** The flags of this kind of target. A contract never carries a skill flag, and the other way round. */
-function flagsOfType(targetType: TargetType): FlagName[] {
+export function flagsOfType(targetType: TargetType): FlagName[] {
   const mask = targetType === 'SMART_CONTRACT' ? CONTRACT_FLAGS_MASK : SKILL_FLAGS_MASK
   return FLAG_NAMES.filter(name => (FLAGS[name] & mask) !== 0)
 }

@@ -61,6 +61,7 @@ vi.mock('wagmi', () => ({
     },
   }),
   useWriteContract: () => ({ mutateAsync: mocks.write }),
+  useBlock: () => ({ data: { timestamp: BigInt(mocks.block.timestamp) }, refetch: vi.fn() }),
   useWaitForTransactionReceipt: () => ({ isSuccess: false, isError: false, error: null }),
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
   useConnectors: () => [],

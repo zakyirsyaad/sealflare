@@ -1,7 +1,8 @@
-import type { AttestationRow, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
+import type { AttestationRow, ChallengeSummary, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
 import { Tabs } from '../ui/Tabs'
 import { BountyTab } from '../bounty/BountyTab'
 import { AttestationsTab } from './AttestationsTab'
+import { DisputeTab } from './DisputeTab'
 import { FindingsTab } from './FindingsTab'
 import { HistoryTab } from './HistoryTab'
 import { PublisherTab } from './PublisherTab'
@@ -15,6 +16,8 @@ export type TargetTabsProps = {
   rows: readonly AttestationRow[]
   scan: ScanReport | null
   evidenceFailed?: boolean
+  /** The disputes of this target, or null when they could not be read. */
+  challenges?: readonly ChallengeSummary[] | null
   /** How the target was bound, read from the event log of Core. */
   binding?: Binding | null
   /** The bond of the publisher, as the vault holds it. */
@@ -23,17 +26,13 @@ export type TargetTabsProps = {
   sandbox?: SandboxSource | null
 }
 
-function disputeContent(detail: TargetDetail) {
-  if (detail.activeChallengeId === null) return <p className="sf-tab__empty">{copy.target.noDisputes}</p>
-  return <p>{copy.target.challengeOpen.replace('{id}', detail.activeChallengeId)}</p>
-}
-
 /** The details of a target. The findings open first. */
 export function TargetTabs({
   detail,
   rows,
   scan,
   evidenceFailed = false,
+  challenges = [],
   binding = null,
   publisherBond = null,
   sandbox = null,
@@ -70,7 +69,11 @@ export function TargetTabs({
         />
       ),
     },
-    { id: 'dispute', label: copy.target.dispute, content: disputeContent(detail) },
+    {
+      id: 'dispute',
+      label: copy.target.dispute,
+      content: <DisputeTab challenges={challenges} activeChallengeId={detail.activeChallengeId} />,
+    },
     { id: 'bounty', label: copy.target.bounty, content: <BountyTab targetId={detail.targetId} /> },
     { id: 'history', label: copy.target.history, content: <HistoryTab rows={rows} /> },
   ]

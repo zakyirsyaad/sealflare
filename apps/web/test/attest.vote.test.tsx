@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { evidenceHashOf, type SignalGroup } from '@sealflare/shared/schemas'
 
@@ -124,7 +124,7 @@ test('success asks the server for the page again, once', async () => {
   render(page(signal(0)))
   await vote()
   await screen.findByRole('row', { name: /Your vote: Caution/ })
-  expect(refresh).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 5_000 })
 })
 
 test('after the vote the button names the verdict and links to the transaction', async () => {

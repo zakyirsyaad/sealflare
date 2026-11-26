@@ -1,4 +1,4 @@
-import type { AttestationRow, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
+import type { AttestationRow, ChallengeSummary, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
 import { ActionColumn } from './ActionColumn'
 import { Banners } from './Banners'
 import { Identity } from './Identity'
@@ -30,6 +30,8 @@ export type TargetScreenProps = {
   /** The scanned bundle is another bundle than the one the registry sealed. */
   bundleChanged: boolean
   failed: boolean
+  /** The disputes of this target, or null when they could not be read. */
+  challenges?: readonly ChallengeSummary[] | null
   /** How the target was bound, read from the event log of Core. */
   binding?: Binding | null
   /** The bond of the publisher, as the vault holds it. */
@@ -45,6 +47,20 @@ function ForeignNotice() {
       <p>{copy.target.differentBundle}</p>
     </div>
   )
+}
+
+/** What the tabs of the target page show. */
+function tabsOf(props: TargetScreenProps, detail: TargetDetail) {
+  return {
+    detail,
+    rows: props.attestations,
+    scan: props.scan,
+    evidenceFailed: props.evidenceFailed,
+    challenges: props.challenges,
+    binding: props.binding ?? null,
+    publisherBond: props.publisherBond ?? null,
+    sandbox: props.sandbox ?? null,
+  }
 }
 
 /** The target page: the identity, the warnings, the status, the actions and the details. */
@@ -83,19 +99,12 @@ export function TargetScreen(props: TargetScreenProps) {
             scan={props.scan}
             attestations={props.attestations}
             underDispute={detail.activeChallengeId !== null}
+            activeChallengeId={detail.activeChallengeId}
           />
         </div>
       </PendingVoteProvider>
       <section className="sf-frame sf-target__tabs">
-        <TargetTabs
-          detail={detail}
-          rows={props.attestations}
-          scan={props.scan}
-          evidenceFailed={props.evidenceFailed}
-          binding={props.binding ?? null}
-          publisherBond={props.publisherBond ?? null}
-          sandbox={props.sandbox ?? null}
-        />
+        <TargetTabs {...tabsOf(props, detail)} />
       </section>
     </div>
   )

@@ -7,7 +7,7 @@ import type { AttestInput, AttestState, AttestTarget } from './attest'
 import { attempt } from './report'
 import { useReceipt } from './receipt'
 
-export { isWorking, type AttestInput, type AttestState, type AttestTarget } from './attest'
+export { isLocked, isWorking, type AttestInput, type AttestState, type AttestTarget, type Step } from './attest'
 
 /**
  * The attestation of one target.
