@@ -10,7 +10,11 @@ export type AttestButtonProps = {
   onSubmit: () => void
   onRetry: () => void
   /** Starts the attempt over, for a wallet prompt that never answers. */
-  onStartAgain: () => void
+  onStartAgain?: () => void
+  /** The text on the button, when the flow is not an attestation. */
+  label?: string
+  /** The button cannot be used, because the flow is not ready yet. */
+  disabled?: boolean
 }
 
 /** The link to the transaction of the vote, once there is one. */
@@ -29,7 +33,7 @@ export function TransactionLink({ txHash, children }: { txHash: string; children
  * A vote that landed is shown with the label "Waiting for finality", because the indexer reads it
  * only when the block is final.
  */
-export function AttestButton({ state, error, txHash, onSubmit, onRetry, onStartAgain }: AttestButtonProps) {
+export function AttestButton({ state, error, txHash, onSubmit, onRetry, onStartAgain, label, disabled = false }: AttestButtonProps) {
   if (state === 'done') {
     return (
       <div className="sf-stack">
@@ -55,10 +59,10 @@ export function AttestButton({ state, error, txHash, onSubmit, onRetry, onStartA
   const abandonable = state === 'signing-evidence' || state === 'uploading'
   return (
     <div className="sf-stack">
-      <Button variant="primary" className="sf-btn--block" disabled={busy} onClick={onSubmit}>
-        {busy ? copy.attest.pending : copy.attest.submit}
+      <Button variant="primary" className="sf-btn--block" disabled={busy || disabled} onClick={onSubmit}>
+        {busy ? copy.attest.pending : (label ?? copy.attest.submit)}
       </Button>
-      {abandonable && (
+      {abandonable && onStartAgain !== undefined && (
         <Button variant="secondary" onClick={onStartAgain}>
           {copy.attest.startAgain}
         </Button>

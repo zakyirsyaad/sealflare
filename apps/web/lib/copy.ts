@@ -1,4 +1,6 @@
 // Exact UI strings from docs/ux.md, grouped by screen. Shared wording lives in common.
+import { dispute } from './copy.dispute'
+
 export const copy = {
   "common": {
     "retry": "Try again",
@@ -95,6 +97,7 @@ export const copy = {
     "NoWithdrawalRequested": "No withdrawal has been requested.",
     "NothingToWithdraw": "You have no balance to withdraw.",
     "TransferFailed": "The transfer failed. Try again.",
+    "txReplaced": "The wallet cancelled or replaced that transaction, so it did not go through.",
     "WithdrawalNotReady": "The withdrawal is not ready yet. It becomes available at {time}."
   },
   "jurorStatus": [
@@ -330,18 +333,7 @@ export const copy = {
       "failed": "failed"
     }
   },
-  "dispute": {
-    "action": "Open a challenge",
-    "viewOpen": "View the open challenge",
-    "submitReply": "Submit reply",
-    "noPublisher": "No publisher is bound to this target, so no reply is possible.",
-    "penalties": "Apply penalties (N pending)",
-    "penaltyPending": "Penalty pending",
-    "commit": "Commit",
-    "reveal": "Reveal",
-    "resolve": "Resolve",
-    "expire": "Expire"
-  },
+  "dispute": dispute,
   "jury": {
     "join": "Join the jury",
     "reveal": "Reveal my vote",

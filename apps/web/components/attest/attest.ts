@@ -10,6 +10,17 @@ export function isWorking(state: AttestState): boolean {
   return state === 'signing-evidence' || state === 'uploading' || state === 'signing-tx' || state === 'pending'
 }
 
+/**
+ * The panel is locked while the work may not be left behind.
+ *
+ * While the evidence is signed, the user may leave: the attempt stops before the evidence is
+ * pinned and before the transaction is sent. From the moment the transaction is asked for, the
+ * hash may arrive at any time, so the panel stays until the receipt is read.
+ */
+export function isLocked(state: AttestState): boolean {
+  return state === 'uploading' || state === 'signing-tx' || state === 'pending'
+}
+
 export type AttestInput = {
   verdict: Verdict
   flags: number

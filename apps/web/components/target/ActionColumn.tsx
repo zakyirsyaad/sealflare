@@ -7,7 +7,9 @@ import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
 import { formatUtc, isZeroHash, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
+import { ChallengeAction } from '../dispute/ChallengeAction'
 import { attestAvailability, type AttestAvailability } from '../attest/availability'
+import { modulesLive } from '../../lib/chain/config'
 import { usePendingVote, type PendingVote } from './pendingVote'
 
 export type ActionColumnProps = {
@@ -28,6 +30,8 @@ export type ActionColumnProps = {
   attestations: AttestationRow[]
   /** A challenge is open on this target. */
   underDispute: boolean
+  /** The id of the open challenge, as the registry names it. Null when none is open. */
+  activeChallengeId?: string | null
 }
 
 type Vote = { verdict: Verdict; txHash: string }
@@ -152,6 +156,27 @@ function PrimaryAction({ availability, reason, busy, props, linkKnown, onOpen }:
   )
 }
 
+/** The two secondary actions: the challenge, and the bounty that opens with the Vault. */
+function SecondaryActions(props: ActionColumnProps) {
+  return (
+    <>
+      <ChallengeAction
+        targetId={props.targetId}
+        targetType={props.targetType}
+        label={props.label}
+        scan={props.scan}
+        tier={props.tier}
+        activeChallengeId={props.activeChallengeId ?? null}
+      />
+      <Button variant="secondary" className="sf-btn--block" disabled>
+        {copy.target.fundBounty}
+      </Button>
+      {/* The challenge action says it itself, unless a confirmed danger leaves it without a button. */}
+      {!modulesLive && props.tier === 'CONFIRMED_DANGER' && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
+    </>
+  )
+}
+
 /**
  * The actions of the target page. The attest button follows the state of the wallet: it is
  * closed with a reason when the user cannot attest yet, and it opens the attest panel when the
@@ -186,13 +211,7 @@ export function ActionColumn(props: ActionColumnProps) {
         linkKnown={onChain === null || !props.evidenceFailed}
         onOpen={() => setOpen(true)}
       />
-      <Button variant="secondary" className="sf-btn--block" disabled>
-        {copy.target.challenge}
-      </Button>
-      <Button variant="secondary" className="sf-btn--block" disabled>
-        {copy.target.fundBounty}
-      </Button>
-      <p className="sf-actions__note">{copy.common.modulesNotLive}</p>
+      <SecondaryActions {...props} />
       <Notes
         quota={limitText(left === null ? copy.target.quotaDefault : copy.target.quotaLeft, left)}
         reason={reason}
