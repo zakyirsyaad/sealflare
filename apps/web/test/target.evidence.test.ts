@@ -68,7 +68,8 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
     attestations: async () => [attestation(), attestation()],
     evidence: async () => [evidenceRow(0, 'ipfs://old'), evidenceRow(1, 'ipfs://old-tail')],
     evidenceFrom: async () => [evidenceRow(1, 'ipfs://tail')],
-    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0 }),
+    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0, lockedByChallengeId: 0n }),
+    binding: async () => null,
     ...overrides,
   }
 }
