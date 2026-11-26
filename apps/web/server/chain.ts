@@ -116,7 +116,7 @@ const BATCHING = { batch: { batchSize: 100, wait: 10 } } as const
  */
 let cached: { key: string; client: PublicClient } | null = null
 
-function client(): PublicClient {
+export function getRpcClient(): PublicClient {
   const chain = chainFor(expectedChainId)
   const urls = rpcUrls()
   const key = `${chain.id}|${urls.join(',')}`
@@ -127,6 +127,11 @@ function client(): PublicClient {
   const built = createPublicClient({ chain, transport, cacheTime: 0 })
   cached = { key, client: built }
   return built
+}
+
+/** The read of a test starts with no client, as a fresh process would. */
+export function clearRpcClient(): void {
+  cached = null
 }
 
 function coreAddress(): Address {
@@ -260,8 +265,8 @@ const CONFIRMATIONS = 12n
  * stays one row.
  */
 async function readEvidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]> {
-  // The head is read without the cache of the client: the confirmed block below depends on it.
-  const head = await getBlockNumber(getRpcClient(), { cacheTime: 0 })
+  // The client keeps no block number (cacheTime 0): the confirmed block below depends on the head.
+  const head = await getRpcClient().getBlockNumber()
   const key = targetId.toLowerCase()
   const cached = evidenceCache.get(key)
   const fromBlock = cached === undefined ? await createdBlock(targetId, createdAt, head) : cached.block + 1n
@@ -324,7 +329,7 @@ async function readBond(targetId: Hex, publisher: Address): Promise<BondState | 
  * blocks below the head, and with it the tier is read at the moment the answer names.
  */
 async function readTier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier> {
-  const value = await client().readContract({
+  const value = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'tierOf',
@@ -350,7 +355,7 @@ const TIER_MARGIN = 3n
  * how old they are.
  */
 async function tierBlockNumber(): Promise<bigint> {
-  const head = await client().getBlockNumber()
+  const head = await getRpcClient().getBlockNumber()
   return head > TIER_MARGIN ? head - TIER_MARGIN : 0n
 }
 
@@ -362,7 +367,7 @@ export function getChainReader(): ChainReader {
     tierAt: (targetId, blockNumber) => readTier(targetId, blockNumber),
     tierBlockNumber,
     isAgentIdHolder: async address => {
-      const value = await client().readContract({
+      const value = await getRpcClient().readContract({
         address: coreAddress(),
         abi: coreAbi,
         functionName: 'isAgentIdHolder',
