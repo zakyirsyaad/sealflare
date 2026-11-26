@@ -233,9 +233,11 @@ async function readEvidence(reader: ChainReader, targetId: Hex, createdAt: numbe
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
-  const target = await reader.target(targetId)
-  const tier = target ? await reader.tier(targetId) : 'UNRATED'
-  const attestations = target ? await reader.attestations(targetId, target.attestationCount) : []
+  // One block for the whole page, so the votes and the tier next to them come from the same moment.
+  const block = await reader.tierBlockNumber()
+  const target = await reader.target(targetId, block)
+  const tier = target ? await reader.tier(targetId, block) : 'UNRATED'
+  const attestations = target ? await reader.attestations(targetId, target.attestationCount, block) : []
   let evidence: EvidenceRow[] = []
   let evidenceFailed = false
   // A target without attestations has no event to read. The log is never walked for nothing.

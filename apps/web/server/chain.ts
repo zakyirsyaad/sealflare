@@ -47,17 +47,20 @@ export type BondState = { amount: bigint; withdrawalAvailableAt: number }
 
 /** Everything the target page needs from the chain. */
 export interface ChainReader {
-  /** Null when the registry has never seen this target. */
-  target(targetId: Hex): Promise<CoreTarget | null>
-  /** The tier always comes from Core, never from a cached row. */
-  tier(targetId: Hex): Promise<TrustTier>
+  /** Null when the registry has never seen this target. Read at the block when one is given. */
+  target(targetId: Hex, blockNumber?: bigint): Promise<CoreTarget | null>
+  /**
+   * The tier always comes from Core, never from a cached row. A page passes the block it reads
+   * everything at, so it shows one moment; without one the tier is read a few blocks below the head.
+   */
+  tier(targetId: Hex, blockNumber?: bigint): Promise<TrustTier>
   /** The tier at a fixed block, so every tier of one answer comes from the same moment. */
   tierAt(targetId: Hex, blockNumber: bigint): Promise<TrustTier>
   /** The block the tiers are read at, a few blocks below the head and shared by one answer. */
   tierBlockNumber(): Promise<bigint>
   /** Whether the address holds an Agent ID, which every signed request needs. */
   isAgentIdHolder(address: Address): Promise<boolean>
-  attestations(targetId: Hex, count: number): Promise<CoreAttestation[]>
+  attestations(targetId: Hex, count: number, blockNumber?: bigint): Promise<CoreAttestation[]>
   /** The evidence of the event log, read from the block the target was created in. Rejects when the log cannot be read in full. */
   evidence(targetId: Hex, createdAt: number, count: number): Promise<EvidenceRow[]>
   /** The evidence of the event log above a block, for the votes that are not final yet. */
@@ -105,16 +108,22 @@ function chainFor(chainId: number) {
 /**
  * How many calls the transport puts into one request, and how long it waits for the others.
  *
- * The calls of a list of targets come at the same time, so the transport sends them in one
- * request instead of one request each.
+ * Some providers refuse a large batch: the keyless endpoint that viem uses for BSC takes 25 calls
+ * and a free plan of another provider takes 3. viem copies the error of a refused batch to every
+ * call, and the fallback sends the same batch to the next url, so one such provider in the list
+ * would fail every read. The batch stays small, and the many reads of a list go out as Multicall3
+ * calls instead (see `getRpcClient`).
  */
-const BATCHING = { batch: { batchSize: 100, wait: 10 } } as const
+const BATCHING = { batch: { batchSize: 10, wait: 10 } } as const
 
 /**
  * The client of the chain.
  *
  * The client is built once and kept, because the batching of the transport only works inside one
- * client. A client of its own for every read would send every read in a request of its own.
+ * client. A client of its own for every read would send every read in a request of its own. The
+ * reads of one block that come at the same time are grouped into Multicall3 calls, so the tiers of
+ * a list are a few `eth_call`s and not one call each. viem reads the address of Multicall3 from the
+ * chain, and a chain without one, such as the local Anvil, is read with plain `eth_call`s.
  */
 let cached: { key: string; client: PublicClient } | null = null
 
@@ -126,7 +135,7 @@ export function getRpcClient(): PublicClient {
   const transport = urls.length === 0 ? http(undefined, BATCHING) : fallback(urls.map(url => http(url, BATCHING)))
   // The client is kept, so its cache is kept too. A block number that is cached would be read as
   // the head of the chain for the rest of the life of the process.
-  const built = createPublicClient({ chain, transport, cacheTime: 0 })
+  const built = createPublicClient({ chain, transport, cacheTime: 0, batch: { multicall: true } })
   cached = { key, client: built }
   return built
 }
@@ -159,12 +168,13 @@ function targetExists(target: CoreTarget): boolean {
   return target.createdAt > 0
 }
 
-async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
+async function readTarget(targetId: Hex, blockNumber?: bigint): Promise<CoreTarget | null> {
   const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getTarget',
     args: [targetId],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
   })
   const target = {
     targetType: targetTypeOf(raw.targetType),
@@ -186,12 +196,13 @@ async function readTarget(targetId: Hex): Promise<CoreTarget | null> {
   return targetExists(target) ? target : null
 }
 
-async function readAttestation(targetId: Hex, index: number): Promise<CoreAttestation> {
+async function readAttestation(targetId: Hex, index: number, blockNumber?: bigint): Promise<CoreAttestation> {
   const raw = await getRpcClient().readContract({
     address: coreAddress(),
     abi: coreAbi,
     functionName: 'getAttestation',
     args: [targetId, index],
+    ...(blockNumber === undefined ? {} : { blockNumber }),
   })
   return {
     guardian: raw.guardian,
@@ -206,11 +217,11 @@ async function readAttestation(targetId: Hex, index: number): Promise<CoreAttest
   }
 }
 
-async function readAttestations(targetId: Hex, count: number): Promise<CoreAttestation[]> {
+async function readAttestations(targetId: Hex, count: number, blockNumber?: bigint): Promise<CoreAttestation[]> {
   const rows: CoreAttestation[] = []
   for (let start = 0; start < count; start += READ_BATCH) {
     const indexes = Array.from({ length: Math.min(READ_BATCH, count - start) }, (_, offset) => start + offset)
-    rows.push(...(await Promise.all(indexes.map(index => readAttestation(targetId, index)))))
+    rows.push(...(await Promise.all(indexes.map(index => readAttestation(targetId, index, blockNumber)))))
   }
   return rows
 }
@@ -399,7 +410,7 @@ async function tierBlockNumber(): Promise<bigint> {
 export function getChainReader(): ChainReader {
   return {
     target: readTarget,
-    tier: async targetId => readTier(targetId, await tierBlockNumber()),
+    tier: async (targetId, blockNumber) => readTier(targetId, blockNumber ?? (await tierBlockNumber())),
     tierAt: (targetId, blockNumber) => readTier(targetId, blockNumber),
     tierBlockNumber,
     isAgentIdHolder: async address => {
