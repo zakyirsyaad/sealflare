@@ -62,6 +62,9 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
   return {
     target: async () => coreTarget(),
     tier: async () => 'COMMUNITY_SAFE',
+    tierAt: async () => 'COMMUNITY_SAFE',
+    tierBlockNumber: async () => 100n,
+    isAgentIdHolder: async () => true,
     attestations: async () => [attestation(), attestation()],
     evidence: async () => [evidenceRow(0, 'ipfs://old'), evidenceRow(1, 'ipfs://old-tail')],
     evidenceFrom: async () => [evidenceRow(1, 'ipfs://tail')],
