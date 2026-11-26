@@ -5,6 +5,8 @@ import { ZERO_ADDRESS, targetIdOfContract, type TrustTier } from '@sealflare/sha
 import { getChainReader, type ChainReader, type CoreAttestation, type CoreTarget, type EvidenceRow } from './chain'
 import { getScan, getScanForSource, putScan, putScanForSource } from './scanStore'
 import { getScanEnvironment } from './scanner'
+import type { Binding } from '../lib/publish/binding'
+import type { PublisherBond } from '../lib/publish/bond'
 
 const ZERO_HASH = `0x${'0'.repeat(64)}` as const
 
@@ -181,13 +183,17 @@ export type TargetPageData = {
   /** A skill source that names a version other than the rated one. The page then offers that version. */
   versionChanged: boolean
   currentVersionId: string | null
-  /** The link names another bundle than the one the registry rated. */
+  /** The link names another bundle than the registry rated. */
   differentBundle: boolean
   /** The link names another bundle, and the registry has no verified publisher to compare it with. */
   uncheckedBundle: boolean
   /** The event log could not be read in full, so the evidence and transaction links are unknown. */
   evidenceFailed: boolean
   failed: boolean
+  /** How the target was bound, read from the event log. Null when the log does not say. */
+  binding: Binding | null
+  /** The bond of the publisher, as the vault holds it. */
+  publisherBond: PublisherBond | null
 }
 
 async function readChain(reader: ChainReader, targetId: Hex) {
@@ -207,7 +213,8 @@ async function readChain(reader: ChainReader, targetId: Hex) {
   }
   const bond =
     target && target.publisher !== ZERO_ADDRESS ? await reader.bond(targetId, target.publisher) : null
-  return { target, tier, attestations, evidence, evidenceFailed, bond }
+  const binding = target === null ? null : await reader.binding(targetId, target.createdAt)
+  return { target, tier, attestations, evidence, evidenceFailed, bond, binding }
 }
 
 /**
@@ -230,6 +237,8 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     uncheckedBundle: false,
     evidenceFailed: false,
     failed: false,
+    binding: null,
+    publisherBond: null,
   }
   if (!parsedId.success) return { ...empty, failed: true }
   const id = parsedId.data
@@ -276,6 +285,15 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
   const parsed = TargetDetail.safeParse(built)
   const detail = parsed.success ? parsed.data : null
   const unbondingAt = chain.bond && chain.bond.withdrawalAvailableAt > 0 ? chain.bond.withdrawalAvailableAt : null
+  const publisherBond: PublisherBond | null =
+    chain.bond === null
+      ? null
+      : {
+          amount: chain.bond.amount.toString(),
+          withdrawalAvailableAt: unbondingAt,
+          lockedByChallengeId:
+            chain.bond.lockedByChallengeId > 0n ? chain.bond.lockedByChallengeId.toString() : null,
+        }
   return {
     targetId: id,
     detail,
@@ -290,5 +308,7 @@ export async function loadTarget(targetId: string, src: string | null): Promise<
     uncheckedBundle,
     evidenceFailed: chain.evidenceFailed,
     failed: false,
+    binding: chain.binding,
+    publisherBond,
   }
 }

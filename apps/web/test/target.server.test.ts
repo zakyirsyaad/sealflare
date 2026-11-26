@@ -62,7 +62,8 @@ function fakeReader(overrides: Partial<ChainReader> = {}): ChainReader {
       { index: 0, shortProof: 'source verified', evidenceURI: 'https://example.org/1', txHash: `0x${'33'.repeat(32)}` },
       { index: 1, shortProof: 'owner can mint', evidenceURI: '', txHash: `0x${'44'.repeat(32)}` },
     ],
-    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0 }),
+    bond: async () => ({ amount: 0n, withdrawalAvailableAt: 0, lockedByChallengeId: 0n }),
+    binding: async () => null,
     ...overrides,
   }
 }
