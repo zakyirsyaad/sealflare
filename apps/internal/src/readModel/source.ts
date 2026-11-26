@@ -40,9 +40,14 @@ export function sameRepository(left: string | null, right: string | null): boole
   const first = decodeSrc(left)
   const second = decodeSrc(right)
   if (first === null || second === null) return left === right
-  if (first.kind === 'contract' && second.kind === 'contract') return first.address === second.address
+  if (first.kind === 'contract' && second.kind === 'contract') {
+    return first.address.toLowerCase() === second.address.toLowerCase()
+  }
   if (first.kind === 'skill' && second.kind === 'skill') {
-    return first.owner === second.owner && first.repo === second.repo
+    // GitHub treats owner and repository names case-insensitively.
+    return (
+      first.owner.toLowerCase() === second.owner.toLowerCase() && first.repo.toLowerCase() === second.repo.toLowerCase()
+    )
   }
   return false
 }
