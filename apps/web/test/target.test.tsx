@@ -103,10 +103,7 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     src: null,
     blocksBehind: null,
     unbondingAt: null,
-    versionChanged: false,
-    currentVersionId: null,
     differentBundle: false,
-    uncheckedBundle: false,
     evidenceFailed: false,
     targetWord: null,
     bundleChanged: false,
@@ -410,16 +407,9 @@ test('a link that names another bundle says so, and the page offers no version o
   expect(screen.queryByRole('link', { name: copy.target.currentVersion })).toBeNull()
 })
 
-test('a link that names another bundle and cannot be compared says nothing that the page cannot know', () => {
-  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT', src: null }), uncheckedBundle: true })} />)
-  expect(screen.getByText(copy.target.uncheckedBundle)).toBeInTheDocument()
-  expect(screen.queryByText(copy.target.differentBundle)).toBeNull()
-})
-
-test('the version notice links to the page of the current version of the skill', () => {
-  const current = `0x${'88'.repeat(32)}`
-  render(<TargetScreen {...props({ detail: skillDetail(), versionChanged: true, currentVersionId: current, src: `gh:sealflare/guard@${SHA}:skills/guard` })} />)
-  expect(screen.getByRole('link', { name: copy.target.currentVersion })).toHaveAttribute('href', expect.stringContaining(`/app/t/${current}?src=`))
+test('the page never links to another target page as a new version of the rated skill', () => {
+  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT' }), differentBundle: true })} />)
+  for (const link of screen.getAllByRole('link')) expect(link.getAttribute('href')).not.toContain('/app/t/')
 })
 
 test('verdicts are shown in sentence case, not as the raw enum', async () => {
