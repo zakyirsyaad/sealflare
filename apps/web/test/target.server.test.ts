@@ -340,3 +340,41 @@ test('a target without attestations never reads the event log', async () => {
   expect(evidence).not.toHaveBeenCalled()
   expect(data.evidenceFailed).toBe(false)
 })
+
+test('the page carries the word Core.attest takes: the padded address of a contract', async () => {
+  const data = await loadTarget(targetId, null)
+  expect(data.targetWord).toBe(`0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`)
+  expect(data.targetWord).not.toBe(targetId)
+})
+
+test('a contract the registry does not know yet takes its word from the scan', async () => {
+  reader.current = fakeReader({ target: async () => null })
+  scanner.scanContract.mockResolvedValue(contractReport(address))
+  const data = await loadTarget(targetId, address)
+  expect(data.targetWord).toBe(`0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`)
+})
+
+test('the word of a skill is its canonical bundle hash, and the same bundle is not a change', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  reader.current = fakeReader({
+    target: async () => coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: audited.source.kind === 'skill' ? audited.source.canonicalBundleHash : `0x${'00'.repeat(32)}` }),
+    tier: async () => 'COMMUNITY_SAFE',
+  })
+  scanner.scanSkill.mockResolvedValue(audited)
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.targetWord).toBe(audited.source.kind === 'skill' ? audited.source.canonicalBundleHash : null)
+  expect(data.bundleChanged).toBe(false)
+})
+
+test('a skill whose repository now holds another bundle is a change, whatever the tier says', async () => {
+  const audited = skillReport(`0x${'55'.repeat(32)}`)
+  const current = skillReport(`0x${'66'.repeat(32)}`)
+  reader.current = fakeReader({
+    target: async () => coreTarget({ targetType: 'AI_SKILL_BUNDLE', target: audited.source.kind === 'skill' ? audited.source.canonicalBundleHash : `0x${'00'.repeat(32)}` }),
+    tier: async () => 'COMMUNITY_SAFE',
+  })
+  scanner.scanSkill.mockResolvedValue(current)
+  const data = await loadTarget(audited.targetId, SKILL_SRC)
+  expect(data.bundleChanged).toBe(true)
+  expect(data.detail?.tier).toBe('COMMUNITY_SAFE')
+})

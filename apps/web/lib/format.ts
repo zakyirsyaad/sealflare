@@ -18,6 +18,10 @@ export function timeLeft(until: Date, now: Date): string {
   const minutes = Math.max(0, Math.ceil(diff / 60000))
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
+/** A transaction hash that stands for nothing, used when the event log could not be read. */
+export function isZeroHash(hash: string): boolean {
+  return /^0x0{64}$/.test(hash)
+}
 export function verdictLabel(verdict: 'SAFE' | 'CAUTION' | 'DANGER'): string {
   return copy.attest[verdict === 'SAFE' ? 'safe' : verdict === 'CAUTION' ? 'caution' : 'danger']
 }

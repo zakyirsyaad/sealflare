@@ -1,5 +1,6 @@
 import { decodeErrorResult, type Abi, type Hex } from 'viem'
 import { coreAbi, courtAbi, vaultAbi } from '@sealflare/shared/abi'
+import { CONSTANTS } from '@sealflare/shared/rules'
 import { copy } from '../copy'
 import { formatBnb, formatUtc } from '../format'
 
@@ -54,6 +55,7 @@ function describe({ errorName, args }: Decoded): string | null {
   const [first] = args
   switch (errorName) {
     case 'DailyLimitReached':
+      return fill(template, { time: formatUtc(first as bigint), limit: String(CONSTANTS.DAILY_ATTEST_LIMIT) })
     case 'InCooldown':
     case 'WithdrawalNotReady':
       return fill(template, { time: formatUtc(first as bigint) })

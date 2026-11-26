@@ -105,6 +105,8 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     unbondingAt: null,
     differentBundle: false,
     evidenceFailed: false,
+    targetWord: null,
+    bundleChanged: false,
     failed: false,
     ...overrides,
   }
@@ -355,9 +357,9 @@ test('a failed load says the on-chain data is safe and offers a retry', () => {
   expect(screen.getByRole('button', { name: copy.common.retry })).toBeInTheDocument()
 })
 
-test('the attest button is closed with a reason when there is no wallet', () => {
+test('the attest button opens without a wallet and says that a wallet is needed', () => {
   render(<TargetScreen {...props()} />)
-  expect(screen.getByRole('button', { name: copy.attest.action })).toBeDisabled()
+  expect(screen.getByRole('button', { name: copy.attest.action })).toBeEnabled()
   expect(screen.getByText(copy.target.attestHint)).toBeInTheDocument()
 })
 
@@ -377,7 +379,7 @@ test('a contract whose code changed since it was sealed closes Attest and says w
 
 test('a skill that changed turns Attest into "Scan the current version"', () => {
   wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
-  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT' }) })} />)
+  render(<TargetScreen {...props({ detail: skillDetail(), bundleChanged: true })} />)
   expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
   expect(screen.getByRole('link', { name: copy.target.currentVersion })).toHaveAttribute(
     'href',
@@ -386,7 +388,8 @@ test('a skill that changed turns Attest into "Scan the current version"', () => 
 })
 
 test('a changed skill with no known source still does not offer Attest', () => {
-  render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT', src: null }) })} />)
+  wallet.current = { kind: 'holder', isLoading: false, isError: false, recheck: () => {}, attestationsLeft: 3 }
+  render(<TargetScreen {...props({ detail: skillDetail({ src: null }), bundleChanged: true })} />)
   expect(screen.queryByRole('button', { name: copy.attest.action })).toBeNull()
   expect(screen.getByRole('button', { name: copy.target.currentVersion })).toBeDisabled()
 })
@@ -406,7 +409,7 @@ test('a link that names another bundle says so, and the page offers no version o
 
 test('the page never links to another target page as a new version of the rated skill', () => {
   render(<TargetScreen {...props({ detail: skillDetail({ tier: 'STALE_CODEHASH_DRIFT' }), differentBundle: true })} />)
-  for (const link of screen.getAllByRole('link')) expect(link.getAttribute('href')).not.toContain('/app/t/')
+  for (const link of screen.queryAllByRole('link')) expect(link.getAttribute('href')).not.toContain('/app/t/')
 })
 
 test('verdicts are shown in sentence case, not as the raw enum', async () => {

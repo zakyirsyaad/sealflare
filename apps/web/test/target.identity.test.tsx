@@ -13,6 +13,15 @@ const { wallet } = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/chain/userState', () => ({ useUserState: () => wallet.current }))
+vi.mock('wagmi', () => ({
+  useConnect: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useConnectors: () => [],
+  useDisconnect: () => ({ mutate: () => {} }),
+  useSwitchChain: () => ({ mutate: () => {}, isPending: false, error: null }),
+  useSignTypedData: () => ({ signTypedDataAsync: async () => '0x' }),
+  useWriteContract: () => ({ writeContractAsync: async () => '0x' }),
+  useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false, isError: false }),
+}))
 
 const publisher = `0x${'44'.repeat(20)}` as const
 const contentHash = `0x${'33'.repeat(32)}` as const
@@ -86,6 +95,8 @@ function props(overrides: Partial<TargetScreenProps> = {}): TargetScreenProps {
     unbondingAt: null,
     differentBundle: false,
     evidenceFailed: false,
+    targetWord: null,
+    bundleChanged: false,
     failed: false,
     ...overrides,
   }
@@ -100,9 +111,10 @@ test('the copy button of a skill copies the link of the repository, not the bare
   vi.unstubAllGlobals()
 })
 
-test('the reason for a closed attest button names the chain and never shows a placeholder', () => {
+test('the attest panel on the wrong network names the chain and never shows a placeholder', async () => {
   wallet.current = { kind: 'wrong-network', isLoading: false, isError: false, recheck: () => {} }
   render(<TargetScreen {...props()} />)
+  await userEvent.click(screen.getByRole('button', { name: copy.attest.action }))
   expect(screen.getByText('Switch to BNB Smart Chain')).toBeInTheDocument()
   expect(screen.queryByText(/\{chain\}/)).toBeNull()
 })
