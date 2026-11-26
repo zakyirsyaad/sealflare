@@ -140,6 +140,20 @@ describe('the explore list', () => {
     expect(within(row).getByText('1')).toBeVisible()
     expect(within(row).getByText('3')).toBeVisible()
   })
+
+  test('the way through the pages counts the pages and keeps the filter', async () => {
+    loadTargets.mockResolvedValue({ items: [target()], total: 40, finalizedBlock: '12345' })
+    renderList(await ExplorePage({ searchParams: Promise.resolve({ kind: 'SMART_CONTRACT' }) }))
+    expect(await screen.findByText(copy.explore.page.replace('{page}', '1').replace('{pages}', '2'))).toBeVisible()
+    // The next page is the same list, so it carries the filter with it.
+    expect(screen.getByRole('link', { name: copy.explore.next })).toHaveAttribute('href', '/app/explore?kind=SMART_CONTRACT&page=2')
+  })
+
+  test('a registry too large for one filter asks for a narrower filter', async () => {
+    loadTargets.mockRejectedValue(new ApiError('BAD_REQUEST', 'The registry holds more targets than one filter can read.'))
+    renderList(await ExplorePage({ searchParams: Promise.resolve({ verdict: 'SAFE' }) }))
+    expect(await screen.findByText(copy.explore.tooMany)).toBeVisible()
+  })
 })
 
 describe('the guardian list', () => {
@@ -160,6 +174,12 @@ describe('the guardian list', () => {
     expect(within(rows[1]!).getByText('30')).toBeVisible()
     expect(within(rows[1]!).getByText(copy.dispute.penaltyPending)).toBeVisible()
     expect(within(rows[2]!).getByText('0x1111…1111')).toBeVisible()
+  })
+
+  test('an empty guardian list says why it is empty', async () => {
+    loadGuardians.mockResolvedValue({ items: [], total: 0, finalizedBlock: '12345' })
+    renderList(await GuardiansPage({ searchParams: Promise.resolve({}) }))
+    expect(await screen.findByText(copy.guardians.empty)).toBeVisible()
   })
 })
 
@@ -191,6 +211,34 @@ describe('the guardian profile', () => {
     expect(within(rows[1]!).getByText('Attestation')).toBeVisible()
     expect(within(rows[1]!).getByText('A target')).toBeVisible()
     expect(within(rows[1]!).getByText('+2')).toBeVisible()
+  })
+})
+
+describe('the states of a guardian profile', () => {
+  test('a profile that is loading says so', async () => {
+    loadGuardian.mockReturnValue(new Promise(() => {}))
+    renderList(<GuardianProfile address={ADDRESS} />)
+    expect(await screen.findByRole('status')).toBeVisible()
+  })
+
+  test('a profile of a Guardian that does not exist says so', async () => {
+    loadGuardian.mockRejectedValue(new ApiError('NOT_FOUND', 'There is no such Guardian.'))
+    renderList(<GuardianProfile address={ADDRESS} />)
+    expect(await screen.findByText(copy.guardians.notFound)).toBeVisible()
+  })
+
+  test('an address that is not an address is a Guardian that does not exist', async () => {
+    renderList(<GuardianProfile address="not-an-address" />)
+    expect(await screen.findByText(copy.guardians.notFound)).toBeVisible()
+    // The address never reaches the API, because it is not an address.
+    expect(loadGuardian).not.toHaveBeenCalled()
+  })
+
+  test('a profile that fails says what failed and offers a retry', async () => {
+    loadGuardian.mockRejectedValue(new ApiError('INTERNAL', 'This Guardian could not be loaded.'))
+    renderList(<GuardianProfile address={ADDRESS} />)
+    expect(await screen.findByText(copy.guardians.failedProfile)).toBeVisible()
+    expect(screen.getByRole('button', { name: copy.common.retry })).toBeEnabled()
   })
 })
 
@@ -253,6 +301,9 @@ describe('the narrow screen', () => {
     const narrow = css.slice(css.indexOf('@media (max-width: 760px)'))
     expect(narrow).toContain('.sf-table tr')
     expect(narrow).toContain('display: block')
+    // The filters scroll inside the screen, so a row of them never widens the page.
+    expect(narrow).toContain('.sf-seg')
+    expect(narrow).toContain('overflow-x: auto')
     // Nothing may be wider than the screen, so the table never carries a fixed width.
     expect(css).not.toMatch(/\.sf-table[^{]*\{[^}]*min-width/)
   })

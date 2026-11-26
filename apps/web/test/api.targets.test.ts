@@ -198,9 +198,21 @@ describe('the public target API', () => {
     expect(pastBody.meta.page).toEqual({ total: 2, page: 9, limit: 1 })
   })
 
-  test('too many candidates are a 503 without partial data', async () => {
-    internalGet.mockRejectedValue(new InternalServiceError('INTERNAL', 'too many candidates'))
+  test('too many candidates ask for a narrower filter instead of a 503', async () => {
+    internalGet.mockRejectedValue(
+      new InternalServiceError('BAD_REQUEST', 'There are more than 500 candidates, so the filters have to be narrower.'),
+    )
     const response = await listRoute(request('/api/targets?tier=COMMUNITY_SAFE'))
+    expect(response.status).toBe(400)
+    const body = await answer(response)
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('BAD_REQUEST')
+    expect(body.data).toBeUndefined()
+  })
+
+  test('a failure of the internal service is a 503 without partial data', async () => {
+    internalGet.mockRejectedValue(new InternalServiceError('INTERNAL', 'the service is down'))
+    const response = await listRoute(request('/api/targets'))
     expect(response.status).toBe(503)
     const body = await answer(response)
     expect(body.success).toBe(false)

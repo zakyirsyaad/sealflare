@@ -60,8 +60,13 @@ export async function GET(request: Request): Promise<Response> {
     return await withDeadline(answerTargets(query.value, deadlineAt), deadlineAt)
   } catch (error) {
     if (error instanceof InternalServiceError) {
-      // The internal service refused or could not answer. There is no list to show, so the answer
-      // is an error and never an empty list that looks like a registry without targets.
+      // The internal service refused the request or could not answer. There is no list to show,
+      // so the answer is an error and never an empty list that looks like a registry without
+      // targets. A request that cannot be read in one go is named, so the reader is asked for a
+      // narrower filter instead of a page that cannot be filled.
+      if (error.code === 'BAD_REQUEST') {
+        return fail('BAD_REQUEST', 'The registry holds more targets than one filter can read. Narrow the filter by kind.', 400)
+      }
       return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
     }
     // The deadline of the request passed, or the chain could not be read. There is no list.

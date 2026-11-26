@@ -1,22 +1,26 @@
-import { z } from 'zod'
-import type { TrustTier } from '@sealflare/shared/rules'
+import { VERDICTS, type TrustTier, type Verdict } from '@sealflare/shared/rules'
+import { VerdictSchema } from '@sealflare/shared/schemas'
 
 /**
  * The three verdicts a reader can filter the target list by.
  *
- * A target shows one trust tier, and the tiers fall into the three verdicts people read them
- * as: safe, caution and danger. The tiers themselves are never copied here, they are the ones
- * of the frozen rules.
+ * The verdicts themselves are the frozen ones, so the filter of the app and the verdict of a
+ * vote can never drift apart. What the app adds is the group of trust tiers behind each of
+ * them.
  */
-export const VERDICTS = ['SAFE', 'CAUTION', 'DANGER'] as const
-export type Verdict = (typeof VERDICTS)[number]
+export { VERDICTS, VerdictSchema }
+export type { Verdict } from '@sealflare/shared/rules'
 
-/** The verdict of a filter, checked at the boundary of the API. */
-export const VerdictSchema = z.enum(VERDICTS)
-
-/** The trust tiers that belong to each verdict. */
+/**
+ * The trust tiers that belong to each verdict.
+ *
+ * The three groups cover the seven trust tiers of the frozen rules, so a target is never lost
+ * by a filter. `UNRATED` is the tier of a target with too little signal, and doubt is not
+ * safe, so it belongs to CAUTION. The tier of a row is still shown as it is, so a reader sees
+ * that a row is unrated and not merely flagged.
+ */
 export const VERDICT_TIERS: Record<Verdict, readonly TrustTier[]> = {
   SAFE: ['COMMUNITY_SAFE', 'WARRANTY_BACKED_SAFE'],
-  CAUTION: ['CAUTION_FLAGGED', 'DISPUTED_CAUTION', 'STALE_CODEHASH_DRIFT'],
+  CAUTION: ['UNRATED', 'CAUTION_FLAGGED', 'DISPUTED_CAUTION', 'STALE_CODEHASH_DRIFT'],
   DANGER: ['CONFIRMED_DANGER'],
 }

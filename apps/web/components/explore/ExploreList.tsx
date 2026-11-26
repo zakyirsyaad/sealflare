@@ -1,14 +1,16 @@
 'use client'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import type { TargetType } from '@sealflare/shared/rules'
+import { TARGET_TYPES, type TargetType } from '@sealflare/shared/rules'
 import type { TargetSummary } from '@sealflare/shared/schemas'
+import { ApiError } from '../../lib/api/client'
 import { loadTargets } from '../../lib/api/lists'
 import { copy } from '../../lib/copy'
 import { formatBnb, shortAddress, tierLabel, timeAgo } from '../../lib/format'
 import type { Verdict } from '../../lib/verdict'
-import { TargetTable, type TableColumn, type TableRow } from '../target/TargetTable'
+import { useNow } from '../dispute/useNow'
 import { PageLinks } from '../target/PageLinks'
+import { TargetTable, type TableColumn, type TableRow } from '../target/TargetTable'
 import { ErrorState, EmptyState } from '../ui'
 import { SealMark } from '../ui/SealMark'
 import { Skeleton } from '../ui/Skeleton'
@@ -35,11 +37,16 @@ const COLUMNS: readonly TableColumn[] = [
   { key: 'lastVote', label: copy.explore.columns.lastVote },
 ]
 
-/** The kinds the list can be filtered by. */
+/** The word each kind of target is shown under. */
+const KIND_WORDS: Record<TargetType, string> = {
+  SMART_CONTRACT: copy.explore.kindContracts,
+  AI_SKILL_BUNDLE: copy.explore.kindSkills,
+}
+
+/** The kinds the list can be filtered by, taken from the frozen kinds of a target. */
 const KINDS: { value: TargetType | null; label: string }[] = [
   { value: null, label: copy.explore.kindAll },
-  { value: 'SMART_CONTRACT', label: copy.explore.kindContracts },
-  { value: 'AI_SKILL_BUNDLE', label: copy.explore.kindSkills },
+  ...TARGET_TYPES.map(type => ({ value: type, label: KIND_WORDS[type] })),
 ]
 
 /** The verdicts the list can be filtered by. */
@@ -103,7 +110,11 @@ function rowOf(item: TargetSummary, now: Date): TableRow {
       caution: <span className="sf-mono">{item.caution}</span>,
       danger: <span className="sf-mono">{item.danger}</span>,
       publisher: <span>{publisherOf(item)}</span>,
-      lastVote: <span className="sf-list__muted">{item.lastVoteAt === null ? copy.explore.noVotes : timeAgo(item.lastVoteAt, now)}</span>,
+      lastVote: (
+        <span className="sf-list__muted" suppressHydrationWarning>
+          {item.lastVoteAt === null ? copy.explore.noVotes : timeAgo(item.lastVoteAt, now)}
+        </span>
+      ),
     },
   }
 }
@@ -146,43 +157,41 @@ function FilterGroup<T extends string | null>({
   )
 }
 
+/** The head of the list: the name of the screen and the two filters. */
+function ListHead({ state }: { state: ExploreListProps }) {
+  return (
+    <header className="sf-list-page__head">
+      <div className="sf-list-page__title">
+        <h1>{copy.explore.title}</h1>
+        <p className="sf-lead">{copy.explore.intro}</p>
+      </div>
+      <FilterGroup label={copy.explore.kindLabel} options={KINDS} current={state.kind} href={value => hrefOf(state, { kind: value, page: 1 })} />
+      <FilterGroup label={copy.explore.verdictLabel} options={VERDICTS} current={state.verdict} href={value => hrefOf(state, { verdict: value, page: 1 })} />
+    </header>
+  )
+}
+
 /** The list of the targets of the registry. */
 export function ExploreList({ kind, verdict, page }: ExploreListProps) {
   const state: ExploreListProps = { kind, verdict, page }
   const query = useQuery({
     queryKey: ['targets', kind, verdict, page],
     queryFn: () => loadTargets({ page, limit: PAGE_SIZE, type: kind ?? undefined, verdict: verdict ?? undefined }),
+    retry: false,
   })
-  const now = new Date()
+  const now = useNow()
   const total = query.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const items = query.data === undefined ? [] : newestFirst(query.data.items)
+  const failed = query.isError && query.data === undefined
+  const tooMany = query.error instanceof ApiError && query.error.code === 'BAD_REQUEST'
 
   return (
     <div className="sf-list-page">
-      <header className="sf-list-page__head">
-        <div className="sf-list-page__title">
-          <h1>{copy.explore.title}</h1>
-          <p className="sf-lead">{copy.explore.intro}</p>
-        </div>
-        <FilterGroup
-          label={copy.explore.kindLabel}
-          options={KINDS}
-          current={kind}
-          href={value => hrefOf(state, { kind: value, page: 1 })}
-        />
-        <FilterGroup
-          label={copy.explore.verdictLabel}
-          options={VERDICTS}
-          current={verdict}
-          href={value => hrefOf(state, { verdict: value, page: 1 })}
-        />
-      </header>
+      <ListHead state={state} />
       {query.isPending && <Skeleton label={copy.common.loading} />}
-      {query.isError && (
-        <ErrorState what={copy.explore.failed} onChainSafe onRetry={() => void query.refetch()} />
-      )}
-      {!query.isPending && !query.isError && items.length === 0 && (
+      {failed && <ErrorState what={tooMany ? copy.explore.tooMany : copy.explore.failed} onChainSafe onRetry={() => void query.refetch()} />}
+      {!query.isPending && !failed && items.length === 0 && (
         <EmptyState
           title={copy.explore.empty}
           action={
@@ -192,20 +201,32 @@ export function ExploreList({ kind, verdict, page }: ExploreListProps) {
           }
         />
       )}
-      {!query.isPending && !query.isError && items.length > 0 && (
+      {!query.isPending && items.length > 0 && (
         <TargetTable
           caption={copy.explore.caption}
           columns={COLUMNS}
           rows={items.map(item => rowOf(item, now))}
           footer={
             <>
-              <span className="sf-mono">{copy.explore.count.replace('{count}', String(total))}</span>
+              <span className="sf-mono">
+                {(total === 1 ? copy.explore.countOne : copy.explore.count).replace('{count}', String(total))}
+              </span>
               {query.data?.finalizedBlock !== null && query.data?.finalizedBlock !== undefined && (
                 <span className="sf-mono sf-list__muted">
                   {copy.explore.indexedTo.replace('{block}', query.data.finalizedBlock)}
                 </span>
               )}
-              <PageLinks page={page} pages={pages} href={next => hrefOf(state, { page: next })} />
+              <PageLinks
+                page={page}
+                pages={pages}
+                href={next => hrefOf(state, { page: next })}
+                labels={{
+                  page: copy.explore.page,
+                  pagination: copy.explore.pagination,
+                  previous: copy.explore.previous,
+                  next: copy.explore.next,
+                }}
+              />
             </>
           }
         />

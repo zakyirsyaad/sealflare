@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { TargetType } from '@sealflare/shared/rules'
-import { GuardianDetail, GuardianSummary, TargetSummary } from '@sealflare/shared/schemas'
+import { AddressSchema, GuardianDetail, GuardianSummary, TargetSummary } from '@sealflare/shared/schemas'
 import type { Verdict } from '../verdict'
 import { ApiError } from './client'
 
@@ -98,6 +98,8 @@ export async function loadGuardians(query: { page: number; limit: number }): Pro
 
 /** One Guardian, with the history of what it did. */
 export async function loadGuardian(address: string): Promise<OneAnswer<GuardianDetail>> {
-  const answer = await get(`/api/guardians/${address}`, GuardianDetail)
+  const parsed = AddressSchema.safeParse(address)
+  if (!parsed.success) throw new ApiError('NOT_FOUND', 'There is no such Guardian.')
+  const answer = await get(`/api/guardians/${encodeURIComponent(parsed.data)}`, GuardianDetail)
   return { item: answer.data, finalizedBlock: answer.meta.finalizedBlock ?? null }
 }

@@ -227,7 +227,7 @@ test('tier candidates and finalizedBlock come from one snapshot even while the i
   await close()
 })
 
-test('tier candidates return all 500 rows at the limit and a 503 for 501 matching candidates', async () => {
+test('tier candidates return all 500 rows at the limit and a BAD_REQUEST for 501 matching candidates', async () => {
   const { db, close } = await createTestDb()
   const { app } = testApp(db)
   await db.transaction(async (tx) => {
@@ -243,7 +243,9 @@ test('tier candidates return all 500 rows at the limit and a 503 for 501 matchin
   await insertTarget(db, { id: targetId(2000) })
   const tooMany = asAnswer(await body(await get(app, '/targets/tier-candidates')))
   expect(tooMany.success).toBe(false)
-  expect(tooMany.error?.code).toBe('INTERNAL')
+  // The request cannot be read in one go, so the answer names it instead of hiding it.
+  expect(tooMany.error?.code).toBe('BAD_REQUEST')
+  expect(tooMany.error?.message).toContain('narrower')
   await close()
 })
 

@@ -339,3 +339,13 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-guardian__fact { display: flex; flex-direction: column; gap: 4px; }
 .sf-guardian__label { color: var(--muted-foreground); font-size: 12px; }
 .sf-guardian__value { font-size: 18px; }
+
+/* On a narrow screen the list pages keep their shape and nothing leaves the screen. */
+@media (max-width: 760px) {
+  .sf-list-page { gap: var(--space-4); }
+  .sf-list-page h1 { font-size: 28px; line-height: 32px; }
+  .sf-list-page__head { align-items: flex-start; }
+  /* The filters scroll inside the screen, so a row of them never widens the page. */
+  .sf-seg { display: flex; max-width: 100%; min-width: 0; overflow-x: auto; }
+  .sf-list__footer { padding: 12px 20px; }
+}

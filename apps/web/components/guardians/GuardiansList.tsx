@@ -5,8 +5,8 @@ import type { GuardianSummary } from '@sealflare/shared/schemas'
 import { loadGuardians } from '../../lib/api/lists'
 import { copy } from '../../lib/copy'
 import { shortAddress } from '../../lib/format'
-import { TargetTable, type TableColumn, type TableRow } from '../target/TargetTable'
 import { PageLinks } from '../target/PageLinks'
+import { TargetTable, type TableColumn, type TableRow } from '../target/TargetTable'
 import { Chip } from '../ui/Chip'
 import { ErrorState, EmptyState } from '../ui'
 import { Skeleton } from '../ui/Skeleton'
@@ -57,13 +57,13 @@ function rowOf(item: GuardianSummary): TableRow {
 /**
  * The highest score first.
  *
- * A Guardian whose score was cut by a penalty that was never charged still has that penalty
- * waiting, so the list marks it and the ranking stays the score of the chain.
+ * The order is the order of the server, so a Guardian keeps its place between the pages. The
+ * votes and the address break a tie.
  */
 function highestScoreFirst(items: readonly GuardianSummary[]): GuardianSummary[] {
   return [...items].sort((left, right) => {
     if (left.score !== right.score) return right.score - left.score
-    if (left.weight !== right.weight) return right.weight - left.weight
+    if (left.attestations !== right.attestations) return right.attestations - left.attestations
     return left.address.localeCompare(right.address)
   })
 }
@@ -73,10 +73,12 @@ export function GuardiansList({ page }: GuardiansListProps) {
   const query = useQuery({
     queryKey: ['guardians', page],
     queryFn: () => loadGuardians({ page, limit: PAGE_SIZE }),
+    retry: false,
   })
   const total = query.data?.total ?? 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const items = query.data === undefined ? [] : highestScoreFirst(query.data.items)
+  const failed = query.isError && query.data === undefined
 
   return (
     <div className="sf-list-page">
@@ -87,8 +89,8 @@ export function GuardiansList({ page }: GuardiansListProps) {
         </div>
       </header>
       {query.isPending && <Skeleton label={copy.common.loading} />}
-      {query.isError && <ErrorState what={copy.guardians.failed} onChainSafe onRetry={() => void query.refetch()} />}
-      {!query.isPending && !query.isError && items.length === 0 && (
+      {failed && <ErrorState what={copy.guardians.failed} onChainSafe onRetry={() => void query.refetch()} />}
+      {!query.isPending && !failed && items.length === 0 && (
         <EmptyState
           title={copy.guardians.empty}
           action={
@@ -98,20 +100,32 @@ export function GuardiansList({ page }: GuardiansListProps) {
           }
         />
       )}
-      {!query.isPending && !query.isError && items.length > 0 && (
+      {!query.isPending && items.length > 0 && (
         <TargetTable
           caption={copy.guardians.caption}
           columns={COLUMNS}
           rows={items.map(rowOf)}
           footer={
             <>
-              <span className="sf-mono">{copy.guardians.count.replace('{count}', String(total))}</span>
+              <span className="sf-mono">
+                {(total === 1 ? copy.guardians.countOne : copy.guardians.count).replace('{count}', String(total))}
+              </span>
               {query.data?.finalizedBlock !== null && query.data?.finalizedBlock !== undefined && (
                 <span className="sf-mono sf-list__muted">
-                  {copy.explore.indexedTo.replace('{block}', query.data.finalizedBlock)}
+                  {copy.guardians.indexedTo.replace('{block}', query.data.finalizedBlock)}
                 </span>
               )}
-              <PageLinks page={page} pages={pages} href={hrefOf} />
+              <PageLinks
+                page={page}
+                pages={pages}
+                href={hrefOf}
+                labels={{
+                  page: copy.guardians.page,
+                  pagination: copy.guardians.pagination,
+                  previous: copy.guardians.previous,
+                  next: copy.guardians.next,
+                }}
+              />
             </>
           }
         />

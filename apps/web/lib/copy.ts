@@ -1,5 +1,7 @@
 // Exact UI strings from docs/ux.md, grouped by screen. Shared wording lives in common.
 import { dispute } from './copy.dispute'
+import { explore } from './copy.explore'
+import { guardians } from './copy.guardians'
 import { jury } from './copy.jury'
 
 export const copy = {
@@ -458,84 +460,8 @@ export const copy = {
     "withdraw": "Withdraw",
     "claimXp": "Claim XP"
   },
-  "explore": {
-    "title": "Explore",
-    "intro": "Every target that has been scanned and attested, newest first.",
-    "kindLabel": "Kind",
-    "kindAll": "All",
-    "kindContracts": "Contracts",
-    "kindSkills": "AI skills",
-    "verdictLabel": "Verdict",
-    "verdictAny": "Any verdict",
-    "verdictSafe": "Safe",
-    "verdictCaution": "Caution",
-    "verdictDanger": "Danger",
-    "columns": {
-      "target": "Target",
-      "verdict": "Verdict",
-      "safe": "Safe",
-      "caution": "Caution",
-      "danger": "Danger",
-      "publisher": "Publisher",
-      "lastVote": "Last vote"
-    },
-    "caption": "Targets",
-    "empty": "No target matches this filter yet.",
-    "clearFilter": "Clear the filter",
-    "scanTarget": "Scan a target",
-    "failed": "The targets could not be loaded.",
-    "count": "{count} targets",
-    "indexedTo": "indexed to block {block}",
-    "page": "Page {page} of {pages}",
-    "pagination": "Pagination",
-    "previous": "Previous",
-    "next": "Next",
-    "justNow": "just now",
-    "minutesAgo": "{count} minutes ago",
-    "hoursAgo": "{count} hours ago",
-    "yesterday": "yesterday",
-    "daysAgo": "{count} days ago",
-    "noVotes": "No votes yet",
-    "bond": "{amount} BNB bond"
-  },
-  "guardians": {
-    "title": "Guardians",
-    "intro": "The Guardians of the registry, the ones with the highest score first.",
-    "caption": "Guardians",
-    "columns": {
-      "guardian": "Guardian",
-      "score": "Score",
-      "weight": "Weight",
-      "attestations": "Attestations",
-      "status": "Status"
-    },
-    "empty": "No Guardian has voted yet.",
-    "failed": "The Guardians could not be loaded.",
-    "count": "{count} Guardians",
-    "noPenalty": "No pending penalty",
-    "standing": "Standing",
-    "reputation": "Reputation",
-    "voteWeight": "Vote weight {weight} of {max}",
-    "history": "History",
-    "historyCaption": "History",
-    "historyCount": "{count} entries",
-    "historyColumns": {
-      "what": "What",
-      "target": "Target",
-      "result": "Result",
-      "reputation": "Reputation"
-    },
-    "kinds": {
-      "attestation": "Attestation",
-      "juror": "Juror",
-      "challenge": "Challenge",
-      "bounty": "Bounty",
-      "bond": "Bond"
-    },
-    "notFound": "There is no such Guardian.",
-    "failedProfile": "This Guardian could not be loaded.",
-    "pending": "pending"
-  },
+  "explore": explore,
+  "guardians": guardians,
   "site": {
     "launch": "Launch app",
     "docs": "Docs",
