@@ -24,6 +24,8 @@ export type JurorChain = {
   status: number | null
   /** Null until the Court answers. */
   juror: JurorState | null
+  /** True when the last read of the Court failed, so it says nothing about the vote. */
+  failed: boolean
   /** Reads both again and answers with the commitment the Court holds now. */
   refetch: () => Promise<JurorRead>
 }
@@ -62,6 +64,8 @@ export function useJuror(challengeId: string): JurorChain {
     account,
     status: typeof status.data === 'number' ? status.data : null,
     juror: asJuror(juror.data),
+    // A read that failed says nothing about the vote, so the panel cannot believe it.
+    failed: juror.isError === true,
     refetch: async () => {
       try {
         const [, read] = await Promise.all([status.refetch(), juror.refetch()])

@@ -155,7 +155,7 @@ export function RevealPanel(props: RevealPanelProps) {
   const chain = useJuror(props.challengeId)
   const tx = useWriteTx()
   // The reveal counts once the Court says the vote is open, not when a receipt comes back.
-  const outcome = useConfirmation(tx.state, chain.refetch, chain.juror, juror => juror?.revealed === true)
+  const outcome = useConfirmation(tx.state, chain, juror => juror?.revealed === true)
   const reason = reasonOf(props, chain.juror)
   const revealed = chain.juror?.revealed === true
   // A reveal that was sent keeps its form, so the answer of the chain cannot take it away

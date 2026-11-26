@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { UserRejectedRequestError } from 'viem'
@@ -41,6 +41,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
@@ -328,14 +329,30 @@ test('the jury box says so when the deployment has no Court address', () => {
 // ---- review of the lead on #41 ---------------------------------------------------------------
 
 test('a reveal that was cancelled in the wallet is not shown as revealed, even though a receipt came back', async () => {
+  // The Court is asked again for a while before the panel believes that the vote is not there, so
+  // the clock is moved by hand instead of waiting for it.
+  vi.useFakeTimers()
+  const user = userEvent.setup({
+    advanceTimers: (delay: number) => {
+      if (vi.isFakeTimers()) vi.advanceTimersByTime(delay)
+      return Promise.resolve()
+    },
+  })
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
   saveRevealCode(MINE, ME)
   reveal()
-  await userEvent.click(revealButton())
-  expect(await screen.findByRole('alert')).toHaveTextContent(copy.jury.revealNotFound)
+  await user.click(revealButton())
+  // The receipt arrives on a promise, so the panel is settled before the clock moves.
+  await act(async () => {
+    await Promise.resolve()
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(12_000)
+  })
+  expect(screen.getByRole('alert')).toHaveTextContent(copy.jury.revealNotFound)
   expect(screen.queryByText('Your vote: Uphold')).toBeNull()
   expect(screen.queryByText(copy.common.waitingFinality)).toBeNull()
-  await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
+  await user.click(screen.getByRole('button', { name: copy.common.retry }))
   await waitFor(() => expect(wagmi.writeContractAsync).toHaveBeenCalledTimes(2))
 })
 

@@ -113,6 +113,12 @@ export function resetDispute() {
     getTarget: { attestationCount: 5 },
   }
   wagmi.receipt.current = { isSuccess: false, isError: false, error: null }
+  // Every test starts with the plain read of the chain, so a test that changes the read cannot
+  // reach the next one.
+  wagmi.refetch.mockImplementation(async (name: string) => ({
+    data: wagmi.reads.current[name],
+    isError: wagmi.readErrors.current[name] === true,
+  }))
   wagmi.signTypedDataAsync.mockResolvedValue(`0x${'11'.repeat(65)}`)
   wagmi.writeContractAsync.mockResolvedValue(txHash)
   uploadEvidence.mockImplementation(async (body: { reportJson: string }) => ({

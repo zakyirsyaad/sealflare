@@ -3,16 +3,31 @@ import { useEffect, useState } from 'react'
 import type { TxState } from '../../lib/chain/useWriteTx'
 import { buttonStateOf } from '../dispute/txButtonState'
 import type { AttestState } from '../attest/useAttest'
-import type { JurorRead, JurorState } from './useJuror'
+import type { JurorChain, JurorState } from './useJuror'
 
 /** Where the check of the chain stands after a transaction. Null until the transaction is done. */
 export type Outcome = 'checking' | 'confirmed' | 'missing' | null
 
-/** How often the Court is asked again, and how many reads a miss takes before it is believed. */
+/** How often the Court is asked again while the answer is not known. */
 const ASK_MS = 1_000
-const MISSING_AFTER = 3
-/** How many times the Court is asked before the panel stops asking on its own. */
-const MAX_ASKS = 20
+/**
+ * How many times the Court is asked before the panel believes that the vote is not there.
+ *
+ * The asking takes about nine seconds, which is long enough for a node that is a few blocks behind
+ * to catch up. A miss is never believed before the asking is over, so a lagging node never offers a
+ * retry that the Court would refuse, and the gas of it would be lost.
+ */
+const MAX_ASKS = 10
+
+/** What the asking of the Court came to. */
+type Answers = {
+  /** The last answer of the Court that worked. */
+  read: JurorState | null
+  /** How many answers that worked did not hold what was sent. */
+  misses: number
+  /** True when the asking is over and the Court never held what was sent. */
+  over: boolean
+}
 
 /**
  * Asks the Court what it holds, again while the answer is not known.
@@ -24,15 +39,17 @@ const MAX_ASKS = 20
  */
 function useCourtAnswers(
   active: boolean,
-  refetch: () => Promise<JurorRead>,
+  refetch: () => Promise<{ juror: JurorState | null; failed: boolean }>,
   holds: (juror: JurorState | null) => boolean,
-): { read: JurorState | null; misses: number } {
+): Answers {
   const [read, setRead] = useState<JurorState | null>(null)
   const [misses, setMisses] = useState(0)
+  const [over, setOver] = useState(false)
   useEffect(() => {
     if (!active) {
       setRead(null)
       setMisses(0)
+      setOver(false)
       return
     }
     let live = true
@@ -48,8 +65,14 @@ function useCourtAnswers(
           setMisses(count => (found ? 0 : count + 1))
         }
         asks += 1
-        // The asking stops when the Court holds what was sent, and after a while anyway.
-        if (asks < MAX_ASKS && !found) timer = setTimeout(ask, ASK_MS)
+        // The asking stops when the Court holds what was sent.
+        if (found) return
+        if (asks < MAX_ASKS) {
+          timer = setTimeout(ask, ASK_MS)
+          return
+        }
+        // The asking is over, so the panel may believe that the vote is not there.
+        setOver(true)
       })
     }
     ask()
@@ -60,7 +83,7 @@ function useCourtAnswers(
     // The asking starts once per transaction. A new `refetch` or `holds` must not repeat it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
-  return { read, misses }
+  return { read, misses, over }
 }
 
 /**
@@ -70,20 +93,24 @@ function useCourtAnswers(
  * of the replacement. Only the Court knows whether the commit or the reveal is really there, so
  * nothing is shown as committed or revealed before it says so.
  *
- * The answer is read again and again, because a node that lags says nothing at all. The polled
- * state of the Court counts too, so a commit that shows up later turns the miss into the
- * confirmation.
+ * The Court is asked again and again, because a node that lags says nothing at all. The miss is
+ * only believed when the asking is over, so a lagging node never sends a retry that the Court would
+ * refuse. The polled state of the Court counts too, so a commit that shows up later turns the miss
+ * into the confirmation, and a read that says nothing turns the miss into the answer of the poll.
  */
 export function useConfirmation(
   txState: TxState,
-  refetch: () => Promise<JurorRead>,
-  polled: JurorState | null,
+  chain: JurorChain,
   holds: (juror: JurorState | null) => boolean,
 ): Outcome {
-  const { read, misses } = useCourtAnswers(txState === 'done', refetch, holds)
+  const { read, misses, over } = useCourtAnswers(txState === 'done', chain.refetch, holds)
   if (txState !== 'done') return null
-  if (holds(read) || holds(polled)) return 'confirmed'
-  return misses >= MISSING_AFTER ? 'missing' : 'checking'
+  if (holds(read) || holds(chain.juror)) return 'confirmed'
+  // The Court was asked again and again and does not hold what was sent, so the vote is not there.
+  if (over && misses > 0) return 'missing'
+  // Every read failed and the asking is over, so the polled state of the Court is the last word.
+  if (over && chain.juror !== null && !chain.failed) return 'missing'
+  return 'checking'
 }
 
 export type ConfirmedView = { state: AttestState; error: string | null; checking: boolean }
@@ -97,10 +124,10 @@ export type ConfirmedView = { state: AttestState; error: string | null; checking
  */
 export function useHeldByChain(
   txState: TxState,
-  refetch: () => Promise<JurorRead>,
+  chain: JurorChain,
   held: (juror: JurorState | null) => boolean,
 ): JurorState | null {
-  const { read } = useCourtAnswers(txState === 'failed', refetch, held)
+  const { read } = useCourtAnswers(txState === 'failed', chain.refetch, held)
   return txState === 'failed' && held(read) ? read : null
 }
 

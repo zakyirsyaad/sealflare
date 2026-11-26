@@ -20,14 +20,19 @@ const REVEAL_ENDS = new Date(NOW.getTime() + 16 * 3_600_000).toISOString()
 const clipboard = { writeText: vi.fn() }
 const click = vi.fn()
 
+const PROPS = { challengeId: '12', commitEndsAt: COMMIT_ENDS, revealEndsAt: REVEAL_ENDS, onClose: () => {} }
+
+/** The clicks wait on a timer, so a test with fake timers has to move the clock itself. */
+let user: ReturnType<typeof userEvent.setup>
+
 function join_() {
-  return render(<JoinPanel challengeId="12" commitEndsAt={COMMIT_ENDS} revealEndsAt={REVEAL_ENDS} onClose={() => {}} />)
+  return render(<JoinPanel {...PROPS} />)
 }
 
 async function toCode() {
-  await userEvent.click(screen.getByRole('radio', { name: /^Uphold/ }))
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.continue }))
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.continue }))
+  await user.click(screen.getByRole('radio', { name: /^Uphold/ }))
+  await user.click(screen.getByRole('button', { name: copy.jury.continue }))
+  await user.click(screen.getByRole('button', { name: copy.jury.continue }))
 }
 
 const shownCode = () => (screen.getByLabelText(copy.jury.codeLabel) as HTMLInputElement).value
@@ -35,11 +40,23 @@ const commitButton = () => screen.getByRole('button', { name: copy.jury.commit }
 
 async function commit() {
   await toCode()
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.copyCode }))
+  await user.click(screen.getByRole('button', { name: copy.jury.copyCode }))
   await waitFor(() => expect(commitButton()).toBeEnabled())
   const code = shownCode()
-  await userEvent.click(commitButton())
+  await user.click(commitButton())
   return code
+}
+
+/**
+ * Lets the panel catch up with the receipt of the transaction and the first answer of the Court.
+ *
+ * Both are promises, and a test with faked timers has to give the screen a turn of the event loop
+ * before the clock is moved.
+ */
+async function settle() {
+  await act(async () => {
+    await Promise.resolve()
+  })
 }
 
 beforeEach(() => {
@@ -53,9 +70,16 @@ beforeEach(() => {
   })
   URL.createObjectURL = vi.fn(() => 'blob:sealflare-test')
   URL.revokeObjectURL = vi.fn()
+  user = userEvent.setup({
+    advanceTimers: (delay: number) => {
+      if (vi.isFakeTimers()) vi.advanceTimersByTime(delay)
+      return Promise.resolve()
+    },
+  })
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
@@ -76,12 +100,12 @@ test('a juror who goes through the commit twice keeps the first code, which is t
 test('two downloads never share a file name, so the second cannot hide the first', async () => {
   const first = join_()
   await toCode()
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
+  await user.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
   const one = shownCode()
   first.unmount()
   join_()
   await toCode()
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
+  await user.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
   const two = shownCode()
   const names = click.mock.calls.map(call => String(call[0]))
   expect(names).toHaveLength(2)
@@ -102,18 +126,25 @@ test('the commit is only confirmed once the chain shows it for this code', async
 
 test('a commit that was cancelled in the wallet is not confirmed, even though a receipt came back', async () => {
   // The receipt is the one of the replacement, so it says success while the Court holds nothing.
+  vi.useFakeTimers()
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
   join_()
   const code = await commit()
-  expect(await screen.findByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
+  await settle()
+  // The Court is asked again and again, and the miss is only believed when the asking is over.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(12_000)
+  })
+  expect(screen.getByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
   expect(screen.queryByText(copy.jury.committedTitle)).toBeNull()
   expect(screen.queryByText(copy.jury.noReminder)).toBeNull()
-  await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
+  await user.click(screen.getByRole('button', { name: copy.common.retry }))
   await waitFor(() => expect(wagmi.writeContractAsync).toHaveBeenCalledTimes(2))
   expect((wagmi.writeContractAsync.mock.calls[1]?.[0] as { args: readonly unknown[] }).args[1]).toBe(commitHashFor(code, ME))
 })
 
 test('a commit that the chain shows with another hash is not confirmed either', async () => {
+  vi.useFakeTimers()
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
   wagmi.writeContractAsync.mockImplementation(async () => {
     wagmi.reads.current.getJuror = { committed: true, revealed: false, uphold: false, weight: 3, commitHash: `0x${'cd'.repeat(32)}` }
@@ -121,8 +152,48 @@ test('a commit that the chain shows with another hash is not confirmed either', 
   })
   join_()
   await commit()
-  expect(await screen.findByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
+  await settle()
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(12_000)
+  })
+  expect(screen.getByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
   expect(screen.queryByText(copy.jury.committedTitle)).toBeNull()
+})
+
+test('a commit that the Court does not show is not called missing while the Court is still being asked', async () => {
+  vi.useFakeTimers()
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  join_()
+  await commit()
+  await settle()
+  // The Court is being asked, so the panel says that it is checking and offers no retry.
+  expect(screen.getByText(copy.jury.verifying)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: copy.common.retry })).toBeNull()
+  // A node that is a few seconds behind must not be called a miss either: a retry would be refused
+  // by the Court, and the gas of it would be lost.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3_000)
+  })
+  expect(screen.getByText(copy.jury.verifying)).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByRole('button', { name: copy.common.retry })).toBeNull()
+})
+
+test('when every read fails and the asking is over, the polled state of the Court is the last word', async () => {
+  vi.useFakeTimers()
+  wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
+  // Every read of the asking fails, while the polled state of the Court answers that it holds no commit.
+  wagmi.refetch.mockImplementation(async () => ({ data: undefined, isError: true }))
+  join_()
+  await commit()
+  await settle()
+  // Nothing is known while the asking goes on, so nothing is said about the vote.
+  expect(screen.getByText(copy.jury.verifying)).toBeInTheDocument()
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(12_000)
+  })
+  // The asking is over, so the commit that the Court does not hold is a miss and can be tried again.
+  expect(screen.getByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
 })
 
 test('a commit the Court refuses because the juror already committed is not a failure to retry', async () => {
@@ -160,12 +231,18 @@ test('a commit the Court holds with the code of this panel is confirmed, even wh
 })
 
 test('a commit that the chain shows later turns the miss into the confirmation', async () => {
+  vi.useFakeTimers()
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
-  join_()
+  const view = join_()
   const code = await commit()
-  // The chain shows nothing yet, so the panel says that it does not show the commit.
-  expect(await screen.findByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
-  // The commit turns up on the chain afterwards, so the panel confirms it after all.
+  await settle()
+  // The chain shows nothing yet, so the panel keeps checking and says nothing about the vote.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(12_000)
+  })
+  expect(screen.getByRole('alert')).toHaveTextContent(copy.jury.commitNotFound)
+  // The commit turns up on the chain afterwards, so the panel confirms it after all. The poll of the
+  // Court brings the answer, and a render is what the poll does to the panel.
   wagmi.reads.current.getJuror = {
     committed: true,
     revealed: false,
@@ -173,19 +250,22 @@ test('a commit that the chain shows later turns the miss into the confirmation',
     weight: 3,
     commitHash: commitHashFor(code, ME),
   }
-  expect(await screen.findByText(copy.jury.committedTitle)).toBeInTheDocument()
+  view.rerender(<JoinPanel {...PROPS} />)
+  expect(screen.getByText(copy.jury.committedTitle)).toBeInTheDocument()
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
 test('a read that failed keeps the panel checking, and never calls the vote missing', async () => {
+  vi.useFakeTimers()
   wagmi.receipt.current = { isSuccess: true, isError: false, error: null }
   wagmi.readErrors.current.getJuror = true
   join_()
   await commit()
-  expect(await screen.findByText(copy.jury.verifying)).toBeInTheDocument()
-  // The reads keep failing, so nothing is known and nothing is said about the vote.
+  await settle()
+  expect(screen.getByText(copy.jury.verifying)).toBeInTheDocument()
+  // The reads keep failing and the asking runs out, so nothing is known and nothing is said.
   await act(async () => {
-    await new Promise(resolve => setTimeout(resolve, 2500))
+    await vi.advanceTimersByTimeAsync(12_000)
   })
   expect(screen.getByText(copy.jury.verifying)).toBeInTheDocument()
   expect(screen.queryByRole('alert')).toBeNull()
@@ -225,9 +305,12 @@ test('the chain is asked again once the commit is done, so the box and a reopene
   wagmi.refetch.mockClear()
   await commit()
   await screen.findByText(copy.jury.committedTitle)
-  const asked = wagmi.refetch.mock.calls.map(call => call[0])
-  expect(asked).toContain('getJuror')
-  expect(asked).toContain('jurorStatus')
+  // The asking of the Court runs once the commit is done, so the wait is on the asking itself.
+  await waitFor(() => {
+    const asked = wagmi.refetch.mock.calls.map(call => call[0])
+    expect(asked).toContain('getJuror')
+    expect(asked).toContain('jurorStatus')
+  })
 })
 
 test('"Copy time" says that it replaces the clipboard, and does not count as taking the code', async () => {
@@ -246,10 +329,10 @@ test('a browser that cannot keep the code asks for a download, and copying alone
   join_()
   await toCode()
   expect(screen.getByText(copy.jury.downloadRequired)).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.copyCode }))
+  await user.click(screen.getByRole('button', { name: copy.jury.copyCode }))
   await screen.findByText(copy.jury.copied)
   expect(commitButton()).toBeDisabled()
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
+  await user.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
   await waitFor(() => expect(commitButton()).toBeEnabled())
 })
 
@@ -267,16 +350,16 @@ test('a browser that did not keep the code is asked for a download once the comm
   chainTakes('commit')
   join_()
   await toCode()
-  await userEvent.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
+  await user.click(screen.getByRole('button', { name: copy.jury.downloadCode }))
   await waitFor(() => expect(commitButton()).toBeEnabled())
-  await userEvent.click(commitButton())
+  await user.click(commitButton())
   // The commit is on the chain, and this browser holds no copy of the code, so the file is asked for.
   expect(await screen.findByText(copy.jury.committedTitle)).toBeInTheDocument()
   expect(screen.getByText(copy.jury.downloadAgainRequired)).toBeInTheDocument()
   const before = click.mock.calls.length
   // The handout button now reads "Downloaded", so the one left is the one of the confirmation.
   const again = screen.getAllByRole('button', { name: copy.jury.downloadCode }).at(-1) as HTMLElement
-  await userEvent.click(again)
+  await user.click(again)
   expect(click.mock.calls.length).toBe(before + 1)
 })
 

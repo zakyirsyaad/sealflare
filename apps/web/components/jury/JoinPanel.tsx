@@ -76,11 +76,11 @@ export function JoinPanel(props: JoinPanelProps) {
     if (sent.current === null || chain.account === null || juror === null) return false
     return juror.committed && juror.commitHash === commitHashFor(sent.current, chain.account).toLowerCase()
   }
-  const outcome = useConfirmation(tx.state, chain.refetch, chain.juror, isMine)
+  const outcome = useConfirmation(tx.state, chain, isMine)
   // A commit that was refused because the juror already committed on the chain is not a failure to
   // retry: the vote is in, and retrying would be refused the same way for ever. The hash tells
   // whether it is the code of this panel, or another one that only this wallet can reveal.
-  const held = useHeldByChain(tx.state, chain.refetch, juror => juror?.committed === true)
+  const held = useHeldByChain(tx.state, chain, juror => juror?.committed === true)
   const view = held !== null ? { state: 'idle' as const, error: null, checking: false } : confirmedView(tx, outcome, copy.jury.commitNotFound)
   const from = utcOf(props.commitEndsAt)
   const to = utcOf(props.revealEndsAt)
