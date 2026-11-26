@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite'
 import type { Hono } from 'hono'
 import { createApp } from '../src/app'
 import { migrate, type Db } from '../src/db'
+import type { SandboxRouteDeps } from '../src/routes/sandbox'
 
 /**
  * The inter-service key the tests use. It is written as a repetition on purpose: a literal that
@@ -70,9 +71,15 @@ export function countingDb(db: Db): { db: Db; calls: () => number } {
   }
 }
 
-export function testApp(db: Db, options: { key?: string; now?: () => Date } = {}): { app: Hono; key: string } {
+export function testApp(
+  db: Db,
+  options: { key?: string; now?: () => Date; sandbox?: SandboxRouteDeps } = {},
+): { app: Hono; key: string } {
   const key = options.key ?? TEST_KEY
-  return { app: createApp({ sql: db, env: { internalKey: key }, now: options.now }), key }
+  return {
+    app: createApp({ sql: db, env: { internalKey: key }, now: options.now, sandbox: options.sandbox }),
+    key,
+  }
 }
 
 export function headers(key: string | null = TEST_KEY): Record<string, string> {

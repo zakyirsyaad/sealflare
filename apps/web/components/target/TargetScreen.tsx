@@ -8,6 +8,7 @@ import { TargetError } from './TargetError'
 import { TargetMissing } from './TargetMissing'
 import { TargetTabs } from './TargetTabs'
 import { copy } from '../../lib/copy'
+import type { SandboxSource } from '../../lib/sandbox/source'
 import { scanCurrentVersionHref } from '../../lib/currentVersion'
 import { shortAddress } from '../../lib/format'
 
@@ -22,6 +23,8 @@ export type TargetScreenProps = {
   differentBundle: boolean
   evidenceFailed: boolean
   failed: boolean
+  /** The bundle the sandbox can run on, or null when this target has none. */
+  sandbox?: SandboxSource | null
 }
 
 /** The link names another bundle than the one the registry rated. */
@@ -59,7 +62,13 @@ export function TargetScreen(props: TargetScreenProps) {
         <ActionColumn tier={detail.tier} targetType={detail.targetType} currentVersionHref={scanCurrentVersionHref(detail.src)} />
       </div>
       <section className="sf-frame sf-target__tabs">
-        <TargetTabs detail={detail} rows={props.attestations} scan={props.scan} evidenceFailed={props.evidenceFailed} />
+        <TargetTabs
+          detail={detail}
+          rows={props.attestations}
+          scan={props.scan}
+          evidenceFailed={props.evidenceFailed}
+          sandbox={props.sandbox}
+        />
       </section>
     </div>
   )

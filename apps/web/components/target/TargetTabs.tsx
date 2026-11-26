@@ -4,12 +4,15 @@ import { AttestationsTab } from './AttestationsTab'
 import { FindingsTab } from './FindingsTab'
 import { HistoryTab } from './HistoryTab'
 import { copy } from '../../lib/copy'
+import type { SandboxSource } from '../../lib/sandbox/source'
 
 export type TargetTabsProps = {
   detail: TargetDetail
   rows: readonly AttestationRow[]
   scan: ScanReport | null
   evidenceFailed?: boolean
+  /** The bundle the sandbox can run on, or null when this target has none. */
+  sandbox?: SandboxSource | null
 }
 
 function publisherContent(detail: TargetDetail) {
@@ -29,9 +32,21 @@ function disputeContent(detail: TargetDetail) {
 }
 
 /** The details of a target. The findings open first. */
-export function TargetTabs({ detail, rows, scan, evidenceFailed = false }: TargetTabsProps) {
+export function TargetTabs({ detail, rows, scan, evidenceFailed = false, sandbox = null }: TargetTabsProps) {
   const items = [
-    { id: 'findings', label: copy.target.findings, content: <FindingsTab scan={scan} /> },
+    {
+      id: 'findings',
+      label: copy.target.findings,
+      content: (
+        <FindingsTab
+          scan={scan}
+          targetType={detail.targetType}
+          src={sandbox?.src ?? null}
+          bundleHash={sandbox?.bundleHash ?? null}
+          sandbox={detail.sandbox}
+        />
+      ),
+    },
     {
       id: 'attestations',
       label: copy.target.attestationCount.replace('{count}', String(rows.length)),

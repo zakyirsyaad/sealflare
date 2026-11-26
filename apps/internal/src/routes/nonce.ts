@@ -48,65 +48,105 @@ async function parseBody<S extends z.ZodType>(c: Context, schema: S): Promise<Pa
   return { ok: true, data: parsed.data as z.infer<S> }
 }
 
+/** Why a nonce could not be reserved. */
+export type NonceRefusal = 'expired' | 'too_far_ahead' | 'already_used'
+
+/** The answer of a reservation. */
+export type NonceReservation =
+  | { reserved: true }
+  | { reserved: false; reason: NonceRefusal }
+
 /**
  * Reserves a nonce for one signed request.
  *
  * The nonce has two states. `reserved` means the request may still be worked on, and `spent`
  * means the work is done and the nonce can never be used again. A reservation can be given
- * back, a spent nonce cannot, so a replay of a request that already did its work is refused
- * here and not only in the public API.
+ * back, a spent nonce cannot, so a request that already did its work is refused here and not
+ * only in the public API.
+ *
+ * The function is shared by the nonce route and by the sandbox route, so a request that wants to
+ * run a sandbox reserves its nonce the same way as any other signed request.
  */
-async function useNonce(c: Context, deps: NonceRouteDeps): Promise<Response> {
-  const parsed = await parseBody(c, NonceUseRequest)
-  if (!parsed.ok) return parsed.response
-  const { address, nonce, expiry } = parsed.data
-
-  const nowSeconds = BigInt(Math.floor(deps.now().getTime() / 1000))
-  const expirySeconds = BigInt(expiry)
-  if (expirySeconds <= nowSeconds) {
-    return c.json(fail('BAD_REQUEST', 'The request has expired.'), 400)
-  }
+export async function reserveNonce(
+  sql: Db,
+  input: { address: string; nonce: string; expiry: string },
+  now: Date,
+): Promise<NonceReservation> {
+  const nowSeconds = BigInt(Math.floor(now.getTime() / 1000))
+  const expirySeconds = BigInt(input.expiry)
+  if (expirySeconds <= nowSeconds) return { reserved: false, reason: 'expired' }
   if (expirySeconds > nowSeconds + BigInt(NONCE_MAX_EXPIRY_SECONDS)) {
-    return c.json(fail('BAD_REQUEST', 'The request expires too far in the future.'), 400)
+    return { reserved: false, reason: 'too_far_ahead' }
   }
 
-  const rows = await deps.sql.query<{ nonce: string }>(
+  const rows = await sql.query<{ nonce: string }>(
     `INSERT INTO nonces (address, nonce, expires_at, state) VALUES ($1, $2, $3, 'reserved')
      ON CONFLICT (address, nonce) DO NOTHING
      RETURNING nonce`,
-    [address, BigInt(nonce).toString(), new Date(Number(expirySeconds) * 1000).toISOString()],
+    [input.address, BigInt(input.nonce).toString(), new Date(Number(expirySeconds) * 1000).toISOString()],
   )
-  return c.json(ok({ fresh: rows.length > 0 }))
+  if (rows.length > 0) return { reserved: true }
+  return { reserved: false, reason: 'already_used' }
 }
 
 /** Marks a reservation as done. A spent nonce stays spent until it expires. */
-async function commitNonce(c: Context, deps: NonceRouteDeps): Promise<Response> {
-  const parsed = await parseBody(c, NonceStateRequest)
-  if (!parsed.ok) return parsed.response
-  const { address, nonce } = parsed.data
-
-  const rows = await deps.sql.query<{ nonce: string }>(
+export async function commitNonce(sql: Db, input: { address: string; nonce: string }): Promise<boolean> {
+  const rows = await sql.query<{ nonce: string }>(
     `UPDATE nonces SET state = 'spent' WHERE address = $1 AND nonce = $2 AND state = 'reserved'
      RETURNING nonce`,
-    [address, BigInt(nonce).toString()],
+    [input.address, BigInt(input.nonce).toString()],
   )
-  return c.json(ok({ committed: rows.length > 0 }))
+  return rows.length > 0
 }
 
 /**
  * Gives a reservation back, so a request that failed after the nonce was reserved can be
  * signed again. A spent nonce is never given back.
  */
-async function releaseNonce(c: Context, deps: NonceRouteDeps): Promise<Response> {
+export async function releaseNonce(sql: Db, input: { address: string; nonce: string }): Promise<boolean> {
+  const rows = await sql.query<{ nonce: string }>(
+    "DELETE FROM nonces WHERE address = $1 AND nonce = $2 AND state = 'reserved' RETURNING nonce",
+    [input.address, BigInt(input.nonce).toString()],
+  )
+  return rows.length > 0
+}
+
+/** Reserves a nonce and answers the request. */
+async function useNonce(c: Context, deps: NonceRouteDeps): Promise<Response> {
+  const parsed = await parseBody(c, NonceUseRequest)
+  if (!parsed.ok) return parsed.response
+  const { address, nonce, expiry } = parsed.data
+
+  const reservation = await reserveNonce(deps.sql, { address, nonce, expiry }, deps.now())
+  if (reservation.reserved) return c.json(ok({ fresh: true }))
+  if (reservation.reason === 'expired') return c.json(fail('BAD_REQUEST', 'The request has expired.'), 400)
+  if (reservation.reason === 'too_far_ahead') {
+    return c.json(fail('BAD_REQUEST', 'The request expires too far in the future.'), 400)
+  }
+  return c.json(ok({ fresh: false }))
+}
+
+/** Marks a reservation as done. A spent nonce stays spent until it expires. */
+async function commit(c: Context, deps: NonceRouteDeps): Promise<Response> {
   const parsed = await parseBody(c, NonceStateRequest)
   if (!parsed.ok) return parsed.response
   const { address, nonce } = parsed.data
 
-  const rows = await deps.sql.query<{ nonce: string }>(
-    "DELETE FROM nonces WHERE address = $1 AND nonce = $2 AND state = 'reserved' RETURNING nonce",
-    [address, BigInt(nonce).toString()],
-  )
-  return c.json(ok({ released: rows.length > 0 }))
+  const committed = await commitNonce(deps.sql, { address, nonce })
+  return c.json(ok({ committed }))
+}
+
+/**
+ * Gives a reservation back, so a request that failed after the nonce was reserved can be
+ * signed again. A spent nonce is never given back.
+ */
+async function release(c: Context, deps: NonceRouteDeps): Promise<Response> {
+  const parsed = await parseBody(c, NonceStateRequest)
+  if (!parsed.ok) return parsed.response
+  const { address, nonce } = parsed.data
+
+  const released = await releaseNonce(deps.sql, { address, nonce })
+  return c.json(ok({ released }))
 }
 
 /** The three nonce routes. Each one is a named handler, so each one stays short. */
@@ -114,8 +154,8 @@ export function nonceRoutes(deps: NonceRouteDeps): Hono {
   const app = new Hono()
 
   app.post('/use', (c) => useNonce(c, deps))
-  app.post('/commit', (c) => commitNonce(c, deps))
-  app.post('/release', (c) => releaseNonce(c, deps))
+  app.post('/commit', (c) => commit(c, deps))
+  app.post('/release', (c) => release(c, deps))
 
   return app
 }

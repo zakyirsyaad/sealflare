@@ -124,6 +124,16 @@ export async function internalGet<T = unknown>(
 }
 
 /**
+ * Reads something that is not built from indexed data.
+ *
+ * The queue of the sandbox and the quota of an address are not read at a block, so they name no
+ * block. The meta block is therefore not required, and an answer without one is not a failure.
+ */
+export async function internalRead<T = unknown>(path: string): Promise<InternalAnswer<T>> {
+  return request<T>(path, { method: 'GET' }, false)
+}
+
+/**
  * Writes to the internal service. The public API never writes to the chain.
  *
  * A write of the nonce or of the rate limit is not read from indexed data, so it has no block to

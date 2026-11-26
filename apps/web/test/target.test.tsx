@@ -16,6 +16,12 @@ const { wallet } = vi.hoisted(() => ({
 
 vi.mock('../lib/chain/userState', () => ({ useUserState: () => wallet.current }))
 
+const { sandbox } = vi.hoisted(() => ({
+  sandbox: { current: { run: null, busy: false, error: null, paused: false, start: vi.fn() } as Record<string, unknown> },
+}))
+
+vi.mock('../lib/sandbox/useSandboxRun', () => ({ useSandboxRun: () => sandbox.current }))
+
 const address = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
 const targetId = targetIdOfContract(address)
 const codehash = `0x${'22'.repeat(32)}` as const

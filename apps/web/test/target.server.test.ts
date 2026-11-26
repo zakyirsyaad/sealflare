@@ -159,6 +159,7 @@ test('the detail of a target matches the read model schema', () => {
     attestations: [attestation()],
     scan: null,
     bond: 5_000_000_000_000_000n,
+    sandbox: null,
   })
   expect(TargetDetail.safeParse(detail).success).toBe(true)
   expect(detail.bond).toBe('5000000000000000')

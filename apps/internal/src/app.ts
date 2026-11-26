@@ -3,6 +3,7 @@ import { createInterServiceAuth } from './auth'
 import type { Db } from './db'
 import { nonceRoutes } from './routes/nonce'
 import { rateRoutes } from './routes/rate'
+import { sandboxRoutes, type SandboxRouteDeps } from './routes/sandbox'
 import { scanRoutes } from './routes/scans'
 import { fail } from './respond'
 
@@ -10,6 +11,8 @@ export interface AppDeps {
   sql: Db
   env: { internalKey: string }
   now?: () => Date
+  /** The sandbox is only mounted when the service was set up for it. */
+  sandbox?: SandboxRouteDeps
   /** Writes one line per request. It never receives a body or a key. */
   log?: (line: string) => void
 }
@@ -43,6 +46,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route('/rate', rateRoutes({ sql: deps.sql, now }))
   app.route('/nonce', nonceRoutes({ sql: deps.sql, now }))
   app.route('/scans', scanRoutes({ sql: deps.sql }))
+  if (deps.sandbox !== undefined) app.route('/sandbox', sandboxRoutes(deps.sandbox))
 
   app.notFound((c) => c.json(fail('BAD_REQUEST', 'There is no such route.'), 404))
   app.onError((error, c) => {

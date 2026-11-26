@@ -13,6 +13,9 @@ const { wallet } = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/chain/userState', () => ({ useUserState: () => wallet.current }))
+vi.mock('../lib/sandbox/useSandboxRun', () => ({
+  useSandboxRun: () => ({ run: null, busy: false, error: null, paused: false, start: vi.fn() }),
+}))
 
 const publisher = `0x${'44'.repeat(20)}` as const
 const contentHash = `0x${'33'.repeat(32)}` as const
