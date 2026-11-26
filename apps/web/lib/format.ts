@@ -41,6 +41,12 @@ export function formatUtc(seconds: number | bigint): string {
   const iso = date.toISOString()
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
 }
+/** An ISO date as the day and the time in UTC. */
+export function formatDate(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) throw new RangeError('A valid date is required.')
+  return formatUtc(Math.floor(date.getTime() / 1000))
+}
 export function tierLabel(tier: TrustTier): string {
   const entry = copy.tiers[tier]
   if (!entry) throw new RangeError('Unknown trust tier.')

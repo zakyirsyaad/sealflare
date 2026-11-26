@@ -3,6 +3,7 @@ import { createInterServiceAuth } from './auth'
 import type { Db } from './db'
 import { nonceRoutes } from './routes/nonce'
 import { rateRoutes } from './routes/rate'
+import { sandboxRoutes, type SandboxRouteDeps } from './routes/sandbox'
 import { scanRoutes } from './routes/scans'
 import { targetRoutes } from './routes/targets'
 import { guardianRoutes } from './routes/guardians'
@@ -27,6 +28,8 @@ export interface AppDeps {
     sandboxModelId?: string
   }
   now?: () => Date
+  /** The sandbox is only mounted when the service was set up for it. */
+  sandbox?: SandboxRouteDeps
   /** Writes one line per request. It never receives a body or a key. */
   log?: (line: string) => void
 }
@@ -74,6 +77,7 @@ export function createApp(deps: AppDeps): Hono {
   app.route('/nonce', nonceRoutes({ sql: deps.sql, now }))
   app.route('/scans', scanRoutes({ sql: deps.sql }))
   app.route('/targets', targetRoutes({ sql: deps.sql, sandbox: sandboxVersion(deps.env) }))
+  if (deps.sandbox !== undefined) app.route('/sandbox', sandboxRoutes(deps.sandbox))
   app.route('/guardians', guardianRoutes({ sql: deps.sql }))
   app.route('/challenges', challengeRoutes({ sql: deps.sql, now }))
   app.route('/bounties', bountyRoutes({ sql: deps.sql }))
