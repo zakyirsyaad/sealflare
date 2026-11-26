@@ -3,7 +3,7 @@ import type { BountySummary } from '@sealflare/shared/schemas'
 import { EmptyState } from '../ui/EmptyState'
 import { Table } from '../ui/Table'
 import { copy } from '../../lib/copy'
-import { formatBnb, formatUtc } from '../../lib/format'
+import { formatBnb, formatDate } from '../../lib/format'
 
 export type BountyListProps = {
   items: readonly BountySummary[]
@@ -44,7 +44,7 @@ export function BountyList({ items, live }: BountyListProps) {
       target: <Link href={`/app/t/${item.targetId}`}>{item.label}</Link>,
       slots: copy.bounty.filled.replace('{filled}', String(item.filled)).replace('{slots}', String(item.slots)),
       amount: copy.bounty.amount.replace('{amount}', formatBnb(item.amount)),
-      created: formatUtc(new Date(item.createdAt).getTime() / 1000),
+      created: formatDate(item.createdAt),
     },
   }))
   return <Table caption={copy.bounty.title} columns={columns} rows={rows} />

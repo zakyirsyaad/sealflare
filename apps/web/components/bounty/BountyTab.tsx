@@ -1,9 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { BountySummary } from '@sealflare/shared/schemas'
+import { ErrorState } from '../ui/ErrorState'
 import { Skeleton } from '../ui/Skeleton'
+import { modulesLive } from '../../lib/chain/config'
+import { moduleGate } from '../../lib/chain/modules'
 import { copy } from '../../lib/copy'
-import { formatBnb, formatUtc } from '../../lib/format'
+import { formatBnb, formatDate, formatUtc } from '../../lib/format'
 import { settleAtOf } from '../../lib/bounty/settle'
 import { useChainTime } from '../../lib/bounty/chainTime'
 import { SettleButton } from './SettleButton'
@@ -34,13 +37,13 @@ function rowsOf(body: unknown): BountySummary[] | null {
 }
 
 /** The facts of a bounty, and when it can be settled. */
-function BountyFacts({ bounty, now }: { bounty: BountySummary; now: number | null }) {
+function BountyFacts({ bounty, now, failed }: { bounty: BountySummary; now: number | null; failed: boolean }) {
   const at = settleAtOf(bounty)
   const ready = now !== null && at !== null && now * 1000 >= at.getTime()
   const settle = bounty.settled
     ? copy.bounty.settled
     : at === null
-      ? null
+      ? copy.bounty.settleTimeUnknown
       : ready
         ? copy.bounty.settleNow
         : copy.bounty.settleAt.replace('{time}', formatUtc(at.getTime() / 1000))
@@ -49,9 +52,10 @@ function BountyFacts({ bounty, now }: { bounty: BountySummary; now: number | nul
       <p>{copy.bounty.amount.replace('{amount}', formatBnb(bounty.amount))}</p>
       <p>{copy.bounty.filled.replace('{filled}', String(bounty.filled)).replace('{slots}', String(bounty.slots))}</p>
       <p>
-        {copy.bounty.created}: {formatUtc(new Date(bounty.createdAt).getTime() / 1000)}
+        {copy.bounty.created}: {formatDate(bounty.createdAt)}
       </p>
       {settle !== null && <p>{settle}</p>}
+      {failed && !bounty.settled && <p className="sf-lead">{copy.bounty.chainTimeFailed}</p>}
     </div>
   )
 }
@@ -65,7 +69,9 @@ function BountyFacts({ bounty, now }: { bounty: BountySummary; now: number | nul
  */
 export function BountyTab({ targetId }: BountyTabProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading', bounty: null })
+  const [tries, setTries] = useState(0)
   const time = useChainTime()
+  const gate = moduleGate(modulesLive)
 
   useEffect(() => {
     let live = true
@@ -87,15 +93,18 @@ export function BountyTab({ targetId }: BountyTabProps) {
     return () => {
       live = false
     }
-  }, [targetId])
+  }, [targetId, tries])
 
   if (load.status === 'loading') return <Skeleton />
-  if (load.status === 'failed') return <p role="alert">{copy.bounty.loadFailed}</p>
+  if (load.status === 'failed') {
+    return <ErrorState what={copy.bounty.loadFailed} onChainSafe onRetry={() => setTries(count => count + 1)} />
+  }
   if (load.bounty === null) return <p className="sf-tab__empty">{copy.target.noBounty}</p>
   return (
     <div className="sf-stack">
-      <BountyFacts bounty={load.bounty} now={time.now} />
-      <SettleButton bounty={load.bounty} now={time.now} />
+      <BountyFacts bounty={load.bounty} now={time.now} failed={time.failed} />
+      {gate.disabled && <p className="sf-lead">{gate.reason}</p>}
+      {!gate.disabled && <SettleButton bounty={load.bounty} now={time.now} />}
     </div>
   )
 }

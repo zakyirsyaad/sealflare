@@ -225,7 +225,7 @@ test.each([
 ])('the empty %s tab says "%s"', async (tab, text) => {
   render(<TargetScreen {...props()} />)
   await userEvent.click(screen.getByRole('tab', { name: new RegExp(tab) }))
-  expect(screen.getByText(text)).toBeInTheDocument()
+  expect(await screen.findByText(text)).toBeInTheDocument()
 })
 
 test.each([
