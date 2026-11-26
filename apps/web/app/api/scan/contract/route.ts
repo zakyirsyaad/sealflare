@@ -2,6 +2,7 @@ import { parseScanInput } from '@sealflare/scanner-core'
 import { ScanContractRequest, ScanError } from '@sealflare/shared/schemas'
 import { fail, failUnexpected, ok } from '../../../../server/respond'
 import { getScanEnvironment } from '../../../../server/scanner'
+import { putScan } from '../../../../server/scanStore'
 
 const STATUS: Record<string, number> = {
   INPUT_NOT_RECOGNIZED: 400,
@@ -26,6 +27,8 @@ export async function POST(request: Request) {
     if (reference.kind !== 'contract') return fail('INPUT_NOT_RECOGNIZED', 'That is not a contract address.', 400)
     const { scanner, rpc, explorer } = getScanEnvironment()
     const report = await scanner.scanContract(reference.address, { rpc, explorer })
+    // The target page shows the findings of this scan, so the report is kept for a short while.
+    putScan(report)
     return ok(report)
   } catch (error) {
     if (error instanceof ScanError) return fail(error.code, error.message, STATUS[error.code] ?? 400, error.details)

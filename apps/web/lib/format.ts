@@ -18,6 +18,9 @@ export function timeLeft(until: Date, now: Date): string {
   const minutes = Math.max(0, Math.ceil(diff / 60000))
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
+export function verdictLabel(verdict: 'SAFE' | 'CAUTION' | 'DANGER'): string {
+  return copy.attest[verdict === 'SAFE' ? 'safe' : verdict === 'CAUTION' ? 'caution' : 'danger']
+}
 export function formatUtc(seconds: number | bigint): string {
   const date = new Date(Number(seconds) * 1000)
   if (Number.isNaN(date.getTime())) throw new RangeError('A valid timestamp is required.')
@@ -34,4 +37,11 @@ export function tierReason(detail: Pick<TargetDetail, 'tier' | 'hasDelegatecall'
   const entry = copy.tiers[detail.tier]
   if (!entry) throw new RangeError('Unknown trust tier.')
   return entry.reason
+}
+/** A flag name in words: HIDDEN_MINT becomes "Hidden mint". */
+export function flagLabel(name: string): string {
+  const words = name.toLowerCase().split('_')
+  const first = words[0] ?? ''
+  const head = `${first.charAt(0).toUpperCase()}${first.slice(1)}`
+  return [head, ...words.slice(1)].join(' ')
 }
