@@ -69,7 +69,7 @@ function OnChainSection({ label, choice }: { label: string; choice: Choice }) {
         <Row name={copy.attest.rowVerdict} value={verdictName[verdict]} />
         <Row
           name={copy.attest.rowFlag}
-          value={flags.length === 0 ? copy.target.none : <span className="sf-mono">{flags.join(', ')}</span>}
+          value={flags.length === 0 ? copy.target.none : <span className="sf-mono">{flags.map(flagLabel).join(', ')}</span>}
         />
         <Row name={copy.attest.rowEvidence} value={copy.attest.rowEvidenceValue} />
         <Row name={copy.attest.rowBnb} value={copy.attest.rowBnbValue} />
@@ -87,7 +87,6 @@ function GainsSection({ verdict }: { verdict: Verdict }) {
         <Row name={copy.attest.rowReward} value={reward[verdict]} />
         <Row name={copy.attest.rowRisk} value={risk[verdict]} />
       </div>
-      {verdict === 'SAFE' && <p className="sf-lead">{copy.attest.safeSummary}</p>}
     </section>
   )
 }

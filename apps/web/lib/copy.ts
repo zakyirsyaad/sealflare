@@ -177,7 +177,6 @@ export const copy = {
     "rewardDanger": "+5 XP if the target is later judged dangerous",
     "riskSafe": "-15",
     "riskNone": "none",
-    "safeSummary": "A Safe vote here would earn +2, and lose 15 if the target is later judged dangerous.",
     "approveEvidence": "1  sign the evidence upload",
     "approveTransaction": "2  confirm the transaction",
     "noGas": "no gas",

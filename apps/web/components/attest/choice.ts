@@ -1,4 +1,4 @@
-import { CONSTANTS, FLAGS, isValidFlags, type FlagName, type TargetType, type Verdict } from '@sealflare/shared/rules'
+import { CONSTANTS, FLAGS, flagNames, isValidFlags, type FlagName, type TargetType, type Verdict } from '@sealflare/shared/rules'
 import { STATEMENT_MAX_CHARS, buildShortProof, utf8Length, type ScanReport, type ShortProofItem } from '@sealflare/shared/schemas'
 
 /** What the Guardian chose so far. */
@@ -47,7 +47,7 @@ export function setQuote(choice: Choice, flag: FlagName, quote: string): Choice 
 
 /** The flags of the choice, in the order of the flag list. */
 export function flagsOf(choice: Choice): FlagName[] {
-  return (Object.keys(FLAGS) as FlagName[]).filter(name => (choice.flags & FLAGS[name]) !== 0)
+  return flagNames(choice.flags)
 }
 
 /**

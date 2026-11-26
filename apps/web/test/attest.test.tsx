@@ -440,3 +440,17 @@ test('a report with no quote of the Guardian carries no statement', async () => 
   const sent = uploadEvidence.mock.calls[0]?.[0] as { reportJson: string }
   expect(JSON.parse(sent.reportJson)).not.toHaveProperty('statement')
 })
+
+test('the summary names the flags in sentence case, like the step before', async () => {
+  panel()
+  await toReview('Caution')
+  expect(screen.getByText('Unverified source')).toBeInTheDocument()
+  expect(screen.queryByText(/UNVERIFIED_SOURCE/)).toBeNull()
+})
+
+test('a Safe vote promises no fixed reward, because the reward row gives the schedule by slot', async () => {
+  panel()
+  await toReview('Safe')
+  expect(screen.queryByText(/would earn \+2/)).toBeNull()
+  expect(screen.getByText(/\+2 XP for the first three slots/)).toBeInTheDocument()
+})
