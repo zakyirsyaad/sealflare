@@ -34,6 +34,17 @@ test('the storage of the evidence is the API of Pinata unless a deployment names
   expect(() => parsePinataEnv({ PINATA_JWT: 'test', PINATA_URL: 'javascript:bad' })).toThrow('PINATA_URL')
   expect(() => parsePinataEnv({})).toThrow('PINATA_JWT')
 })
+test('an empty PINATA_URL is unset, so it falls back to the API of Pinata', () => {
+  expect(parsePinataEnv({ PINATA_JWT: 'test', PINATA_URL: '' }).PINATA_URL).toBe('https://api.pinata.cloud/pinning/pinFileToIPFS')
+})
+test('the JWT only goes over https, or over http to the machine itself', () => {
+  for (const url of ['https://pins.example.com/pin', 'http://localhost:9000/pin', 'http://127.0.0.1:9000/pin', 'http://[::1]:9000/pin']) {
+    expect(parsePinataEnv({ PINATA_JWT: 'test', PINATA_URL: url }).PINATA_URL).toBe(url)
+  }
+  for (const url of ['http://example.com/pin', 'http://localhost.evil.com/pin', 'http://127.0.0.1.evil.com/pin', 'http://127.0.0.1@evil.com/pin']) {
+    expect(() => parsePinataEnv({ PINATA_JWT: 'test', PINATA_URL: url })).toThrow('PINATA_URL')
+  }
+})
 test('server environment validates URLs and scanner mode without leaking values', () => {
   expect(parseServerEnv(server).RPC_URLS).toEqual(['https://rpc.example.com', 'http://127.0.0.1:8545'])
   for (const [key, value] of [['INTERNAL_URL', 'secret-invalid-url'], ['RPC_URLS', 'javascript:bad'], ['SCANNER', 'other']] as const) {

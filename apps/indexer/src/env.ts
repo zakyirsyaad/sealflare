@@ -45,6 +45,13 @@ export const IndexerEnv = z
         message: 'required on a public chain; set it to the block Core was deployed in',
       })
     }
+    if (env.BLOCK_TAG === 'latest' && env.CHAIN_ID !== LOCAL_CHAIN_ID) {
+      context.addIssue({
+        code: 'custom',
+        path: ['BLOCK_TAG'],
+        message: 'latest is for the local chain only; a public chain is read up to its finalized block',
+      })
+    }
   })
   .transform((env) => ({ ...env, START_BLOCK: env.START_BLOCK ?? 0n }))
 

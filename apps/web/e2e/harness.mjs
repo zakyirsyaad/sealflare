@@ -12,7 +12,8 @@
 //   E2E_RUNS       how many times the suite runs, one after the other (default 1)
 //   E2E_KEEP       keep the stack running after the suite (default 0)
 //   E2E_REAL       run against the real contracts instead of the stubs (default 0)
-//   DATABASE_URL   the database to use. A throwaway cluster is started when it is not given.
+//   E2E_DATABASE_URL  the database to use. A throwaway cluster is started when it is not given.
+//                     A DATABASE_URL of the shell is never read.
 //   FOUNDRY_BIN    the directory of the Foundry programs, when they are not on the path.
 
 import { spawn, spawnSync } from 'node:child_process'
@@ -164,8 +165,16 @@ function runToEnd(name, command, args, options = {}) {
   })
 }
 
-async function stopAll() {
-  for (const handle of running.reverse()) {
+let stopping = null
+
+/** Stops everything the run started. A second call waits for the first, so a signal during the shutdown does no harm. */
+function stopAll() {
+  stopping ??= shutdown()
+  return stopping
+}
+
+async function shutdown() {
+  for (const handle of [...running].reverse()) {
     handle.stopping = true
     handle.child.kill('SIGTERM')
   }
@@ -383,6 +392,17 @@ main()
     process.exitCode = 1
   })
 
-process.on('SIGINT', () => {
-  void stopAll().then(() => process.exit(130))
-})
+// A cancelled CI job sends SIGTERM and a closed terminal sends SIGHUP. Without a handler for them
+// Anvil, Postgres and the web server stay up, and the next run stops at the port check.
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
+  process.on(signal, () => {
+    void stopAll().finally(() => process.exit(code))
+  })
+}
+
+for (const event of ['uncaughtException', 'unhandledRejection']) {
+  process.on(event, error => {
+    process.stderr.write(`[harness] ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`)
+    void stopAll().finally(() => process.exit(1))
+  })
+}

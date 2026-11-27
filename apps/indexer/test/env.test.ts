@@ -35,6 +35,10 @@ test('BLOCK_TAG latest is read, so a chain without finality is read up to its ti
   expect(parseEnv({ ...base, CHAIN_ID: '31337', BLOCK_TAG: 'latest' }).BLOCK_TAG).toBe('latest')
 })
 
+test.each(['56', '97'])('BLOCK_TAG latest is refused on the public chain %s', (chainId) => {
+  expect(() => parseEnv({ ...base, CHAIN_ID: chainId, START_BLOCK: '1', BLOCK_TAG: 'latest' })).toThrow(/BLOCK_TAG/)
+})
+
 test('BLOCK_TAG refuses a tag the indexer does not know', () => {
   expect(() => parseEnv({ ...base, CHAIN_ID: '31337', BLOCK_TAG: 'safe' })).toThrow(/BLOCK_TAG/)
 })

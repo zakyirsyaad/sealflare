@@ -41,6 +41,14 @@ export const parseScannerMode = (input: Record<string, string | undefined>) => p
 const internalSchema = z.object({ INTERNAL_URL: httpUrl, INTERNAL_KEY: required })
 export const parseInternalEnv = (input: Record<string, string | undefined>) => parse(internalSchema, input)
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/** The JWT goes to this URL as a bearer token, so plain http is only allowed to the machine itself. */
+const pinataUrl = httpUrl.refine(value => {
+  const url = new URL(value)
+  return url.protocol === 'https:' || LOOPBACK_HOSTS.has(url.hostname)
+}, 'Use https, or http only for localhost')
+
 /** The key that lets the API store evidence, and the service that stores it. */
 const pinataSchema = z.object({
   PINATA_JWT: required,
@@ -48,9 +56,12 @@ const pinataSchema = z.object({
    * The service that stores the evidence.
    *
    * It is the API of Pinata unless a deployment names another one. The end-to-end suite names a
-   * local service, so the suite never reaches outside the machine.
+   * local service, so the suite never reaches outside the machine. An empty value is unset.
    */
-  PINATA_URL: httpUrl.default('https://api.pinata.cloud/pinning/pinFileToIPFS'),
+  PINATA_URL: z.preprocess(
+    value => (value === '' ? undefined : value),
+    pinataUrl.default('https://api.pinata.cloud/pinning/pinFileToIPFS'),
+  ),
 })
 export const parsePinataEnv = (input: Record<string, string | undefined>): z.output<typeof pinataSchema> =>
   parse(pinataSchema, input)

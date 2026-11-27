@@ -81,7 +81,7 @@ invalid variables fail with variable names only. Required server configuration:
 | `BSCSCAN_KEY` | BscScan API key |
 | `GITHUB_TOKEN` | GitHub API token |
 | `PINATA_JWT` | Pinata JWT |
-| `PINATA_URL` | Optional HTTP(S) URL of the service that pins the evidence. It is the API of Pinata when it is not given. The end-to-end suite names a local service, so the suite never reaches outside the machine |
+| `PINATA_URL` | Optional URL of the service that pins the evidence. It is the API of Pinata when it is not given, and an empty value counts as not given. The JWT is sent to this URL, so it has to be https, or http to `localhost`, `127.0.0.1` or `[::1]`. The end-to-end suite names a local service, so the suite never reaches outside the machine |
 | `SCANNER` | Exactly `mock` or `real`. Anything else, including a missing value or `Real`, makes the scan routes answer `INTERNAL` with no verdict. The mock serves a SAFE fixture for any input, so it is never a default |
 
 Supply real values through the founder's environment/secret manager. Never prefix server keys

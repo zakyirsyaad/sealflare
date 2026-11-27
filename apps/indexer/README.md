@@ -82,7 +82,7 @@ pnpm --filter @sealflare/indexer start
 | `START_BLOCK` | The block Core was deployed in. Digits only. Required unless `CHAIN_ID` is 31337, where it defaults to 0, so a deploy never walks the chain from block 0 by accident |
 | `BATCH_SIZE` | How many blocks one range holds (1 to 2000, default 2000) |
 | `POLL_INTERVAL_MS` | How long the indexer waits when it is caught up (default 5000) |
-| `BLOCK_TAG` | The block the indexer reads up to: `finalized` (default) or `latest`. A public chain is read up to its final block, so a vote that may still change is never written. `latest` is for a local node, which has no finality |
+| `BLOCK_TAG` | The block the indexer reads up to: `finalized` (default) or `latest`. A public chain is read up to its final block, so a vote that may still change is never written. `latest` is for a local node, which has no finality, and the indexer refuses it on any chain but the local one |
 
 The deploy block of Core is in the transaction of its deployment. The deploy scripts do not write
 it into `shared/abi/addresses.*.json` yet.

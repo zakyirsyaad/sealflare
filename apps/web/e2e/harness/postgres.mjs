@@ -1,8 +1,9 @@
 // A throwaway Postgres cluster for the end-to-end suite.
 //
-// The suite never touches a database that holds anything else. When DATABASE_URL is given, that
-// database is used as it is. Otherwise a cluster is created in a temporary folder, started on a
-// free port and thrown away when the run ends.
+// The suite never touches a database that holds anything else. When E2E_DATABASE_URL is given,
+// that database is used as it is. A DATABASE_URL in the shell is never read, so the database of a
+// developer cannot receive the votes of a run. Otherwise a cluster is created in a temporary
+// folder, started on a free port and thrown away when the run ends.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
@@ -66,13 +67,13 @@ async function freePort() {
  * that stops it again.
  */
 export async function startDatabase() {
-  if (process.env.DATABASE_URL) return { url: process.env.DATABASE_URL, stop: async () => {} }
+  if (process.env.E2E_DATABASE_URL) return { url: process.env.E2E_DATABASE_URL, stop: async () => {} }
   const initdb = findProgram('initdb')
   const pgCtl = findProgram('pg_ctl')
   const createdb = findProgram('createdb')
   if (!initdb || !pgCtl || !createdb) {
     throw new Error(
-      'Postgres is needed for the end-to-end suite. Install it, or give DATABASE_URL a database to use.',
+      'Postgres is needed for the end-to-end suite. Install it, or give E2E_DATABASE_URL a database to use.',
     )
   }
   const port = PORT ?? (await freePort())

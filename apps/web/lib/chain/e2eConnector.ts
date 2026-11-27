@@ -99,9 +99,12 @@ export function e2eConnector() {
           withCapabilities?: withCapabilities | boolean
         } = {},
       ): Promise<Connected<withCapabilities>> {
+        if (chainId !== undefined && chainId !== chain.id) {
+          throw new Error(`The end-to-end wallet is on the local chain only, not on chain ${chainId}.`)
+        }
         account = chosenAccount()
         const accounts = capabilities ? [{ address: account, capabilities: {} }] : [account]
-        return { accounts, chainId: chainId ?? chain.id } as unknown as Connected<withCapabilities>
+        return { accounts, chainId: chain.id } as unknown as Connected<withCapabilities>
       },
       async disconnect() {
         account = null

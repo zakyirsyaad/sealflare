@@ -13,7 +13,7 @@ transaction reaches a public network.
 
 | Piece | What it is |
 | --- | --- |
-| Postgres | A throwaway cluster in a temporary folder, or the database `DATABASE_URL` names |
+| Postgres | A throwaway cluster in a temporary folder, or the database `E2E_DATABASE_URL` names |
 | Anvil | The stub contracts of `contracts/`, deployed by the local script, then seeded |
 | The internal service | The API of the app, with the migrations applied |
 | The indexer | It reads the chain and writes the rows the internal service serves |
@@ -48,7 +48,7 @@ The run needs:
 - Foundry 1.7.1 or newer, for `anvil` and `forge`. A program of another name called `forge` on the
   path is ignored, and a Foundry that is too old is refused with a message. `FOUNDRY_BIN` names the
   directory of the programs when they are not on the path.
-- Postgres, for `initdb`, `pg_ctl` and `createdb`, or a `DATABASE_URL` of a database the suite may
+- Postgres, for `initdb`, `pg_ctl` and `createdb`, or an `E2E_DATABASE_URL` of a database the suite may
   use. The suite never touches a database that holds anything else.
 - The Chromium of Playwright.
 
@@ -57,7 +57,7 @@ The run needs:
 | `E2E_RUNS` | How many times the suite runs, one after the other. Every round votes with another account, because an account that has voted on a target cannot vote on it again. Default 1 |
 | `E2E_KEEP` | `1` keeps the stack running after the suite, also when the suite failed, so a failure can be looked at in the browser |
 | `E2E_REAL` | `1` runs the suite against the real contracts of `contracts/src` instead of the stubs. The scanner stays the mock one, because the real scanner needs a paid key |
-| `DATABASE_URL` | The database to use. A throwaway cluster is started when it is not given |
+| `E2E_DATABASE_URL` | The database to use. A throwaway cluster is started when it is not given. A `DATABASE_URL` in the shell is never read, so the database of a developer cannot receive the votes of a run |
 | `E2E_PG_PORT` | The port of that cluster. A free port is taken when it is not given |
 | `FOUNDRY_BIN` | The directory of the Foundry programs, when they are not on the path |
 

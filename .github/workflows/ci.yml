@@ -106,7 +106,7 @@ jobs:
           --health-retries 10
     env:
       # The suite uses this database instead of starting a throwaway cluster of its own.
-      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sealflare_e2e
+      E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sealflare_e2e
     steps:
       # The harness starts Anvil with the stub contracts, so this job needs Foundry and the
       # contract libraries.
