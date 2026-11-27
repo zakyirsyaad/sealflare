@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import userEvent from '@testing-library/user-event'
 
@@ -202,4 +202,42 @@ test('the penalties show the note of ux.md 4.2 while the modules are not open ye
   renderActivity(<MyActivityPage />)
   expect(await screen.findAllByText(copy.common.modulesNotLive)).not.toHaveLength(0)
   expect(screen.getByRole('button', { name: copy.activity.penaltiesAction })).toBeDisabled()
+})
+
+test('the range of a page does not move past an attestation that could not be read', async () => {
+  // The window of attestations cannot be read, so the screen does not know where the next page
+  // starts, and it does not move past the window either: an attestation that was never read may
+  // still be waiting for a penalty.
+  chain.rangeFailed = true
+  chain.penalties = { [TARGET]: 120 }
+  answer.current = activity({ history: [historyItem()] })
+  renderActivity(<MyActivityPage />)
+  expect(await screen.findByText(copy.activity.penaltiesFailed)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: copy.activity.penaltiesAction })).toBeNull()
+  // The chain answers again, so the retry reads the window again.
+  chain.rangeFailed = false
+  await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
+  await userEvent.click(await screen.findByRole('button', { name: copy.activity.penaltiesAction }))
+  await waitFor(() =>
+    expect(chain.write).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: 'applyPenalties', args: [TARGET, 0, 50] }),
+    ),
+  )
+})
+
+test('the button waits for the range of the next page before it is free again', async () => {
+  // The window of attestations is read again after the page, and the chain is slow to answer.
+  chain.penalties = { [TARGET]: 120 }
+  answer.current = activity({ history: [historyItem()] })
+  renderActivity(<MyActivityPage />)
+  const panel = await screen.findByRole('region', { name: copy.activity.penaltiesPanel })
+  chain.holdRange = true
+  await userEvent.click(within(panel).getByRole('button', { name: copy.activity.penaltiesAction }))
+  await waitFor(() => expect(chain.write).toHaveBeenCalled())
+  // The page was mined and the number that is left was read, so the button would be free again.
+  // The range is not known yet, so the button waits instead of sending the page that was mined.
+  await waitFor(() => expect(within(panel).getByText(copy.common.loading)).toBeInTheDocument())
+  expect(within(panel).queryByRole('button', { name: copy.activity.penaltiesAction })).toBeNull()
+  chain.release?.()
+  expect(await within(panel).findByRole('button', { name: copy.activity.penaltiesAction })).toBeInTheDocument()
 })

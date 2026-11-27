@@ -25,6 +25,7 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/app/me' }))
 import MyActivityPage from '../app/app/me/page'
 import { AppHeader } from '../components/AppHeader'
 import { ActivityProvider } from '../lib/activity/ActivityProvider'
+import { notifyActivityChanged } from '../lib/activity/activityChanged'
 import {
   ACCOUNT,
   OTHER,
@@ -360,4 +361,17 @@ test('a wallet without an Agent ID is offered the way to get one', async () => {
   expect(await screen.findByText(copy.wallet.agentWhy)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: copy.wallet.getAgentId })).toHaveAttribute('href', 'https://agent-id.example/get')
   expect(screen.getByRole('button', { name: copy.wallet.checkAgain })).toBeInTheDocument()
+})
+
+test('the rows stay on the screen while they are read again', async () => {
+  answer.current = activity({ needsAction: [need()], history: [historyItem()] })
+  renderActivity(<MyActivityPage />)
+  expect(await screen.findByText('demo-drainer-skill')).toBeInTheDocument()
+  // The rows are read again and the indexer is slow, so the screen waits without emptying itself.
+  chain.holdFetch = true
+  notifyActivityChanged()
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+  expect(screen.getByText('demo-drainer-skill')).toBeInTheDocument()
+  expect(screen.getByText(/Reveal your vote/)).toBeInTheDocument()
+  chain.release?.()
 })

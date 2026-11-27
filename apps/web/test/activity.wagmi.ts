@@ -49,6 +49,8 @@ export const useReadContracts = (config: {
         return { status: 'success', result: chain.targets[String(contract.args[0])] ?? null }
       }
       if (name === 'getAttestation') {
+        // The window of attestations cannot be read, as if the chain could not answer.
+        if (chain.rangeFailed) return { status: 'failure', result: undefined }
         const attestation = chain.attestations[Number(contract.args[1])] ?? { verdict: 0, penalized: false }
         return { status: 'success', result: attestation }
       }
@@ -65,7 +67,8 @@ export const useReadContracts = (config: {
       store.current = { signature: sig, data: next }
       bump(value => value + 1)
     }
-    if (chain.holdReads) {
+    const isRange = config.contracts.some(contract => contract.functionName === 'getAttestation')
+    if (chain.holdReads || (chain.holdRange && isRange)) {
       return new Promise(resolve => {
         chain.releases.push(() => {
           deliver()

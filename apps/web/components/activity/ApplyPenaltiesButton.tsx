@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Address, Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
 import { coreAddress } from '../../lib/chain/addresses'
@@ -54,9 +54,15 @@ export function ApplyPenaltiesButton(props: ApplyPenaltiesButtonProps) {
   const core = coreAddress()
   const range = usePenaltyRange(targetId, props.attestations)
   const page = usePenaltyPage({ ...props, tx, range })
+  // The retry reads the numbers of the penalties and the range of the page again, because the
+  // range is read on its own.
+  const retry = useCallback(() => {
+    props.onRetry()
+    range.refetch()
+  }, [props.onRetry, range.refetch])
   return (
     <div className="sf-stack">
-      <PenaltyAction {...props} tx={tx} core={core} range={range} primary={primary} onSubmit={page.send} />
+      <PenaltyAction {...props} tx={tx} core={core} range={range} primary={primary} onSubmit={page.send} onRetry={retry} />
       {range.covered ? (
         <p className="sf-lead">{copy.activity.penaltiesCovered}</p>
       ) : (
@@ -90,9 +96,12 @@ function PenaltyAction({
   // A target that cannot be read leaves the range of a page unknown.
   if (viewsFailed) return <ErrorState what={copy.activity.penaltiesFailed} onChainSafe onRetry={onRetry} />
   if (range.failed) return <ErrorState what={copy.activity.penaltiesFailed} onChainSafe onRetry={onRetry} />
+  // The chain has not said where the page starts yet, so no page is sent. The range is read
+  // again after every page, and a page that was mined is never sent a second time.
+  if ((range.start === null || range.loading) && tx.state !== 'done') {
+    return <p className="sf-lead">{copy.common.loading}</p>
+  }
   if (range.covered) return null
-  // The chain has not said where the page starts yet, so no page is sent.
-  if (range.start === null) return <p className="sf-lead">{copy.common.loading}</p>
   return (
     <ActionButton
       label={copy.activity.penaltiesAction}

@@ -58,15 +58,18 @@ export function usePenaltyRange(targetId: string, attestationCount: number | nul
   const entries = read.data ?? null
   const first = entries === null ? null : firstChargeable(entries, start)
   const end = attestationCount === null ? 0 : Math.min(attestationCount, start + WINDOW)
-  useAdvance(first, entries, attestationCount, end, targetId, setWindow)
+  // An attestation that could not be read may still be waiting for a penalty, so the window stays
+  // where it is and the failure is shown instead of a page that may charge the wrong votes.
+  const failed = read.isError === true || (entries ?? []).some(entry => failedOf(entry))
+  useAdvance(first, entries, attestationCount, end, targetId, setWindow, failed)
   const { refreshing, refetch } = useRangeRead(read)
   const empty = attestationCount === 0
   return {
     start: first,
     size: first === null || attestationCount === null ? 0 : Math.min(PENALTY_CHUNK, attestationCount - first),
-    failed: read.isError === true || (entries ?? []).some(entry => failedOf(entry)),
+    failed,
     loading: (entries === null && !empty) || refreshing,
-    covered: empty || (entries !== null && first === null && attestationCount !== null && end >= attestationCount),
+    covered: empty || (entries !== null && first === null && !failed && attestationCount !== null && end >= attestationCount),
     refetch,
   }
 }
@@ -92,7 +95,8 @@ function rangeContracts(
  *
  * A window of attestations that are charged already is not read again and again: the screen moves
  * on to the next window, and the first attestation it finds that the chain still charges is the
- * one the next page starts at.
+ * one the next page starts at. A window that could not be read is not moved past, because an
+ * attestation that was never read may still be waiting for a penalty.
  */
 function useAdvance(
   first: number | null,
@@ -101,14 +105,17 @@ function useAdvance(
   end: number,
   targetId: string,
   setWindow: Dispatch<SetStateAction<WindowState>>,
+  failed: boolean,
 ): void {
   useEffect(() => {
     if (entries === null || first !== null) return
     if (attestationCount === null) return
+    // A window that could not be read is not moved past, so the retry is offered.
+    if (failed) return
     // The whole target has been read, so there is nothing left to charge.
     if (end >= attestationCount) return
     setWindow(current => (current.targetId === targetId && current.start === end ? current : { targetId, start: end }))
-  }, [entries, first, attestationCount, end, targetId, setWindow])
+  }, [entries, first, attestationCount, end, targetId, setWindow, failed])
 }
 
 /**

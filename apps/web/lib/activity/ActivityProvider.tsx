@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ActivityItem, NeedsAction } from '@sealflare/shared/schemas'
 import { useUserState } from '../chain/userState'
 import { loadActivity } from './api'
@@ -64,9 +64,13 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   const [failed, setFailed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [round, setRound] = useState(0)
+  // The account whose rows have answered. The screen waits for the first answer of an account,
+  // and a later read keeps the rows that are on the screen.
+  const answered = useRef<string | null>(null)
 
   useEffect(() => {
     if (address === null) {
+      answered.current = null
       setReading(empty)
       setFailed(false)
       setLoading(false)
@@ -74,17 +78,20 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     }
     let live = true
     const read = () => {
-      setLoading(true)
+      // The rows stay on the screen while a later read runs, so the page does not jump every
+      // time the rows are read again.
+      if (answered.current !== address) setLoading(true)
       void loadActivity(address).then(
         data => {
           if (!live) return
+          answered.current = address
           setReading({ address, needsAction: data.needsAction, history: data.history })
           setFailed(false)
           setLoading(false)
         },
         () => {
           if (!live) return
-          setReading({ address, needsAction: [], history: [] })
+          // The rows that are on the screen stay, and the screen says that the read failed.
           setFailed(true)
           setLoading(false)
         },

@@ -38,6 +38,12 @@ export const chain = {
   pending: [] as string[],
   /** The read of the targets fails, as if the chain could not name them. */
   targetsFailed: false,
+  /** The window of attestations cannot be read, as if the chain could not answer. */
+  rangeFailed: false,
+  /** The read of the window of attestations waits for the test. */
+  holdRange: false,
+  /** The answer of the indexer waits for the test. */
+  holdFetch: false,
   /** When set, the answer of the chain waits for the test to release it. */
   holdReads: false,
   /** The answers that wait for the test. */
@@ -132,6 +138,9 @@ export function resetActivity() {
   chain.readsFailed = false
   chain.pending = []
   chain.targetsFailed = false
+  chain.rangeFailed = false
+  chain.holdRange = false
+  chain.holdFetch = false
   chain.holdReads = false
   chain.releases = []
   chain.refetches = {}
@@ -146,5 +155,16 @@ export function resetActivity() {
   modules.live = true
   account.state = { kind: 'holder', address: ACCOUNT, isLoading: false, isError: false, recheck: () => {} }
   answer.current = activity()
-  vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => answer.current })))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      // The indexer is slow, so the answer of the test waits for it.
+      if (chain.holdFetch) {
+        await new Promise<void>(resolve => {
+          chain.releases.push(resolve)
+        })
+      }
+      return { json: async () => answer.current }
+    }),
+  )
 }
