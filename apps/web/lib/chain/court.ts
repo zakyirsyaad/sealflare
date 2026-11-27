@@ -30,12 +30,3 @@ export function courtAddress(): Address | null {
     return null
   }
 }
-
-/** The address of the registry, or null when the deployment names none. */
-export function coreAddress(): Address | null {
-  try {
-    return addresses(expectedChainId).core
-  } catch {
-    return null
-  }
-}

@@ -8,7 +8,8 @@ import { expectedChainId, modulesLive } from '../../lib/chain/config'
 import { moduleGate } from '../../lib/chain/modules'
 import { copy } from '../../lib/copy'
 import { bondRange, bondTerms, parseBnb } from '../../lib/publish/bond'
-import { useBond, vaultAddress } from '../../lib/publish/useBond'
+import { vaultAddress } from '../../lib/chain/addresses'
+import { useBond } from '../../lib/publish/useBond'
 
 export type BondStepProps = {
   targetId: Hex

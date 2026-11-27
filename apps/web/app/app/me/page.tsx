@@ -13,12 +13,14 @@ import { Skeleton } from '../../../components/ui/Skeleton'
 import { ConnectPrompt } from '../../../components/wallet/ConnectPrompt'
 import { NoAgentId } from '../../../components/wallet/NoAgentId'
 import { WrongNetwork } from '../../../components/wallet/WrongNetwork'
+import { useSharedActivity } from '../../../lib/activity/ActivityProvider'
 import { notifyActivityChanged } from '../../../lib/activity/activityChanged'
-import { useActivity } from '../../../lib/activity/useActivity'
 import { usePendingPenalties, useStanding, useVaultBalance } from '../../../lib/activity/useChainReads'
+import { useReloadLater } from '../../../lib/activity/useReloadLater'
 import { agentIdUrl } from '../../../lib/chain/config'
 import { useUserState } from '../../../lib/chain/userState'
 import { copy } from '../../../lib/copy'
+import { shortAddress } from '../../../lib/format'
 
 /** How many targets of the account are read for the penalties that wait on them. */
 const MAX_PENALTY_TARGETS = 20
@@ -53,7 +55,7 @@ export default function MyActivityPage() {
       </div>
     )
   }
-  return <ActivityView address={address} agentId={agentIdOf(user)} />
+  return <ActivityView address={address} noAgentId={agentIdOf(user)} />
 }
 
 /** The way to get an Agent ID, when the wallet does not hold one. */
@@ -63,21 +65,35 @@ function agentIdOf(user: ReturnType<typeof useUserState>): { recheck: () => void
 }
 
 /** The screen of an account that is connected. */
-function ActivityView({ address, agentId }: { address: `0x${string}`; agentId: { recheck: () => void } | null }) {
+function ActivityView({ address, noAgentId }: { address: `0x${string}`; noAgentId: { recheck: () => void } | null }) {
   const { mutate: disconnect } = useDisconnect()
-  const activity = useActivity(address)
+  // The rows of the account are read once for the whole application, so the page and the mark on
+  // the wallet button always count the same rows.
+  const activity = useSharedActivity()
   const balance = useVaultBalance(address)
   const standing = useStanding(address)
   const attested = attestedTargets(activity.history)
   const penalties = usePendingPenalties(attested.targets)
-  const onApplied = useCallback(() => {
-    penalties.refetch()
-    notifyActivityChanged()
-  }, [penalties.refetch])
+  const reloadLater = useReloadLater(activity.reload)
+  const [report, setReport] = useState<{ targetId: string; applied: number } | null>(null)
+  const onApplied = useCallback(
+    async (targetId: string, before: number) => {
+      // The number that is left is read again, and the answer of that read is the one the page is
+      // measured against, so the report is never a guess.
+      const counts = await penalties.refresh()
+      notifyActivityChanged()
+      if (counts === null) return
+      setReport({ targetId, applied: before - (counts[targetId] ?? 0) })
+    },
+    [penalties.refresh],
+  )
   const onSettled = useCallback(() => {
-    activity.reload()
+    // The claim changed the score of the account on the chain, so the standing is read again.
+    standing.refetch()
+    // The indexer reads the transaction when its block is final, so the rows are read again later.
+    reloadLater()
     notifyActivityChanged()
-  }, [activity.reload])
+  }, [standing.refetch, reloadLater])
   const pending = attested.targets
     .filter(target => (penalties.pending[target]?.pending ?? 0) > 0)
     .map(target => ({
@@ -95,12 +111,13 @@ function ActivityView({ address, agentId }: { address: `0x${string}`; agentId: {
           attested={attested}
           penalties={penalties}
           pending={pending}
-          agentId={agentId}
+          report={report}
+          noAgentId={noAgentId}
           onOtherWallet={disconnect}
           onApplied={onApplied}
           onSettled={onSettled}
         />
-        <ActivitySide address={address} balance={balance} standing={standing} holder={agentId === null} />
+        <ActivitySide address={address} balance={balance} standing={standing} hasAgentId={noAgentId === null} />
       </div>
     </div>
   )
@@ -113,27 +130,29 @@ function ActivityMain({
   attested,
   penalties,
   pending,
-  agentId,
+  report,
+  noAgentId,
   onOtherWallet,
   onApplied,
   onSettled,
 }: {
   address: `0x${string}`
-  activity: ReturnType<typeof useActivity>
+  activity: ReturnType<typeof useSharedActivity>
   attested: { targets: string[]; limited: boolean }
   penalties: ReturnType<typeof usePendingPenalties>
   pending: PendingPenalty[]
-  agentId: { recheck: () => void } | null
+  report: { targetId: string; applied: number } | null
+  noAgentId: { recheck: () => void } | null
   onOtherWallet: () => void
-  onApplied: () => void
+  onApplied: (targetId: string, before: number) => void
   onSettled: () => void
 }) {
   return (
     <div className="sf-activity__main">
-      {agentId !== null && (
-        <NoAgentId recheck={agentId.recheck} onOtherWallet={onOtherWallet} agentIdUrl={agentIdUrl} />
+      {noAgentId !== null && (
+        <NoAgentId recheck={noAgentId.recheck} onOtherWallet={onOtherWallet} agentIdUrl={agentIdUrl} />
       )}
-      <NeedsAction account={address} items={activity.needsAction} onSettled={onSettled} />
+      <NeedsAction account={address} items={activity.needsAction} now={activity.now} onSettled={onSettled} />
       {penalties.failed && attested.targets.length > 0 && (
         <ErrorState what={copy.activity.penaltiesFailed} onChainSafe onRetry={penalties.refetch} />
       )}
@@ -142,8 +161,11 @@ function ActivityMain({
         penalties={pending}
         updatedAt={penalties.updatedAt}
         failed={penalties.failed}
+        viewsFailed={penalties.viewsFailed}
         onApplied={onApplied}
+        onRetry={penalties.refetch}
       />
+      {report !== null && <p className="sf-lead">{reportText(report)}</p>}
       {attested.limited && (
         <p className="sf-lead">
           {copy.activity.penaltiesLimited.replace('{count}', String(MAX_PENALTY_TARGETS))}
@@ -159,18 +181,31 @@ function ActivityMain({
   )
 }
 
+/**
+ * What the last page of penalties applied.
+ *
+ * The report lives in the page and not in the row, because a page that clears a target takes the
+ * row with it, and the reader still has to read what the page did.
+ */
+function reportText(report: { targetId: string; applied: number }): string {
+  const target = shortAddress(report.targetId)
+  if (report.applied === 0) return copy.activity.penaltiesNoneTarget.replace('{target}', target)
+  if (report.applied === 1) return copy.activity.penaltiesAppliedOneTarget.replace('{target}', target)
+  return copy.activity.penaltiesAppliedTarget.replace('{count}', String(report.applied)).replace('{target}', target)
+}
+
 /** The column of the balance of the account and of its standing. */
 function ActivitySide({
   address,
   balance,
   standing,
-  holder,
+  hasAgentId,
 }: {
   address: `0x${string}`
   balance: ReturnType<typeof useVaultBalance>
   standing: ReturnType<typeof useStanding>
   /** The standing belongs to a holder of an Agent ID, so only a holder has one. */
-  holder: boolean
+  hasAgentId: boolean
 }) {
   return (
     <div className="sf-activity__side">
@@ -181,7 +216,7 @@ function ActivitySide({
         onWithdrawn={balance.refetch}
         onRetry={balance.refetch}
       />
-      {holder && (
+      {hasAgentId && (
         <Standing
           score={standing.score}
           weight={standing.weight}
@@ -206,7 +241,7 @@ function HistoryPanel({
   failed,
   onRetry,
 }: {
-  history: ReturnType<typeof useActivity>['history']
+  history: ReturnType<typeof useSharedActivity>['history']
   loading: boolean
   failed: boolean
   onRetry: () => void
@@ -229,7 +264,7 @@ function HistoryPanel({
 }
 
 /** The targets the account attested on, where a penalty may still be waiting. */
-function attestedTargets(history: ReturnType<typeof useActivity>['history']): {
+function attestedTargets(history: ReturnType<typeof useSharedActivity>['history']): {
   targets: string[]
   limited: boolean
 } {

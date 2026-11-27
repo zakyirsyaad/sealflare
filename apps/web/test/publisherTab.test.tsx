@@ -27,6 +27,8 @@ vi.mock('../lib/chain/config', () => ({
 }))
 vi.mock('../lib/chain/addresses', () => ({
   addresses: () => ({ agentId: me, core: me, court: null, vault }),
+  coreAddress: () => me,
+  vaultAddress: () => vault,
 }))
 vi.mock('wagmi', () => ({
   useConnection: () => mocks.connection,

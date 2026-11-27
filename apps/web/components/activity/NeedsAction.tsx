@@ -2,14 +2,15 @@
 import type { Address } from 'viem'
 import type { NeedsAction as NeedsActionItem } from '@sealflare/shared/schemas'
 import { copy } from '../../lib/copy'
-import { dueText, rowOf, sortByUrgency, type ActionRow } from '../../lib/activity/needsAction'
-import { useNow } from '../../lib/activity/useNow'
+import { dueText, rowOf, sortByUrgency, uniqueRows, type ActionRow } from '../../lib/activity/needsAction'
 import { SettleXpButton } from './SettleXpButton'
 
 export type NeedsActionProps = {
   account: Address
   /** The actions the indexer found for the account. */
   items: readonly NeedsActionItem[]
+  /** The time of the chain, as the latest block says it. Null while the chain has not answered. */
+  now: Date | null
   /** Called once a settlement was mined, so the rows of the account are read again. */
   onSettled?: () => void
 }
@@ -19,11 +20,13 @@ export type NeedsActionProps = {
  *
  * The rows come from the indexed rows of the account, so an action never says something the chain
  * has not said yet. The order of the rows is the order of urgency: the action that is due first
- * comes first. The count of the panel is the count of the mark on the wallet button.
+ * comes first. Two actions of the same kind on the same target are one row, so the count of the
+ * panel is the count of the mark on the wallet button. The key of a row names the action and does
+ * not change from render to render, so a row that is removed does not take the state of the rows
+ * below it with it.
  */
-export function NeedsAction({ account, items, onSettled }: NeedsActionProps) {
-  const now = useNow()
-  const rows = sortByUrgency(items).map(rowOf)
+export function NeedsAction({ account, items, now, onSettled }: NeedsActionProps) {
+  const rows = uniqueRows(sortByUrgency(items)).map(rowOf)
   if (rows.length === 0) return null
   return (
     <section className="sf-frame sf-frame--crop" aria-label={copy.activity.needsAction}>
@@ -33,7 +36,7 @@ export function NeedsAction({ account, items, onSettled }: NeedsActionProps) {
       </div>
       <ul className="sf-todos">
         {rows.map((row, index) => (
-          <Row key={`${row.key}:${index}`} row={row} account={account} now={now} primary={index === 0} onSettled={onSettled} />
+          <Row key={row.key} row={row} account={account} now={now} primary={index === 0} onSettled={onSettled} />
         ))}
       </ul>
     </section>
@@ -50,7 +53,7 @@ function Row({
 }: {
   row: ActionRow
   account: Address
-  now: Date
+  now: Date | null
   primary: boolean
   onSettled?: () => void
 }) {

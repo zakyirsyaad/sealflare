@@ -43,7 +43,11 @@ export function Balance({ account, balance, failed, onWithdrawn, onRetry }: Bala
               {formatBnb(balance)} <span className="sf-balance__unit">{copy.common.bnb}</span>
             </p>
             {empty && <p className="sf-lead">{copy.activity.balanceEmpty}</p>}
-            {account !== null && balance !== null && !empty && (
+            {/*
+              The button stays mounted while a withdrawal is on its way, so the result of a
+              withdrawal that landed stays on the screen even when the balance reads zero.
+            */}
+            {account !== null && balance !== null && (
               <WithdrawButton account={account} balance={balance} onWithdrawn={onWithdrawn} disabled={!modulesLive} />
             )}
             {!modulesLive && <p className="sf-lead">{copy.common.modulesNotLive}</p>}

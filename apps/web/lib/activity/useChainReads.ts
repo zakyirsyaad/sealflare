@@ -124,6 +124,8 @@ export type TargetPenalties = {
   pending: number
   /** How many attestations the target holds, when the chain said. */
   attestations: number | null
+  /** The chain could not read this target. */
+  failed: boolean
 }
 
 /** The penalties that are still waiting on each of the targets. */
@@ -131,8 +133,19 @@ export function usePendingPenalties(targets: readonly string[]): {
   pending: Record<string, TargetPenalties>
   /** The moment the numbers were read, so a reader knows when the chain answered. */
   updatedAt: number
+  /** The number of pending penalties could not be read. */
   failed: boolean
+  /** The targets could not be read, so the range of a page is unknown. */
+  viewsFailed: boolean
   refetch: () => void
+  /**
+   * Reads the numbers of the penalties again and answers with them.
+   *
+   * The answer is the reading that was made after the call, so a number that is reported comes
+   * from the chain and not from the screen. A read that fails answers with null, because a failed
+   * read says nothing about the penalties that are left.
+   */
+  refresh: () => Promise<Record<string, number> | null>
 } {
   const core = coreAddress()
   const key = targets.join(',')
@@ -155,8 +168,16 @@ export function usePendingPenalties(targets: readonly string[]): {
     query: { enabled: core !== null && targets.length > 0 },
   })
   const counts: Record<string, number> = {}
+  const countFailed = new Set<string>()
   targets.forEach((target, index) => {
-    const value = read.data?.[index]
+    const entry = read.data?.[index]
+    // A read of the batch that failed is a failure of that target, not a target without penalties.
+    if (failedOf(entry)) {
+      countFailed.add(target)
+      counts[target] = 0
+      return
+    }
+    const value = resultOf(entry)
     counts[target] = typeof value === 'number' ? value : 0
   })
   // Only the targets that wait on a penalty are read a second time, so the batch stays small.
@@ -181,19 +202,71 @@ export function usePendingPenalties(targets: readonly string[]): {
   })
   const pending: Record<string, TargetPenalties> = {}
   targets.forEach(target => {
-    pending[target] = { pending: counts[target] ?? 0, attestations: null }
+    pending[target] = { pending: counts[target] ?? 0, attestations: null, failed: countFailed.has(target) }
   })
   waiting.forEach((target, index) => {
+    const entry = readViews.data?.[index]
     const known = pending[target]
-    pending[target] = { pending: known?.pending ?? 0, attestations: attestationCountOf(readViews.data?.[index]) }
+    pending[target] = {
+      pending: known?.pending ?? 0,
+      attestations: attestationCountOf(resultOf(entry)),
+      failed: known?.failed === true || failedOf(entry),
+    }
   })
-  const refetch = useStableRefetch(read)
+  const refetchPending = useStableRefetch(read)
+  const refetchViews = useStableRefetch(readViews)
+  const refetch = useCallback(() => {
+    refetchPending()
+    refetchViews()
+  }, [refetchPending, refetchViews])
+  const viewsBroken = readViews.isError === true || (readViews.data ?? []).some(entry => failedOf(entry))
+  // The reading that a refresh answers with is the one that was made after the call.
+  const readPending = useRef(read.refetch)
+  readPending.current = read.refetch
+  const listed = useRef(targets)
+  listed.current = targets
+  const refresh = useCallback(async (): Promise<Record<string, number> | null> => {
+    const result = (await readPending.current()) as { data?: unknown }
+    const entries = result.data
+    if (!Array.isArray(entries)) return null
+    const counts: Record<string, number> = {}
+    for (const [index, target] of listed.current.entries()) {
+      const entry = entries[index]
+      // A read that failed says nothing about the penalties that are left.
+      if (failedOf(entry)) return null
+      const value = resultOf(entry)
+      counts[target] = typeof value === 'number' ? value : 0
+    }
+    return counts
+  }, [])
   return {
     pending,
     updatedAt: read.dataUpdatedAt ?? 0,
-    failed: read.isError === true || (core === null && targets.length > 0),
+    failed: read.isError === true || countFailed.size > 0 || (core === null && targets.length > 0),
+    // A target that cannot be read leaves the range of a page unknown, so a page is not sent.
+    viewsFailed: viewsBroken,
     refetch,
+    refresh,
   }
+}
+
+/**
+ * The result of one read of a batch.
+ *
+ * A batch of reads answers with one entry per call, and every entry says whether the call
+ * succeeded. Only a call that succeeded holds a result.
+ */
+function resultOf(entry: unknown): unknown {
+  if (typeof entry !== 'object' || entry === null) return null
+  const value = entry as { status?: unknown; result?: unknown }
+  if (value.status !== 'success') return null
+  return value.result
+}
+
+/** Whether one read of a batch failed. */
+function failedOf(entry: unknown): boolean {
+  if (typeof entry !== 'object' || entry === null) return false
+  return (entry as { status?: unknown }).status === 'failure'
 }
 
 /** How many attestations a target holds, when the chain answered with the target. */

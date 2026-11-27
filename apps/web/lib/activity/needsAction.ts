@@ -57,6 +57,44 @@ export function sortByUrgency(items: readonly NeedsAction[]): NeedsAction[] {
   })
 }
 
+/**
+ * The actions of the panel, one row each.
+ *
+ * Two actions of the same kind on the same target are one row: the panel counts the rows it
+ * shows, and the mark on the wallet button counts the same rows.
+ */
+export function uniqueRows(items: readonly NeedsAction[]): NeedsAction[] {
+  const seen = new Set<string>()
+  const rows: NeedsAction[] = []
+  for (const item of items) {
+    const key = keyOf(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push(item)
+  }
+  return rows
+}
+
+/**
+ * The actions that can still be done.
+ *
+ * A reveal whose window closed cannot be revealed any more, so it is gone from the panel and
+ * from the count of the mark on the wallet button. The moment is the time of the chain and not
+ * the clock of the browser, so a browser that is a few minutes off does not move the boundary.
+ */
+export function visibleRows(items: readonly NeedsAction[], now: Date | null): NeedsAction[] {
+  if (now === null) return [...items]
+  return items.filter(item => !isClosed(item, now))
+}
+
+/** Whether the action of the row can no longer be done. */
+function isClosed(item: NeedsAction, now: Date): boolean {
+  if (item.kind !== 'REVEAL_DUE' || item.dueAt === undefined) return false
+  const time = Date.parse(item.dueAt)
+  if (Number.isNaN(time)) return false
+  return time <= now.getTime()
+}
+
 /** The moment an action is due. An action without a deadline waits for the others. */
 function dueTime(item: NeedsAction): number {
   if (item.dueAt === undefined) return Number.POSITIVE_INFINITY
@@ -64,11 +102,16 @@ function dueTime(item: NeedsAction): number {
   return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time
 }
 
+/** The key of an action. The key names the action, so it does not change from render to render. */
+function keyOf(item: NeedsAction): string {
+  return `${item.kind}:${item.targetId}:${item.challengeId ?? item.bountyId ?? ''}`
+}
+
 /** The row of one action. */
 export function rowOf(item: NeedsAction): ActionRow {
   const target = shortAddress(item.targetId)
   return {
-    key: `${item.kind}:${item.targetId}:${item.challengeId ?? item.bountyId ?? ''}`,
+    key: keyOf(item),
     kind: kindOf(item.kind),
     title: titleOf(item, target),
     detail: detailOf(item, target),
@@ -126,9 +169,14 @@ function detailOf(item: NeedsAction, target: string): string {
   }
 }
 
-/** The time left until a row is due, in the words of the screen. */
-export function dueText(dueAt: string | null, now: Date): string | null {
-  if (dueAt === null) return null
+/**
+ * The time left until a row is due, in the words of the screen.
+ *
+ * The moment of the chain is the one the countdown is measured against, and the countdown is not
+ * shown at all while the chain has not said what time it is.
+ */
+export function dueText(dueAt: string | null, now: Date | null): string | null {
+  if (dueAt === null || now === null) return null
   const time = Date.parse(dueAt)
   if (Number.isNaN(time)) return null
   if (time <= now.getTime()) return copy.activity.dueNow

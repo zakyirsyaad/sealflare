@@ -47,7 +47,7 @@ export function Standing({ score, weight, toNextWeight, attestationsLeft, failed
                 <span key={step} className={step < (weight ?? 0) ? 'sf-weight__step sf-weight__step--on' : 'sf-weight__step'} />
               ))}
             </div>
-            <p className="sf-lead">{nextWeightText(weight, toNextWeight)}</p>
+            <p className="sf-lead">{nextWeightText(score, weight, toNextWeight)}</p>
           </div>
           <div className="sf-rows">
             <div className="sf-rows__row">
@@ -76,8 +76,10 @@ function weightText(weight: number | null): string {
 }
 
 /** What is left to the next weight, in the words of the screen. */
-function nextWeightText(weight: number | null, toNextWeight: number | null): string {
-  if (weight === null) return copy.common.loading
+function nextWeightText(score: number | null, weight: number | null, toNextWeight: number | null): string {
+  // Without a score the distance to the next weight is unknown, and it is not the highest weight
+  // either: the account may be one point short of the next weight.
+  if (score === null || weight === null) return copy.common.loading
   if (toNextWeight === null) return copy.activity.topWeight
   return copy.activity.nextWeight.replace('{count}', String(toNextWeight)).replace('{weight}', String(weight + 1))
 }

@@ -21,8 +21,9 @@ export type WithdrawButtonProps = {
  * The button that takes the whole balance out of the vault.
  *
  * The vault sends the whole balance of the account, so there is no amount to choose. A balance of
- * zero is not offered at all: the call would revert and cost gas for nothing. Once the chain shows
- * another balance, the withdrawal has landed and the button may be used again.
+ * zero is not offered at all: the call would revert and cost gas for nothing. The result of a
+ * withdrawal that landed stays on the screen, with the link to the transaction, until the indexer
+ * reads it.
  */
 export function WithdrawButton({ account, balance, onWithdrawn, disabled = false }: WithdrawButtonProps) {
   const tx = useWriteTx()
@@ -39,9 +40,13 @@ export function WithdrawButton({ account, balance, onWithdrawn, disabled = false
     // The chain shows another balance, so the withdrawal is on the chain and the button is free.
     if (state !== 'done' || sent.current === null || balance === sent.current) return
     sent.current = null
-    reset()
+    // A balance of zero means the whole balance was withdrawn. The result stays on the screen,
+    // with the link to the transaction, until the indexer reads it.
+    if (balance > 0n) reset()
   }, [state, balance, reset])
-  if (balance === 0n) return null
+  // A balance of zero is not offered at all: the call would revert and cost gas for nothing.
+  // The result of a withdrawal that landed stays on the screen.
+  if (balance === 0n && state !== 'done') return null
   const send = () => {
     if (vault === null || balance === 0n) return
     sent.current = balance
