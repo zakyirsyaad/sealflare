@@ -19,6 +19,8 @@ const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   targetId: Bytes32Schema.optional(),
   requester: AddressSchema.optional(),
+  /** Only the bounties that can still be filled. */
+  open: z.enum(['true', 'false']).optional(),
 })
 
 /** The default size of a page. */
@@ -72,7 +74,7 @@ async function detailHandler(c: Context, deps: BountyRouteDeps): Promise<Respons
 /** Reads the query of the bounty list, or the reason it cannot be read. */
 function readListQuery(c: Context): {
   ok: true
-  value: { page: number; limit: number; filters: { targetId?: string; requester?: string } }
+  value: { page: number; limit: number; filters: { targetId?: string; requester?: string; open?: boolean } }
 } | {
   ok: false
 } {
@@ -82,6 +84,7 @@ function readListQuery(c: Context): {
     limit: raw.limit,
     targetId: raw.targetId,
     requester: raw.requester,
+    open: raw.open,
   })
   if (!parsed.success) return { ok: false }
   return {
@@ -89,7 +92,11 @@ function readListQuery(c: Context): {
     value: {
       page: parsed.data.page ?? 1,
       limit: parsed.data.limit ?? DEFAULT_LIMIT,
-      filters: { targetId: parsed.data.targetId, requester: parsed.data.requester },
+      filters: {
+        targetId: parsed.data.targetId,
+        requester: parsed.data.requester,
+        ...(parsed.data.open === undefined ? {} : { open: parsed.data.open === 'true' }),
+      },
     },
   }
 }

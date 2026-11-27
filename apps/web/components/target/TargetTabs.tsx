@@ -1,5 +1,6 @@
 import type { AttestationRow, ChallengeSummary, ScanReport, TargetDetail } from '@sealflare/shared/schemas'
 import { Tabs } from '../ui/Tabs'
+import { BountyTab } from '../bounty/BountyTab'
 import { AttestationsTab } from './AttestationsTab'
 import { DisputeTab } from './DisputeTab'
 import { FindingsTab } from './FindingsTab'
@@ -73,7 +74,7 @@ export function TargetTabs({
       label: copy.target.dispute,
       content: <DisputeTab challenges={challenges} activeChallengeId={detail.activeChallengeId} />,
     },
-    { id: 'bounty', label: copy.target.bounty, content: <p className="sf-tab__empty">{copy.target.noBounty}</p> },
+    { id: 'bounty', label: copy.target.bounty, content: <BountyTab targetId={detail.targetId} /> },
     { id: 'history', label: copy.target.history, content: <HistoryTab rows={rows} /> },
   ]
   return <Tabs label={copy.target.findings} items={items} />

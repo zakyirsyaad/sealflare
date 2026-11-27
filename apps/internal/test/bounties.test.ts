@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { body, createTestDb, get, testApp } from './helpers'
-import { asAnswer, GUARDIAN, GUARDIAN_B, insertTarget, targetId } from './targets.seed'
+import { asAnswer, CONTRACT, GUARDIAN, GUARDIAN_B, insertTarget, targetId } from './targets.seed'
 import { insertBounty, insertFiller } from './court.seed'
 
 /**
@@ -99,6 +99,46 @@ test('a bounty that can be settled names the moment it can be settled', async ()
 
   const answer = asAnswer<{ settleableAt: string | null }>(await body(await get(app, '/bounties/6')))
   expect(answer.data?.settleableAt).toBe('2026-11-26T08:00:00.000Z')
+  await close()
+})
+
+test('the open bounties are the ones that can still be filled', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  const id = targetId(66)
+  await insertTarget(db, { id })
+  // An open bounty: it still has a slot left.
+  await insertBounty(db, { id: '10', targetId: id, requester: GUARDIAN, slots: 3 })
+  // A full bounty: every slot is filled.
+  await insertBounty(db, { id: '11', targetId: id, requester: GUARDIAN_B, slots: 3 })
+  await insertFiller(db, { bountyId: '11', guardian: GUARDIAN })
+  await insertFiller(db, { bountyId: '11', guardian: GUARDIAN_B })
+  await insertFiller(db, { bountyId: '11', guardian: CONTRACT })
+  // A settled bounty.
+  await insertBounty(db, { id: '12', targetId: id, requester: GUARDIAN, settled: true })
+
+  const answer = asAnswer<{ items: { id: string }[] }>(await body(await get(app, '/bounties?open=true')))
+  expect(answer.success).toBe(true)
+  expect(answer.data?.items.map((item) => item.id)).toEqual(['10'])
+  // The total of the page is the total of the open bounties, so the pager agrees with the rows.
+  expect(answer.meta?.page).toEqual({ total: 1, page: 1, limit: 20 })
+  await close()
+})
+
+test('the bounty list without the open filter holds every bounty', async () => {
+  const { db, close } = await createTestDb()
+  const { app } = testApp(db)
+  const id = targetId(67)
+  await insertTarget(db, { id })
+  await insertBounty(db, { id: '13', targetId: id, requester: GUARDIAN, slots: 3 })
+  await insertBounty(db, { id: '14', targetId: id, requester: GUARDIAN, slots: 3 })
+  await insertFiller(db, { bountyId: '14', guardian: GUARDIAN })
+  await insertFiller(db, { bountyId: '14', guardian: GUARDIAN_B })
+  await insertFiller(db, { bountyId: '14', guardian: CONTRACT })
+
+  const answer = asAnswer<{ items: { id: string }[] }>(await body(await get(app, '/bounties')))
+  expect(answer.data?.items.map((item) => item.id)).toEqual(['14', '13'])
+  expect(answer.meta?.page).toEqual({ total: 2, page: 1, limit: 20 })
   await close()
 })
 

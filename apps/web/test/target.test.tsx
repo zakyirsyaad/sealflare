@@ -31,6 +31,8 @@ vi.mock('wagmi', () => ({
   useConnectors: () => [],
   useDisconnect: () => ({ mutate: vi.fn() }),
   useSwitchChain: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+  // The Bounty tab reads the time of the chain, so it knows when a bounty can be settled.
+  usePublicClient: () => ({ getBlock: async () => ({ timestamp: 1_800_000_000 }) }),
 }))
 
 const address = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
@@ -39,6 +41,8 @@ const codehash = `0x${'22'.repeat(32)}` as const
 
 beforeEach(() => {
   wallet.current = { kind: 'no-wallet', isLoading: false, isError: false, recheck: () => {} }
+  // The Bounty tab reads the bounties of the target from the public API.
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ success: true, data: { items: [] }, meta: { finalizedBlock: '1' } }), { status: 200, headers: { 'content-type': 'application/json' } })))
 })
 
 function detail(overrides: Partial<TargetDetail> = {}): TargetDetail {
@@ -221,7 +225,7 @@ test.each([
 ])('the empty %s tab says "%s"', async (tab, text) => {
   render(<TargetScreen {...props()} />)
   await userEvent.click(screen.getByRole('tab', { name: new RegExp(tab) }))
-  expect(screen.getByText(text)).toBeInTheDocument()
+  expect(await screen.findByText(text)).toBeInTheDocument()
 })
 
 test.each([
