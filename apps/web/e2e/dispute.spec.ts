@@ -1,12 +1,11 @@
 import { getAddress, type Address, type Hex } from 'viem'
-import { targetIdOfContract } from '@sealflare/shared/rules'
+import { CONSTANTS, targetIdOfContract } from '@sealflare/shared/rules'
 import { connectFromHeader, openActor, panelOf, withdrawFromVault, type Actor } from './actors'
 import {
   ATTESTERS,
   CHALLENGER,
   JURORS,
   attestSafe,
-  CHALLENGE_STAKE,
   commitOnChain,
   deployTarget,
   modulesAreLive,
@@ -18,7 +17,7 @@ import {
   waitForIndexedTarget,
   warp,
 } from './chainTools'
-import { COMMIT_WINDOW, REVEAL_WINDOW, ratedTarget } from './seed'
+import { ratedTarget } from './seed'
 import { anvilAccount, connectWallet, expect, giveAgentId, scanContract, test, usesRealContracts, waitForIndexedAttestation } from './fixtures'
 
 /**
@@ -121,15 +120,15 @@ test('scan, attest, challenge, jury, verdict, withdraw', async ({ browser, stack
   for (const juror of jurors) codes.push(await joinJury(juror, id, true))
   await challenger.page.reload()
   const jury = challenger.page.getByRole('complementary', { name: 'Jury' })
-  await expect(jury.getByText('3 committed')).toBeVisible()
+  await expect(jury.getByText(`${JURORS.length} committed`)).toBeVisible()
   await expect(jury.getByText('votes stay hidden')).toBeVisible()
 
   // The commit window ends. Every juror reveals with the code the browser kept.
-  await warp(COMMIT_WINDOW + 1)
+  await warp(CONSTANTS.COMMIT_WINDOW + 1)
   for (const juror of jurors) await revealVote(juror, id, 'Uphold')
 
   // The reveal window ends, and anyone closes the dispute.
-  await warp(REVEAL_WINDOW + 1)
+  await warp(CONSTANTS.REVEAL_WINDOW + 1)
   await challenger.page.goto(`/app/disputes/${id}`)
   await connectFromHeader(challenger.page)
   await challenger.page.getByRole('button', { name: 'Resolve' }).click()
@@ -143,12 +142,12 @@ test('scan, attest, challenge, jury, verdict, withdraw', async ({ browser, stack
   await expect(challenger.page.getByRole('heading', { name: 'Confirmed danger', exact: true })).toBeVisible()
   await challenger.page.goto(`/app/disputes/${id}`)
   await connectFromHeader(challenger.page)
-  await challenger.page.getByRole('button', { name: 'Apply penalties (3 pending)' }).click()
+  await challenger.page.getByRole('button', { name: `Apply penalties (${ATTESTERS.length} pending)` }).click()
   await expect(challenger.page.getByRole('button', { name: /^Apply penalties/ })).toHaveCount(0, { timeout: 60_000 })
 
   // The challenger takes the stake back out of the vault, and the balance of the wallet goes up.
   // The jurors held the whole pool, so the challenger gets the stake back and nothing more.
-  await withdrawFromVault(challenger, vault, vaultBefore, CHALLENGE_STAKE)
+  await withdrawFromVault(challenger, vault, vaultBefore, CONSTANTS.CHALLENGE_STAKE)
 
   for (const actor of [challenger, ...jurors]) await actor.context.close()
 })
@@ -171,21 +170,22 @@ test('a challenge with two reveals expires and the challenger gets 80% back', as
   // Three jurors commit, and only two of them reveal, so the quorum of three is missed.
   const salts = new Map<number, Hex>()
   for (const index of JURORS) salts.set(index, await commitOnChain(court, anvilAccount(index), id, true))
-  await warp(COMMIT_WINDOW + 1)
-  for (const index of JURORS.slice(0, 2)) {
+  await warp(CONSTANTS.COMMIT_WINDOW + 1)
+  for (const index of JURORS.slice(0, CONSTANTS.MIN_REVEALS - 1)) {
     await revealOnChain(court, anvilAccount(index), id, true, salts.get(index) as Hex)
   }
-  await warp(REVEAL_WINDOW + 1)
+  await warp(CONSTANTS.REVEAL_WINDOW + 1)
 
   // The page offers Expire, not Resolve, and says why.
   await challenger.page.goto(`/app/disputes/${id}`)
   await connectFromHeader(challenger.page)
   await expect(challenger.page.getByRole('button', { name: 'Resolve' })).toHaveCount(0)
   await challenger.page.getByRole('button', { name: 'Expire' }).click()
-  await expect(challenger.page.getByText('Fewer than 3 jurors revealed, so the challenge expired.')).toBeVisible({ timeout: 60_000 })
+  await expect(challenger.page.getByText(`Fewer than ${CONSTANTS.MIN_REVEALS} jurors revealed, so the challenge expired.`)).toBeVisible({ timeout: 60_000 })
 
-  // The first expiry on a target costs a fifth of the stake: 0.008 of 0.01 BNB comes back.
-  await withdrawFromVault(challenger, vault, vaultBefore, (CHALLENGE_STAKE * 80n) / 100n)
+  // The first expiry on a target forfeits the first share of the table, and the rest of the stake comes back.
+  const forfeit = BigInt(CONSTANTS.EXPIRE_FORFEIT_BPS[0])
+  await withdrawFromVault(challenger, vault, vaultBefore, (CONSTANTS.CHALLENGE_STAKE * (10_000n - forfeit)) / 10_000n)
 
   await challenger.context.close()
 })

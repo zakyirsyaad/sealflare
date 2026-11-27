@@ -1,5 +1,5 @@
-import { getAddress, parseEther, type Hex } from 'viem'
-import { targetIdOfContract } from '@sealflare/shared/rules'
+import { formatEther, getAddress, parseEther, type Hex } from 'viem'
+import { CONSTANTS, targetIdOfContract } from '@sealflare/shared/rules'
 import { alignClockWithChain, connectFromHeader, openActor, withdrawFromVault } from './actors'
 import { bondOf, deployTarget, modulesAreLive, vaultBalanceOf, waitForIndexedTarget, warp } from './chainTools'
 import { anvilAccount, expect, giveAgentId, test, usesRealContracts } from './fixtures'
@@ -17,7 +17,6 @@ test.skip(!usesRealContracts() || !modulesAreLive(), 'The bond needs the real co
 /** The account of the local node that publishes. The seed script gave it an Agent ID. */
 const PUBLISHER = 4
 const BOND = '0.1'
-const UNBONDING = 7 * 24 * 3600
 
 test('a publisher binds, deposits a bond, requests withdrawal and finalizes after 7 days', async ({ browser, stack }, testInfo) => {
   const baseURL = testInfo.project.use.baseURL as string
@@ -45,7 +44,7 @@ test('a publisher binds, deposits a bond, requests withdrawal and finalizes afte
   await page.getByRole('button', { name: 'Sign and bind' }).click()
 
   // The bond is the next step. The terms come from the contract constants.
-  await expect(page.getByText(/^Up to 0\.5 BNB\. It takes 7 days to withdraw/)).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText(`Up to ${formatEther(CONSTANTS.MAX_WARRANTY_BOND)} BNB. It takes ${CONSTANTS.BOND_UNBONDING / 86_400} days to withdraw`, { exact: false })).toBeVisible({ timeout: 60_000 })
   await page.getByLabel('Amount in BNB').fill(BOND)
   await page.getByRole('button', { name: 'Deposit bond' }).click()
   await expect(page.getByRole('button', { name: 'Copy the snippet' })).toBeVisible({ timeout: 60_000 })
@@ -63,7 +62,7 @@ test('a publisher binds, deposits a bond, requests withdrawal and finalizes afte
 
   // Seven days pass on the node. The panel judges the wait by the clock of the browser, so the
   // browser is given the time of the node.
-  await warp(UNBONDING + 1)
+  await warp(CONSTANTS.BOND_UNBONDING + 1)
   await alignClockWithChain(page)
   await page.reload()
   await connectFromHeader(page)

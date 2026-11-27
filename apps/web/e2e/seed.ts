@@ -1,5 +1,5 @@
 import { getAddress, parseEther, type Address, type Hex } from 'viem'
-import { targetIdOfContract } from '@sealflare/shared/rules'
+import { CONSTANTS, targetIdOfContract } from '@sealflare/shared/rules'
 import {
   ATTESTERS,
   CHALLENGER,
@@ -18,9 +18,8 @@ import {
 } from './chainTools'
 import { anvilAccount, giveAgentId, waitForIndexedAttestation, type LocalAddresses } from './fixtures'
 
-/** The windows of the Court, in seconds. */
-export const COMMIT_WINDOW = 12 * 3600
-export const REVEAL_WINDOW = 12 * 3600
+/** The bounty of the seed: a tenth of a BNB, which is inside the cap of the Vault. */
+const BOUNTY = parseEther('0.1')
 
 /** The accounts that fund and sponsor in the seed. */
 const FUNDER = 8
@@ -75,14 +74,14 @@ async function build(addresses: LocalAddresses): Promise<Seed> {
   await waitForIndexedChallenge(id)
   const salts = new Map<number, Hex>()
   for (const index of JURORS) salts.set(index, await commitOnChain(court, anvilAccount(index), id, true))
-  await warp(COMMIT_WINDOW + 1)
+  await warp(CONSTANTS.COMMIT_WINDOW + 1)
   for (const index of JURORS) await revealOnChain(court, anvilAccount(index), id, true, salts.get(index) as Hex)
-  await warp(REVEAL_WINDOW + 1)
+  await warp(CONSTANTS.REVEAL_WINDOW + 1)
   await resolveOnChain(court, anvilAccount(0), id)
   await waitForIndexedChallenge(id, true)
 
   const funded = await ratedTarget(addresses, [ATTESTERS[1]])
-  await createBountyOnChain(vault, anvilAccount(FUNDER), funded.targetId, 3, parseEther('0.1'))
+  await createBountyOnChain(vault, anvilAccount(FUNDER), funded.targetId, CONSTANTS.BOUNTY_MIN_SLOTS, BOUNTY)
 
   const sponsored = await ratedTarget(addresses, [ATTESTERS[2]])
   await sponsorOnChain(core, anvilAccount(SPONSOR), sponsored.targetId)

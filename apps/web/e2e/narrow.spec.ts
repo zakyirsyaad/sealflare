@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright'
-import type { Page } from '@playwright/test'
+import type { Page, TestInfo } from '@playwright/test'
 import { getAddress } from 'viem'
 import { targetIdOfContract } from '@sealflare/shared/rules'
 import { connectFromHeader, openActor } from './actors'
@@ -22,6 +22,21 @@ const NOTE = 'Opens when the dispute and vault contracts go live.'
 /** Whether the chain holds the rows of milestone two, or only the registry of the first one. */
 function seeded(): boolean {
   return usesRealContracts() && modulesAreLive()
+}
+
+/**
+ * Says in the report which screens had data. Against the stubs nothing of milestone two is on the
+ * chain, so the dispute, bounty, Guardian and bond screens are checked in their empty or not-found
+ * states only, and a green run must not be read as more than that.
+ */
+function annotateCoverage(testInfo: TestInfo, seed: Seed | null): void {
+  testInfo.annotations.push({
+    type: 'coverage',
+    description:
+      seed === null
+        ? 'Empty or not-found states only: the dispute, bounty, Guardian and bond screens hold no data against the stubs. Run with E2E_REAL=1 to check them with data.'
+        : 'With data: a closed dispute, a bounty and a sponsor are on the chain.',
+  })
 }
 
 /** The ten routes of the application that show data. */
@@ -76,6 +91,7 @@ test.describe('screens', () => {
 
   test('every app screen at 375 px has no horizontal overflow', async ({ browser, stack }, testInfo) => {
     const seed = seeded() ? await seedScreens(stack.addresses) : null
+    annotateCoverage(testInfo, seed)
     const actor = await openActor(browser, testInfo.project.use.baseURL as string, 9)
     await actor.page.setViewportSize(NARROW)
     if (seed === null) await scanFirst(actor.page, stack)
@@ -96,6 +112,7 @@ test.describe('screens', () => {
 
   test('every app screen passes an automated accessibility scan in both themes', async ({ browser, stack }, testInfo) => {
     const seed = seeded() ? await seedScreens(stack.addresses) : null
+    annotateCoverage(testInfo, seed)
     const actor = await openActor(browser, testInfo.project.use.baseURL as string, 9)
     if (seed === null) await scanFirst(actor.page, stack)
     const routes = routesOf(stack, seed)
@@ -131,8 +148,9 @@ test.describe('screens', () => {
     await actor.context.close()
   })
 
-  test('with modulesLive off, dispute, bounty and bond actions are disabled everywhere', async ({ browser, stack }) => {
+  test('with modulesLive off, dispute, bounty and bond actions are disabled everywhere', async ({ browser, stack }, testInfo) => {
     const seed = seeded() ? await seedScreens(stack.addresses) : null
+    annotateCoverage(testInfo, seed)
     const closed = offUrl()
     const targetId = seed?.bountyTargetId ?? targetIdOfContract(getAddress(stack.contract))
 

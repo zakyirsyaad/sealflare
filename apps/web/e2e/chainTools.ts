@@ -1,5 +1,6 @@
 import { createPublicClient, encodeFunctionData, http, stringToHex, toHex, type Address, type Hex } from 'viem'
 import { coreAbi, courtAbi, vaultAbi } from '@sealflare/shared/abi'
+import { CONSTANTS } from '@sealflare/shared/rules'
 import { LOCAL_RPC, anvilAccount, internalKey, internalUrl, rpc } from './fixtures'
 
 /**
@@ -99,10 +100,6 @@ export async function openChallengeOf(court: Address, targetId: Hex): Promise<bi
   return id > 0n ? id : null
 }
 
-/** The stakes of the Court, as the contract fixes them. */
-export const CHALLENGE_STAKE = 10_000_000_000_000_000n
-export const JURY_STAKE = 5_000_000_000_000_000n
-
 /** The flag a challenge of a contract names: the first of the flags a contract may carry. */
 const CONTRACT_FLAG = 1
 
@@ -121,7 +118,7 @@ export async function openChallengeOnChain(court: Address, from: Address, target
       `ipfs://${'ab'.repeat(32)}`,
     ],
   })
-  await sendFrom(from, court, data, CHALLENGE_STAKE)
+  await sendFrom(from, court, data, CONSTANTS.CHALLENGE_STAKE)
   const id = await openChallengeOf(court, targetId)
   if (id === null) throw new Error('The Court holds no open challenge after the transaction.')
   return id
@@ -136,7 +133,7 @@ export async function commitOnChain(court: Address, from: Address, id: bigint, u
     functionName: 'commitHashOf',
     args: [id, from, uphold, salt],
   })
-  await sendFrom(from, court, encodeFunctionData({ abi: courtAbi, functionName: 'commitVote', args: [id, hash] }), JURY_STAKE)
+  await sendFrom(from, court, encodeFunctionData({ abi: courtAbi, functionName: 'commitVote', args: [id, hash] }), CONSTANTS.JURY_STAKE)
   return salt
 }
 
