@@ -58,6 +58,24 @@ export function tierReason(detail: Pick<TargetDetail, 'tier' | 'hasDelegatecall'
   if (!entry) throw new RangeError('Unknown trust tier.')
   return entry.reason
 }
+/**
+ * How long ago a moment was, in words.
+ *
+ * The list shows when the last vote came, so a reader knows how old a row is without reading
+ * a number.
+ */
+export function timeAgo(iso: string, now: Date): string {
+  const then = Date.parse(iso)
+  if (Number.isNaN(then)) throw new RangeError('A valid date is required.')
+  const minutes = Math.floor((now.getTime() - then) / 60000)
+  if (minutes < 1) return copy.explore.justNow
+  if (minutes < 60) return copy.explore.minutesAgo.replace('{count}', String(minutes))
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return copy.explore.hoursAgo.replace('{count}', String(hours))
+  const days = Math.floor(hours / 24)
+  if (days < 2) return copy.explore.yesterday
+  return copy.explore.daysAgo.replace('{count}', String(days))
+}
 /** A flag name in words: HIDDEN_MINT becomes "Hidden mint". */
 export function flagLabel(name: string): string {
   const words = name.toLowerCase().split('_')

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { TRUST_TIERS } from '@sealflare/shared/rules'
-import { shortAddress, formatBnb, formatUtc, timeLeft, tierLabel, tierReason } from '../lib/format'
+import { shortAddress, formatBnb, formatUtc, timeAgo, timeLeft, tierLabel, tierReason } from '../lib/format'
 describe('formatting', () => {
   test('shortAddress keeps six and four characters', () => expect(shortAddress('0x1234567890abcdef1234567890abcdef12345678')).toBe('0x1234…5678'))
   test.each([['0', '0'], ['10000000000000001', '0.010000000000000001'], [1n, '0.000000000000000001'], [123400000000000000000000n, '123400']])('formats %s wei exactly', (value, expected) => expect(formatBnb(value)).toBe(expected))
@@ -17,6 +17,15 @@ describe('formatting', () => {
     expect(formatUtc(seconds)).toBe('2026-11-26 00:05 UTC')
     expect(formatUtc(BigInt(seconds))).toBe('2026-11-26 00:05 UTC')
     expect(() => formatUtc(Number.NaN)).toThrow()
+  })
+  test('timeAgo names how long ago a moment was', () => {
+    const now = new Date('2026-11-26T12:00:00Z')
+    expect(timeAgo('2026-11-26T11:59:30Z', now)).toBe('just now')
+    expect(timeAgo('2026-11-26T11:45:00Z', now)).toBe('15 minutes ago')
+    expect(timeAgo('2026-11-26T09:00:00Z', now)).toBe('3 hours ago')
+    expect(timeAgo('2026-11-25T12:00:00Z', now)).toBe('yesterday')
+    expect(timeAgo('2026-11-20T12:00:00Z', now)).toBe('6 days ago')
+    expect(() => timeAgo('not a date', now)).toThrow()
   })
   test('every frozen tier has a plain English label and explanation', () => {
     expect(TRUST_TIERS.map(tierLabel)).toEqual(['Unrated', 'Community safe', 'Warranty backed safe', 'Caution flagged', 'Under dispute', 'Confirmed danger', 'Modified since audit'])

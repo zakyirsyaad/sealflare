@@ -32,7 +32,13 @@ export function summaryOf(row: GuardianRow): GuardianSummary {
   }
 }
 
-/** One page of the guardian list. The guardians with the most votes come first. */
+/**
+ * One page of the guardian list.
+ *
+ * The guardians with the highest score come first, because the score is the standing of a
+ * Guardian. The votes and the address break a tie, so two guardians with the same score keep
+ * the same place on every page.
+ */
 export async function listGuardians(
   sql: Db,
   page: number,
@@ -41,7 +47,7 @@ export async function listGuardians(
   const total = await countGuardians(sql)
   const rows = await sql.query<GuardianRow>(
     `SELECT address, score, weight, attestations, pending_penalties, created_at_block
-     FROM guardians ORDER BY attestations DESC, address ASC LIMIT $1 OFFSET $2`,
+     FROM guardians ORDER BY score DESC, attestations DESC, address ASC LIMIT $1 OFFSET $2`,
     [limit, (page - 1) * limit],
   )
   return { items: rows.map(summaryOf), total }
