@@ -91,7 +91,12 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         },
         () => {
           if (!live) return
-          // The rows that are on the screen stay, and the screen says that the read failed.
+          // The rows of the account stay only when this account has answered before. A first
+          // read that failed leaves the screen with the error of the read, and not with a
+          // skeleton that waits for ever.
+          if (answered.current !== address) {
+            setReading({ address, needsAction: [], history: [] })
+          }
           setFailed(true)
           setLoading(false)
         },

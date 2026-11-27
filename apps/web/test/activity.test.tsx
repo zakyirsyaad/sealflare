@@ -375,3 +375,15 @@ test('the rows stay on the screen while they are read again', async () => {
   expect(screen.getByText(/Reveal your vote/)).toBeInTheDocument()
   chain.release?.()
 })
+
+test('the first read that fails shows the error and not a skeleton that waits for ever', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('The activity could not be read.') }))
+  answer.current = activity({ needsAction: [need()], history: [historyItem()] })
+  renderActivity(<MyActivityPage />)
+  expect(await screen.findByRole('heading', { name: copy.activity.failed })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: copy.common.retry })).toBeInTheDocument()
+  expect(screen.queryByRole('table')).toBeNull()
+  // The retry reads the rows again.
+  await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+})
