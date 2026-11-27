@@ -55,6 +55,8 @@ vi.mock('../lib/chain/addresses', () => ({
   addresses: () => ({ agentId: me, core, court: null, vault }),
   coreAddress: () => core,
   vaultAddress: () => vault,
+  requireCoreAddress: () => core,
+  coreAddressOrError: () => ({ core, error: null }),
 }))
 vi.mock('../lib/publish/useChainReads', () => ({
   useContractOwner: () => mocks.ownerState,

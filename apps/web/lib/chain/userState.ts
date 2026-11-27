@@ -2,7 +2,7 @@
 import { useConnection, useReadContract } from 'wagmi'
 import { zeroAddress, type Address } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
-import { addresses } from './addresses'
+import { coreAddressOrError } from './addresses'
 import { expectedChainId } from './config'
 
 export type UserState =
@@ -30,23 +30,16 @@ export function resolveUserState(input: UserStateInput): UserState {
   return { kind: 'holder', address, attestationsLeft: input.attestationsLeft ?? null }
 }
 
-function coreAddress(): { core?: Address; error?: string } {
-  try {
-    return { core: addresses(expectedChainId).core }
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) }
-  }
-}
-
 export type UserStateResult = UserState & { isLoading: boolean; isError: boolean; error?: string; recheck: () => void }
 
 export function useUserState(): UserStateResult {
   const connection = useConnection()
   const connected = connection.isConnected && connection.address !== undefined && connection.chainId === expectedChainId
-  const { core, error: configError } = connected ? coreAddress() : {}
-  const ready = connected && core !== undefined
+  // The registry is read in the one place that holds the addresses of the deployment.
+  const { core, error: configError } = connected ? coreAddressOrError() : { core: null, error: null }
+  const ready = connected && core !== null
   const args = [connection.address ?? zeroAddress] as const
-  const read = { abi: coreAbi, address: core, chainId: expectedChainId, args, query: { enabled: ready } } as const
+  const read = { abi: coreAbi, address: core ?? undefined, chainId: expectedChainId, args, query: { enabled: ready } } as const
   const holder = useReadContract({ ...read, functionName: 'isAgentIdHolder' })
   const quota = useReadContract({ ...read, functionName: 'attestationsLeftToday' })
   const state = resolveUserState({
@@ -60,8 +53,8 @@ export function useUserState(): UserStateResult {
   return {
     ...state,
     isLoading: connection.isReconnecting === true || (ready && Boolean(holder.isLoading || quota.isLoading)),
-    isError: configError !== undefined || (ready && Boolean(holder.isError || quota.isError)),
-    ...(configError !== undefined ? { error: configError } : {}),
+    isError: configError !== null || (ready && Boolean(holder.isError || quota.isError)),
+    ...(configError !== null ? { error: configError } : {}),
     recheck: () => { void holder.refetch(); void quota.refetch() },
   }
 }

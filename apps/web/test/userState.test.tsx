@@ -20,6 +20,15 @@ vi.mock('../lib/chain/addresses', () => ({
     if (addressFile.missing) throw new Error('No contract addresses for chain 56. Add shared/abi/addresses.bsc.json after the Core release and rebuild.')
     return { core: '0x5FbDB2315678afecb367f032d93F642f64180aa3' }
   },
+  coreAddressOrError: () => {
+    if (addressFile.missing) {
+      return {
+        core: null,
+        error: 'No contract addresses for chain 56. Add shared/abi/addresses.bsc.json after the Core release and rebuild.',
+      }
+    }
+    return { core: '0x5FbDB2315678afecb367f032d93F642f64180aa3', error: null }
+  },
 }))
 
 import { resolveUserState, useUserState } from '../lib/chain/userState'

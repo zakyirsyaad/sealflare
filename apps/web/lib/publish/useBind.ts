@@ -1,9 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { usePublicClient, useSignTypedData, useWriteContract } from 'wagmi'
-import type { Address, Hex } from 'viem'
+import type { Hex } from 'viem'
 import { coreAbi } from '@sealflare/shared/abi'
-import { addresses } from '../chain/addresses'
+import { requireCoreAddress } from '../chain/addresses'
 import { expectedChainId } from '../chain/config'
 import { isUserRejection, translateContractError } from '../chain/errors'
 import { copy } from '../copy'
@@ -24,10 +24,6 @@ export type BindState = {
 export type BindOptions = { onChain?: boolean }
 
 const idle: BindState = { status: 'idle', error: null, txHash: null, signature: null }
-
-function coreAddress(): Address {
-  return addresses(expectedChainId).core
-}
 
 /**
  * Every write of the Publish flow. The wallet signs and pays, the server never does, and a
@@ -100,7 +96,7 @@ export function useBind() {
     setState(current => ({ ...current, status: 'sending', error: null, signature: signed }))
     try {
       const txHash = await write.mutateAsync({
-        address: coreAddress(),
+        address: requireCoreAddress(),
         abi: coreAbi,
         functionName: 'bindByOwner',
         args: [request.target, request.agentIdHolder, BigInt(request.deadline), signed],
@@ -123,7 +119,7 @@ export function useBind() {
     setState(current => ({ ...current, status: 'sending', error: null, signature: signed }))
     try {
       const txHash = await write.mutateAsync({
-        address: coreAddress(),
+        address: requireCoreAddress(),
         abi: coreAbi,
         functionName: 'bindByDeployer',
         args: [
@@ -147,7 +143,7 @@ export function useBind() {
     setState(current => ({ ...current, status: 'sending', error: null }))
     try {
       const txHash = await write.mutateAsync({
-        address: coreAddress(),
+        address: requireCoreAddress(),
         abi: coreAbi,
         functionName: 'bindSkill',
         args: [contentHash],
@@ -166,7 +162,7 @@ export function useBind() {
     setState(current => ({ ...current, status: 'sending', error: null }))
     try {
       const txHash = await write.mutateAsync({
-        address: coreAddress(),
+        address: requireCoreAddress(),
         abi: coreAbi,
         functionName: 'sponsor',
         args: [targetId],

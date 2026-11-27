@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { addresses } from '../lib/chain/addresses'
 
 const agentId = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
@@ -59,4 +59,38 @@ test('a file written for another chain is rejected', () => {
 test('addresses are checksummed so equality checks do not depend on case', () => {
   const result = addresses(31337, { local: file({ agentId, core: core.toLowerCase(), court, vault }) })
   expect(result.core).toBe(core)
+})
+
+/**
+ * The one place that holds the addresses.
+ *
+ * Every other file asks this place for the address of a contract, so the deployment of a chain is
+ * read in one way only.
+ */
+afterEach(() => {
+  delete process.env.NEXT_PUBLIC_ADDRESSES_BSC
+  delete process.env.NEXT_PUBLIC_CHAIN_ID
+  vi.resetModules()
+})
+
+test('the one place names the address of the registry and of the vault', async () => {
+  process.env.NEXT_PUBLIC_CHAIN_ID = '56'
+  process.env.NEXT_PUBLIC_ADDRESSES_BSC = file({ agentId, core, court, vault })
+  vi.resetModules()
+  const place = await import('../lib/chain/addresses')
+  expect(place.coreAddress()).toBe(core)
+  expect(place.vaultAddress()).toBe(vault)
+  expect(place.requireCoreAddress()).toBe(core)
+  expect(place.coreAddressOrError()).toEqual({ core, error: null })
+})
+
+test('a deployment that names no registry says why, and no write is sent', async () => {
+  process.env.NEXT_PUBLIC_CHAIN_ID = '56'
+  delete process.env.NEXT_PUBLIC_ADDRESSES_BSC
+  vi.resetModules()
+  const place = await import('../lib/chain/addresses')
+  expect(place.coreAddress()).toBeNull()
+  expect(place.vaultAddress()).toBeNull()
+  expect(place.coreAddressOrError().error).toMatch(/addresses\.bsc\.json/)
+  expect(() => place.requireCoreAddress()).toThrow(/addresses\.bsc\.json/)
 })

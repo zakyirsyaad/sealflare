@@ -63,3 +63,25 @@ export function vaultAddress(): Address | null {
     return null
   }
 }
+
+/**
+ * The address of the registry, or the reason the deployment names none.
+ *
+ * The screen needs the reason, because a deployment that names no registry is a failure the
+ * reader has to read about, and not a registry that is still to come.
+ */
+export function coreAddressOrError(): { core: Address | null; error: string | null } {
+  try {
+    return { core: addresses(expectedChainId).core, error: null }
+  } catch (error) {
+    return { core: null, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
+ * The address of the registry. It throws when the deployment names none, because a write
+ * without an address cannot be sent and the caller has to say why.
+ */
+export function requireCoreAddress(): Address {
+  return addresses(expectedChainId).core
+}
