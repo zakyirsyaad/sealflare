@@ -24,6 +24,24 @@ test('indexes only up to the finalized block', async () => {
   await close()
 })
 
+test('a chain without finality is read up to its tip when the run asks for the tip', async () => {
+  const number = 0x18
+  const { db, close } = await createTestDb()
+  await attest({ from: 0, contract: targetAddress(number) })
+
+  // A local node answers the final block with the genesis block, so a run that asks for the tip
+  // is the only one that reads anything at all.
+  const tip = await indexOnce({
+    client: chainClient(1000),
+    sql: db,
+    addresses: { core: core() },
+    blockTag: 'latest',
+  })
+  expect(tip.events).toBeGreaterThan(0)
+  expect(await db.query('SELECT * FROM events')).not.toHaveLength(0)
+  await close()
+})
+
 test('running the same range twice inserts nothing new', async () => {
   const number = 0x13
   const { db, close } = await createTestDb()

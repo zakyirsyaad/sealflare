@@ -27,13 +27,13 @@ export class UploadOutcomeUnknownError extends Error {
 }
 
 /**
- * The route of the Pinata API that pins a file.
+ * The route of the API that pins a file.
  *
  * The API is served on `api.pinata.cloud`. The host `uploads.pinata.cloud` serves the files
  * endpoint of the third version of the API and answers 404 on this route, so every upload would
- * fail.
+ * fail. A deployment may name another service, which is what the end-to-end suite does, so the
+ * suite never reaches outside the machine.
  */
-const PINATA_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS'
 const TIMEOUT_MS = 30_000
 
 /**
@@ -57,8 +57,11 @@ export function pinataKey(): string {
  */
 export async function pinEvidence(bytes: Uint8Array): Promise<string> {
   let jwt: string
+  let url: string
   try {
-    jwt = pinataKey()
+    const env = parsePinataEnv(process.env)
+    jwt = env.PINATA_JWT
+    url = env.PINATA_URL
   } catch {
     // Without a key nothing is sent, so this is a refusal and not an unknown outcome.
     throw new UploadFailedError()
@@ -68,7 +71,7 @@ export async function pinEvidence(bytes: Uint8Array): Promise<string> {
   form.append('pinataMetadata', JSON.stringify({ name: 'sealflare-evidence' }))
   let response: Response
   try {
-    response = await fetch(PINATA_URL, {
+    response = await fetch(url, {
       method: 'POST',
       headers: { authorization: `Bearer ${jwt}` },
       body: form,

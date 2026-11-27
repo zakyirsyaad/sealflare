@@ -7,6 +7,12 @@ const publicSchema = z.object({
   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: required.optional(),
   NEXT_PUBLIC_MODULES_LIVE: z.enum(['true', 'false']).default('false').transform(value => value === 'true'),
   NEXT_PUBLIC_AGENT_ID_URL: z.preprocess(value => (value === '' ? undefined : value), httpUrl.optional()),
+  /**
+   * The build is an end-to-end build, so the app offers the wallet of the suite.
+   *
+   * The flag is inlined at build time, so a deployment without it never carries the wallet.
+   */
+  NEXT_PUBLIC_E2E: z.enum(['true', 'false']).default('false').transform(value => value === 'true'),
 })
 const serverSchema = z.object({
   INTERNAL_URL: httpUrl,
@@ -35,6 +41,16 @@ export const parseScannerMode = (input: Record<string, string | undefined>) => p
 const internalSchema = z.object({ INTERNAL_URL: httpUrl, INTERNAL_KEY: required })
 export const parseInternalEnv = (input: Record<string, string | undefined>) => parse(internalSchema, input)
 
-/** The key that lets the API store evidence. */
-const pinataSchema = z.object({ PINATA_JWT: required })
-export const parsePinataEnv = (input: Record<string, string | undefined>) => parse(pinataSchema, input)
+/** The key that lets the API store evidence, and the service that stores it. */
+const pinataSchema = z.object({
+  PINATA_JWT: required,
+  /**
+   * The service that stores the evidence.
+   *
+   * It is the API of Pinata unless a deployment names another one. The end-to-end suite names a
+   * local service, so the suite never reaches outside the machine.
+   */
+  PINATA_URL: httpUrl.default('https://api.pinata.cloud/pinning/pinFileToIPFS'),
+})
+export const parsePinataEnv = (input: Record<string, string | undefined>): z.output<typeof pinataSchema> =>
+  parse(pinataSchema, input)

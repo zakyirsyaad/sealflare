@@ -14,6 +14,7 @@
     "test:fork": "FOUNDRY_PROFILE=fork forge test --root contracts -vv",
     "chain:seed": "forge script SeedLocal --root contracts --rpc-url http://127.0.0.1:8545 --broadcast",
     "chain:warp": "scripts/warp.sh",
+    "e2e": "node apps/web/e2e/harness.mjs",
     "verify": "pnpm -r test && pnpm -r typecheck && forge test --root contracts && pnpm abi:check"
   },
   "devDependencies": {

@@ -26,3 +26,15 @@ test('START_BLOCK defaults to 0 on the local chain only', () => {
 test.each(['', ' ', '-1', '1.5', '0x10', 'abc', '1e6'])('START_BLOCK %j is refused', (value) => {
   expect(() => parseEnv({ ...base, CHAIN_ID: '97', START_BLOCK: value })).toThrow(/START_BLOCK/)
 })
+
+test('BLOCK_TAG is the final block of the chain unless it is told otherwise', () => {
+  expect(parseEnv({ ...base, CHAIN_ID: '97', START_BLOCK: '1' }).BLOCK_TAG).toBe('finalized')
+})
+
+test('BLOCK_TAG latest is read, so a chain without finality is read up to its tip', () => {
+  expect(parseEnv({ ...base, CHAIN_ID: '31337', BLOCK_TAG: 'latest' }).BLOCK_TAG).toBe('latest')
+})
+
+test('BLOCK_TAG refuses a tag the indexer does not know', () => {
+  expect(() => parseEnv({ ...base, CHAIN_ID: '31337', BLOCK_TAG: 'safe' })).toThrow(/BLOCK_TAG/)
+})

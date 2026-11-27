@@ -85,6 +85,54 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter ./apps/web build
 
+  e2e:
+    name: End-to-end suite
+    runs-on: ubuntu-latest
+    # The suite needs a database of its own and a browser of its own, so it does not share
+    # anything with the other jobs.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sealflare_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The suite uses this database instead of starting a throwaway cluster of its own.
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sealflare_e2e
+    steps:
+      # The harness starts Anvil with the stub contracts, so this job needs Foundry and the
+      # contract libraries.
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install the browser of the suite
+        run: pnpm --filter @sealflare/web exec playwright install --with-deps chromium
+      - name: Run the suite against the local stack
+        run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-traces
+          path: apps/web/test-results/
+          retention-days: 7
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
