@@ -180,6 +180,21 @@ async function startChain() {
   return chain
 }
 
+/**
+ * The addresses of the contracts the chain was given.
+ *
+ * The file is written by the chain itself, so it is read after the chain is up. A run on a
+ * machine where the file of an earlier run is still there would otherwise read the addresses of
+ * a chain that is not the one it starts.
+ */
+function readAddresses() {
+  const file = join(ROOT, 'shared/abi/addresses.local.json')
+  if (!existsSync(file)) {
+    throw new Error(`The chain did not write ${file}, so the suite has no contracts to talk to.`)
+  }
+  return JSON.parse(readFileSync(file, 'utf8'))
+}
+
 async function startInternal(databaseUrl) {
   const internal = start(
     'internal',
@@ -294,8 +309,8 @@ async function main() {
   storage = await startStorage()
   database = await startDatabase()
   process.stdout.write(`[harness] the database is ${database.url}\n`)
-  const addresses = JSON.parse(readFileSync(join(ROOT, 'shared/abi/addresses.local.json'), 'utf8'))
   await startChain()
+  const addresses = readAddresses()
   await startInternal(database.url)
   await startIndexer(database.url, addresses)
   await startWeb(addresses, storage.url)
