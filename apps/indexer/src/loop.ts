@@ -21,6 +21,13 @@ export interface IndexOnceDeps {
    * new database does not walk the chain from block 0. A cursor always wins over it.
    */
   startBlock?: bigint
+  /**
+   * The block the read stops at.
+   *
+   * A public chain is read up to its final block. A local node has no finality and answers the
+   * `finalized` tag with the genesis block, so a local run reads up to the tip.
+   */
+  blockTag?: 'finalized' | 'latest'
 }
 
 export interface IndexOnceResult {
@@ -35,13 +42,13 @@ export interface IndexOnceResult {
 /**
  * Reads the events of the next range and writes them to the database.
  *
- * The range stops at the last final block, so the indexer never reads a block the chain may
- * still change. The events, the raw log and the cursor go into one transaction, so a failure
- * anywhere leaves the cursor where it was and the range is read again next time.
+ * The range stops at the last block the chain calls final, so the indexer never reads a block the
+ * chain may still change. The events, the raw log and the cursor go into one transaction, so a
+ * failure anywhere leaves the cursor where it was and the range is read again next time.
  */
 export async function indexOnce(deps: IndexOnceDeps): Promise<IndexOnceResult> {
   const batch = BigInt(deps.batch ?? DEFAULT_BATCH)
-  const head = await deps.client.getBlock({ blockTag: 'finalized' })
+  const head = await deps.client.getBlock({ blockTag: deps.blockTag ?? 'finalized' })
   const finalized = head.number
 
   const cursorId = cursorIdOf(deps.addresses)

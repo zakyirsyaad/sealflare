@@ -25,7 +25,10 @@ const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   env: {
-    ...(local ? { NEXT_PUBLIC_ADDRESSES_LOCAL: local } : {}),
+    // Next only inlines a public variable that is set at build time. Without a value here the flag
+    // stays a read of the runtime environment, and the bundler cannot drop the wallet of the suite.
+    NEXT_PUBLIC_E2E: process.env.NEXT_PUBLIC_E2E ?? 'false',
+    ...(local ?{ NEXT_PUBLIC_ADDRESSES_LOCAL: local } : {}),
     ...(bsc ? { NEXT_PUBLIC_ADDRESSES_BSC: bsc } : {}),
     ...(bscTestnet ? { NEXT_PUBLIC_ADDRESSES_BSC_TESTNET: bscTestnet } : {}),
   },

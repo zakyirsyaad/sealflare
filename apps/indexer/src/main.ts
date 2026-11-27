@@ -43,6 +43,7 @@ for (;;) {
       addresses,
       batch: env.BATCH_SIZE,
       startBlock: env.START_BLOCK,
+      blockTag: env.BLOCK_TAG,
     })
     if (result.from > result.to) await sleep(env.POLL_INTERVAL_MS)
   } catch (error) {

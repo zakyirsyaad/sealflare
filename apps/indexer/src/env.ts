@@ -26,6 +26,14 @@ export const IndexerEnv = z
     VAULT_ADDRESS: AddressSchema,
     /** The block Core was deployed in. Required on a public chain, 0 on the local one. */
     START_BLOCK: BlockNumber.optional(),
+    /**
+     * The block the indexer reads up to.
+     *
+     * A public chain is read up to its final block, so a vote that may still change is never
+     * written. A local node has no finality: it answers the `finalized` tag with the genesis
+     * block, so a local run reads up to the tip instead.
+     */
+    BLOCK_TAG: z.enum(['finalized', 'latest']).default('finalized'),
     BATCH_SIZE: z.coerce.number().int().min(1).max(2000).default(2000),
     POLL_INTERVAL_MS: z.coerce.number().int().min(100).default(5000),
   })
@@ -35,6 +43,13 @@ export const IndexerEnv = z
         code: 'custom',
         path: ['START_BLOCK'],
         message: 'required on a public chain; set it to the block Core was deployed in',
+      })
+    }
+    if (env.BLOCK_TAG === 'latest' && env.CHAIN_ID !== LOCAL_CHAIN_ID) {
+      context.addIssue({
+        code: 'custom',
+        path: ['BLOCK_TAG'],
+        message: 'latest is for the local chain only; a public chain is read up to its finalized block',
       })
     }
   })

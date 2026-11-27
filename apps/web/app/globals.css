@@ -295,7 +295,11 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 @media (max-width: 760px) {
   .sf-identity__label { font-size: 20px; }
   .sf-status__words h2 { font-size: 28px; }
-  .sf-actions { position: sticky; bottom: 0; }
+  /* The columns stack. The action column becomes the last thing of the page, so the page is the
+     block it sticks in and it can hold the bottom edge of the screen while the page is read. */
+  .sf-target__body { display: contents; }
+  .sf-status, .sf-actions { flex: 0 0 auto; }
+  .sf-actions { order: 10; position: sticky; bottom: 0; }
   .sf-actions .sf-btn--primary { order: -1; }
   .sf-signal { min-width: 0; }
 }

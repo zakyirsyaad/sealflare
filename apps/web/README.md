@@ -67,6 +67,7 @@ variables at build time. Public values are fixed at build time; rebuild when the
 | `NEXT_PUBLIC_MODULES_LIVE` | `true` or `false` (default `false`) |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Optional. Without it the connect prompt offers only the browser wallet and no QR option |
 | `NEXT_PUBLIC_AGENT_ID_URL` | Optional HTTP(S) link for "Get an Agent ID". Unset shows plain text and a note |
+| `NEXT_PUBLIC_E2E` | `true` or `false` (default `false`). Only the end-to-end build sets it, and only that build offers the wallet of the suite |
 
 `lib/env.ts` is guarded by `server-only` and exposes `publicEnv` and `serverEnv`. It validates
 server values on import, and `instrumentation.ts` imports it at Node server startup. Missing or
@@ -80,24 +81,32 @@ invalid variables fail with variable names only. Required server configuration:
 | `BSCSCAN_KEY` | BscScan API key |
 | `GITHUB_TOKEN` | GitHub API token |
 | `PINATA_JWT` | Pinata JWT |
+| `PINATA_URL` | Optional URL of the service that pins the evidence. It is the API of Pinata when it is not given, and an empty value counts as not given. The JWT is sent to this URL, so it has to be https, or http to `localhost`, `127.0.0.1` or `[::1]`. The end-to-end suite names a local service, so the suite never reaches outside the machine |
 | `SCANNER` | Exactly `mock` or `real`. Anything else, including a missing value or `Real`, makes the scan routes answer `INTERNAL` with no verdict. The mock serves a SAFE fixture for any input, so it is never a default |
 
 Supply real values through the founder's environment/secret manager. Never prefix server keys
 with `NEXT_PUBLIC_`. The startup requirement also applies to the shell before the services are
-connected. Playwright supplies clearly marked dummy values for its local server and makes no
-service requests.
+connected. The end-to-end harness supplies clearly marked dummy values for its local stack and
+makes no service requests.
 
 ## Browser checks
 
 ```bash
 pnpm --filter @sealflare/web exec playwright install chromium
-pnpm --filter @sealflare/web build
-pnpm --filter @sealflare/web e2e
+pnpm e2e
 ```
 
-The smoke suite checks `/app` at 375px and 1280px in both themes, keyboard focus, navigation,
-the connect prompt, horizontal overflow and browser runtime errors. Screenshots go to the
-ignored `test-results/` directory. These checks cover the shell, not the future scan/wallet flows.
+The suite runs from the repository root, because the harness starts the whole stack it needs: the
+stub contracts on a local Anvil, the internal service, the indexer, a local storage for the
+evidence and the app itself. It is described in [e2e/README.md](e2e/README.md).
+
+The checks cover `/app` at 375px and 1280px in both themes, keyboard focus, navigation, the connect
+prompt, horizontal overflow and browser runtime errors. The suite of milestone one adds the scan and
+the attest flow: a visitor scans a contract without a wallet, a new Guardian attests and sees the
+vote after the block is final, an account without an Agent ID is offered both paths, and the sixth
+attestation of a day shows the daily limit. Screenshots and traces go to the ignored
+`test-results/` directory.
+
 The Panel component uses a native modal dialog for focus containment, Escape and background
 inertness. Tabs support ArrowLeft, ArrowRight, Home and End.
 
