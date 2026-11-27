@@ -39,6 +39,23 @@ which makes UI work quick. The real contracts enforce every rule: Agent ID check
 windows, the 48 hour settlement delay. Use `chain:real` to check a flow end to end. Both are for
 local development only.
 
+## End-to-end checks
+
+```bash
+pnpm e2e                 # milestone one, against the stub contracts
+E2E_REAL=1 pnpm e2e      # milestone one and two, against the real Core, Court and Vault
+```
+
+The suite starts the whole stack on your machine (Postgres, Anvil, the internal service, the
+indexer, local evidence storage and the app) and drives it with Playwright. Nothing leaves the
+machine, and no key of a real account is used.
+
+With the real contracts it also covers a dispute from the open challenge to the withdrawal, an
+expired challenge, a publisher bond from the first deposit to the finalized withdrawal, every screen
+at 375 px, an automated accessibility scan in both themes, and the app with `modulesLive` off. Time
+passes by moving the clock of the local node, the way `pnpm chain:warp` does. It needs Foundry 1.7.1
+and the Chromium of Playwright; [apps/web/e2e/README.md](apps/web/e2e/README.md) has the details.
+
 ## Start your lane
 
 | Lane | You own | You read from `shared/` | What stands in for the other lanes |

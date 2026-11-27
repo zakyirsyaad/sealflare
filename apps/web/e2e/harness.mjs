@@ -35,6 +35,16 @@ const INTERNAL_PORT = Number(process.env.E2E_INTERNAL_PORT ?? '9999')
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? '3102')
 const WEB_URL = `http://127.0.0.1:${WEB_PORT}`
 /**
+ * Whether the main app has the dispute, vault and bounty modules open.
+ *
+ * The stubs have no working Court, so the modules are only open for a run against the real
+ * contracts. `E2E_MODULES_LIVE` sets it by hand.
+ */
+const MODULES_LIVE = (process.env.E2E_MODULES_LIVE ?? (REAL ? 'true' : 'false')) === 'true'
+/** The app as it is before the modules go live. Only started when the main app has them open. */
+const WEB_OFF_PORT = Number(process.env.E2E_WEB_OFF_PORT ?? String(WEB_PORT + 1))
+const WEB_OFF_URL = MODULES_LIVE ? `http://127.0.0.1:${WEB_OFF_PORT}` : WEB_URL
+/**
  * The key between the app and the internal service.
  *
  * It is made for every run, so no two runs share one, and it never leaves this machine. The
@@ -308,6 +318,24 @@ async function waitForIndexer(indexer) {
   throw new Error(`The indexer did not read the chain in time: ${last}.`)
 }
 
+/**
+ * Builds the app with the flag of the modules set to the given value, in a folder of its own, and
+ * serves it on the given port. The flag is part of the bundle, so a build cannot be turned around
+ * after the fact.
+ */
+async function buildAndServe(name, baseEnv, { modulesLive, distDir, port }) {
+  const env = { ...baseEnv, NEXT_PUBLIC_MODULES_LIVE: String(modulesLive), NEXT_DIST_DIR: distDir }
+  await runToEnd(`build-${name}`, 'pnpm', ['--filter', '@sealflare/web', 'build'], { env })
+  const web = start(
+    `web-${name}`,
+    'pnpm',
+    ['--filter', '@sealflare/web', 'exec', 'next', 'start', '--hostname', '127.0.0.1', '--port', String(port)],
+    { env },
+  )
+  await waitForHttp(`http://127.0.0.1:${port}/app`, 120_000)
+  return web
+}
+
 async function startWeb(addresses, storageUrl) {
   const env = {
     INTERNAL_URL: `http://127.0.0.1:${INTERNAL_PORT}`,
@@ -320,22 +348,19 @@ async function startWeb(addresses, storageUrl) {
     SCANNER: 'mock',
     NEXT_PUBLIC_CHAIN_ID: '31337',
     NEXT_PUBLIC_ADDRESSES_LOCAL: JSON.stringify(addresses),
-    NEXT_PUBLIC_MODULES_LIVE: 'false',
     // The official link of the Agent ID is not published yet, so the suite names the local app.
     // The page then offers the way to get one, which the suite needs to see.
     NEXT_PUBLIC_AGENT_ID_URL: `${WEB_URL}/app`,
     // The build offers the wallet of the suite, so a test can sign a vote.
     NEXT_PUBLIC_E2E: 'true',
   }
-  await runToEnd('build', 'pnpm', ['--filter', '@sealflare/web', 'build'], { env })
-  const web = start(
-    'web',
-    'pnpm',
-    ['--filter', '@sealflare/web', 'exec', 'next', 'start', '--hostname', '127.0.0.1', '--port', String(WEB_PORT)],
-    { env },
-  )
-  await waitForHttp(`${WEB_URL}/app`, 120_000)
-  return web
+  // The main app has the modules the run is about. A run against the real contracts also needs
+  // the app as it is before the modules go live, because a flag is part of the bundle and the
+  // suite checks that every action of the modules is closed in that app.
+  await buildAndServe('main', env, { modulesLive: MODULES_LIVE, distDir: '.next', port: WEB_PORT })
+  if (MODULES_LIVE) {
+    await buildAndServe('off', env, { modulesLive: false, distDir: '.next-off', port: WEB_OFF_PORT })
+  }
 }
 
 async function runSuite() {
@@ -352,6 +377,9 @@ async function runSuite() {
         // cannot vote on it again.
         E2E_ROUND: String(round),
         E2E_REAL: REAL ? '1' : '0',
+        // Whether the main app has the modules open, and where the app without them is.
+        E2E_MODULES_LIVE: MODULES_LIVE ? '1' : '0',
+        E2E_OFF_URL: WEB_OFF_URL,
       },
     })
   }
@@ -361,6 +389,7 @@ async function main() {
   withFoundryOnPath()
   await assertPortIsFree(INTERNAL_PORT)
   await assertPortIsFree(WEB_PORT)
+  if (MODULES_LIVE) await assertPortIsFree(WEB_OFF_PORT)
   storage = await startStorage()
   database = await startDatabase()
   process.stdout.write(`[harness] the database is ${database.url}\n`)
