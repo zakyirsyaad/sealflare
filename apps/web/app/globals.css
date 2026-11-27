@@ -96,6 +96,8 @@
 .sf-chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:var(--radius);background:var(--muted);color:var(--muted-foreground);font-family:var(--font-sans);font-size:12px;line-height:18px;white-space:nowrap}
 .sf-chip--flag{padding:3px 8px;font-family:var(--font-mono)}
 .sf-chip--danger{background:color-mix(in oklab,var(--destructive) 16%,transparent);color:var(--destructive)}
+/* The red of the light theme on its own tint is 3.56:1, below the 4.5:1 the text needs. */
+:root[data-theme='light'] .sf-chip--danger{color:color-mix(in oklab,var(--destructive) 72%,black)}
 .sf-chip--solid-danger{background:var(--destructive);color:var(--background);font-family:var(--font-mono);font-weight:500}
 
 /* Frame: a bordered object with crop marks */

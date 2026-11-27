@@ -22,6 +22,9 @@ const bsc = readAddresses('addresses.bsc.json')
 const bscTestnet = readAddresses('addresses.bsc-testnet.json')
 
 const config: NextConfig = {
+  // The end-to-end run builds the app twice, with the modules live and not live, and each build
+  // needs a folder of its own.
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   poweredByHeader: false,
   reactStrictMode: true,
   env: {
