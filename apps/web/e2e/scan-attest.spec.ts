@@ -8,9 +8,11 @@ import {
   giveAgentId,
   mineBlocks,
   nameAccount,
+  removeAgentId,
   scanContract,
   test,
   useAllAttestations,
+  usesRealContracts,
   waitForIndexedAttestation,
 } from './fixtures'
 import { getAddress } from 'viem'
@@ -88,10 +90,12 @@ test('a new Guardian scans, attests and sees the vote after the block is final',
   await panel(page).getByRole('button', { name: 'Sign and attest' }).click()
 
   // The first approval signs the evidence, the second one sends the transaction. The vote is on
-  // the chain, but the indexer reads it only when the block is final.
+  // the chain, but the indexer reads it only when the block is closed. The label of the app says
+  // "finality", because that is what a public chain gives. A local node has none: it answers
+  // the final block with the genesis block, so the indexer of the suite reads up to the tip.
   await expect(panel(page).getByText('Waiting for finality')).toBeVisible({ timeout: 60_000 })
 
-  // The block of the vote becomes final, and the indexer reads it.
+  // The block of the vote is closed, and the indexer reads it.
   await mineBlocks(3)
   await waitForIndexedAttestation(targetId, wallet.account)
 
@@ -111,6 +115,8 @@ test('a new Guardian scans, attests and sees the vote after the block is final',
 test('an account without an Agent ID is offered both paths and can continue after getting one', async ({ page, stack }) => {
   const errors = collectErrors(page)
   const account = anvilAccount(WITHOUT_AGENT_ID)
+  // A second round of the suite finds an account that has an ID, so it is taken away first.
+  await removeAgentId(getAddress(stack.addresses.agentId), account)
   await nameAccount(page, account)
 
   await page.goto('/app')
@@ -135,6 +141,9 @@ test('an account without an Agent ID is offered both paths and can continue afte
 })
 
 test('the sixth attestation in a day shows the daily limit sentence', async ({ page, stack }) => {
+  // The stub keeps no quota of its own, so the suite sets it. The real Core keeps the quota and
+  // refuses the sixth vote itself, which the founder checks at the milestone meeting.
+  test.skip(usesRealContracts(), 'The quota of the real Core cannot be set from outside.')
   const errors = collectErrors(page)
   const account = anvilAccount(SECOND_HOLDER)
   await nameAccount(page, account)

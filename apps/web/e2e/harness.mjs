@@ -11,11 +11,13 @@
 // Environment:
 //   E2E_RUNS       how many times the suite runs, one after the other (default 1)
 //   E2E_KEEP       keep the stack running after the suite (default 0)
+//   E2E_REAL       run against the real contracts instead of the stubs (default 0)
 //   DATABASE_URL   the database to use. A throwaway cluster is started when it is not given.
 //   FOUNDRY_BIN    the directory of the Foundry programs, when they are not on the path.
 
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startDatabase } from './harness/postgres.mjs'
@@ -24,13 +26,35 @@ import { startStorage } from './harness/storage.mjs'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const WEB = join(ROOT, 'apps/web')
 const RUNS = Math.max(1, Number(process.env.E2E_RUNS ?? '1'))
+/** Whether the run is against the real contracts of `contracts/src`, not the stubs. */
+const REAL = process.env.E2E_REAL === '1'
 
 const ANVIL_URL = 'http://127.0.0.1:8545'
 const INTERNAL_PORT = Number(process.env.E2E_INTERNAL_PORT ?? '9999')
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? '3102')
 const WEB_URL = `http://127.0.0.1:${WEB_PORT}`
-/** The key between the app and the internal service. It never leaves this machine. */
-const INTERNAL_KEY = 'e2e-local-internal-key-0123456789-abcdefghij'
+/**
+ * The key between the app and the internal service.
+ *
+ * It is made for every run, so no two runs share one, and it never leaves this machine. The
+ * service wants a key of at least sixteen different characters, so the key holds every letter of
+ * the alphabet in a random order.
+ */
+function makeInternalKey() {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const bytes = randomBytes(128)
+  const letters = [...alphabet]
+  for (let i = letters.length - 1; i > 0; i -= 1) {
+    const j = bytes[i % bytes.length] % (i + 1)
+    const swap = letters[i]
+    letters[i] = letters[j]
+    letters[j] = swap
+  }
+  const rest = Array.from({ length: 24 }, (_, i) => alphabet[bytes[i] % alphabet.length]).join('')
+  return letters.join('') + rest
+}
+
+const INTERNAL_KEY = makeInternalKey()
 /** The skill target of the seed script. The indexer has read it when it answers for it. */
 const SEEDED_SKILL_TARGET = '0xa01952409246800ff1ca8031688af18ac78d9218bdb89a3c62a13b2599278377'
 
@@ -174,7 +198,12 @@ async function assertPortIsFree(port) {
 
 async function startChain() {
   await assertPortIsFree(8545)
-  const chain = start('chain', 'bash', ['scripts/chain.sh'], { cwd: ROOT })
+  // The real contracts are deployed by the same script, so the run against them is the same
+  // stack with the real Core, Court and Vault.
+  const chain = start('chain', 'bash', ['scripts/chain.sh'], {
+    cwd: ROOT,
+    env: REAL ? { REAL: '1' } : {},
+  })
   await waitForLine(chain, 'Local chain ready', 120_000)
   await runToEnd('seed', 'pnpm', ['chain:seed'], { cwd: ROOT })
   return chain
@@ -235,10 +264,16 @@ async function startIndexer(databaseUrl, addresses) {
   return indexer
 }
 
-/** Waits until the indexer has read the votes of the seed script. */
+/**
+ * Waits until the indexer has read the votes of the seed script.
+ *
+ * The answer has to hold the votes, not only answer: a target row can be there before its votes
+ * are, and a run that starts with an empty list proves nothing.
+ */
 async function waitForIndexer(indexer) {
   const deadline = Date.now() + 60_000
   const url = `http://127.0.0.1:${INTERNAL_PORT}/targets/${SEEDED_SKILL_TARGET}/attestations`
+  let last = 'the service did not answer'
   while (Date.now() < deadline) {
     if (indexer.child.exitCode !== null) {
       throw new Error(`The indexer stopped before it read the chain: ${indexer.text().slice(-2000)}`)
@@ -248,13 +283,20 @@ async function waitForIndexer(indexer) {
         headers: { authorization: `Bearer ${INTERNAL_KEY}` },
         signal: AbortSignal.timeout(2000),
       })
-      if (response.ok) return
+      if (response.ok) {
+        const body = await response.json()
+        const items = body?.data?.items ?? []
+        if (items.length > 0) return
+        last = 'the service answered without any attestation'
+      } else {
+        last = `the service answered with ${response.status}`
+      }
     } catch {
       // The service is not up yet.
     }
     await sleep(200)
   }
-  throw new Error('The indexer did not read the chain in time.')
+  throw new Error(`The indexer did not read the chain in time: ${last}.`)
 }
 
 async function startWeb(addresses, storageUrl) {
@@ -297,6 +339,10 @@ async function runSuite() {
         // The suite asks the internal service whether the indexer has read a vote.
         E2E_INTERNAL_URL: `http://127.0.0.1:${INTERNAL_PORT}`,
         E2E_INTERNAL_KEY: INTERNAL_KEY,
+        // Every round votes with another account, because an account that has voted on a target
+        // cannot vote on it again.
+        E2E_ROUND: String(round),
+        E2E_REAL: REAL ? '1' : '0',
       },
     })
   }

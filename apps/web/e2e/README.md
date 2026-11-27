@@ -54,13 +54,16 @@ The run needs:
 
 | Variable | What it does |
 | --- | --- |
-| `E2E_RUNS` | How many times the suite runs, one after the other. Default 1 |
+| `E2E_RUNS` | How many times the suite runs, one after the other. Every round votes with another account, because an account that has voted on a target cannot vote on it again. Default 1 |
 | `E2E_KEEP` | `1` keeps the stack running after the suite, also when the suite failed, so a failure can be looked at in the browser |
+| `E2E_REAL` | `1` runs the suite against the real contracts of `contracts/src` instead of the stubs. The scanner stays the mock one, because the real scanner needs a paid key |
 | `DATABASE_URL` | The database to use. A throwaway cluster is started when it is not given |
 | `E2E_PG_PORT` | The port of that cluster. A free port is taken when it is not given |
 | `FOUNDRY_BIN` | The directory of the Foundry programs, when they are not on the path |
 
-The suite runs one worker, because the tests share one chain and one database.
+The suite runs one worker, because the tests share one chain and one database. A test has three
+minutes, because the slowest path scans, signs the evidence, sends the transaction, mines the
+blocks and waits for the indexer.
 
 ## The files
 
@@ -81,6 +84,24 @@ The suite runs one worker, because the tests share one chain and one database.
    attestations tab shows the verdict, no flag and the evidence.
 3. An account without an Agent ID is offered both paths, and can continue after it gets one.
 4. The sixth attestation in a day shows the daily limit sentence and closes the button.
+
+The label of the app says "finality", because that is what a public chain gives. A local node has
+none: it answers the `finalized` tag with the genesis block, so the indexer of the suite reads the
+chain up to its tip. The finality of a public chain is therefore not proved by this suite.
+
+## The real contracts
+
+`E2E_REAL=1` runs the suite against the real Core, Court and Vault instead of the stubs. The
+stack is the same, and the seed script works against both.
+
+Two things are different, and they are what the founder checks at the milestone meeting:
+
+- The stub keeps no daily quota of its own, so the suite sets the number the contract answers
+  with. The real Core keeps the quota itself and has no such function, so the fourth test is
+  skipped against the real contracts. The real Core refuses the sixth vote itself.
+- The scanner of the suite is the mock one. The real scanner needs a paid key and the keys of the
+  explorer and of GitHub, so the founder runs the suite with `SCANNER=real` and the keys of the
+  deployment.
 
 ## Notes
 

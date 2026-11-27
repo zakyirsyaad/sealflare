@@ -125,12 +125,22 @@ jobs:
       - name: Install the browser of the suite
         run: pnpm --filter @sealflare/web exec playwright install --with-deps chromium
       - name: Run the suite against the local stack
-        run: pnpm e2e
+        # The log of the harness holds the output of the app, the indexer and the internal
+        # service, so it is kept next to the traces of the browser.
+        run: |
+          set -o pipefail
+          pnpm e2e 2>&1 | tee e2e-harness.log
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: e2e-traces
           path: apps/web/test-results/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-harness-log
+          path: e2e-harness.log
           retention-days: 7
 
   secrets:

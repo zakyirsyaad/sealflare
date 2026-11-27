@@ -1,7 +1,10 @@
 import { createConnector } from 'wagmi'
 import { getAddress, numberToHex, type Address } from 'viem'
 import { rpc } from 'viem/utils'
-import { expectedChainId } from './config'
+import { publicEnv } from '../env.public'
+
+/** The chain of the local node. The wallet of the suite talks to no other chain. */
+const LOCAL_CHAIN_ID = 31337
 
 /**
  * The wallet of the end-to-end suite.
@@ -60,7 +63,16 @@ type Connected<withCapabilities extends boolean> = {
 /** The connector of the suite. It only works on the chain of the local node. */
 export function e2eConnector() {
   return createConnector<Provider, Connection>(config => {
-    const chain = config.chains.find(item => item.id === expectedChainId) ?? config.chains[0]
+    const chain = config.chains.find(item => item.id === LOCAL_CHAIN_ID)
+    // The wallet of the suite may only talk to the local node. Without this the connector would
+    // fall back to the first chain of the app, which is BNB Smart Chain, and a run of the suite
+    // would send its transaction to a public chain.
+    if (chain === undefined) {
+      throw new Error('The end-to-end wallet needs the local chain of Anvil.')
+    }
+    if (publicEnv.NEXT_PUBLIC_CHAIN_ID !== LOCAL_CHAIN_ID) {
+      throw new Error('The end-to-end wallet needs a build for the local chain of Anvil.')
+    }
     const url = chain.rpcUrls.default.http[0] ?? 'http://127.0.0.1:8545'
     let account: Address | null = null
 
