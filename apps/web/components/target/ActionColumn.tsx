@@ -3,13 +3,14 @@ import { useState } from 'react'
 import { CONSTANTS, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import type { AttestationRow, ScanReport } from '@sealflare/shared/schemas'
 import { useUserState } from '../../lib/chain/userState'
+import { modulesLive } from '../../lib/chain/config'
 import { Button } from '../ui/Button'
 import { copy } from '../../lib/copy'
 import { formatUtc, isZeroHash, verdictLabel } from '../../lib/format'
 import { AttestPanel } from '../attest/AttestPanel'
+import { BountyPanel } from '../bounty/BountyPanel'
 import { ChallengeAction } from '../dispute/ChallengeAction'
 import { attestAvailability, type AttestAvailability } from '../attest/availability'
-import { modulesLive } from '../../lib/chain/config'
 import { usePendingVote, type PendingVote } from './pendingVote'
 
 export type ActionColumnProps = {
@@ -157,7 +158,7 @@ function PrimaryAction({ availability, reason, busy, props, linkKnown, onOpen }:
 }
 
 /** The two secondary actions: the challenge, and the bounty that opens with the Vault. */
-function SecondaryActions(props: ActionColumnProps) {
+function SecondaryActions(props: ActionColumnProps & { onFundBounty: () => void }) {
   return (
     <>
       <ChallengeAction
@@ -168,11 +169,16 @@ function SecondaryActions(props: ActionColumnProps) {
         tier={props.tier}
         activeChallengeId={props.activeChallengeId ?? null}
       />
-      <Button variant="secondary" className="sf-btn--block" disabled>
+      <Button
+        variant="secondary"
+        className="sf-btn--block"
+        disabled={!modulesLive}
+        onClick={props.onFundBounty}
+      >
         {copy.target.fundBounty}
       </Button>
-      {/* The challenge action says it itself, unless a confirmed danger leaves it without a button. */}
-      {!modulesLive && props.tier === 'CONFIRMED_DANGER' && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
+      {/* Every action that waits for the vault says why it is closed. */}
+      {!modulesLive && <p className="sf-actions__note">{copy.common.modulesNotLive}</p>}
     </>
   )
 }
@@ -186,6 +192,7 @@ export function ActionColumn(props: ActionColumnProps) {
   const user = useUserState()
   const { vote: sessionVote } = usePendingVote()
   const [open, setOpen] = useState(false)
+  const [bountyOpen, setBountyOpen] = useState(false)
   const left = user.kind === 'holder' ? user.attestationsLeft : null
   const address = 'address' in user ? user.address : undefined
   const onChain = previousVote(address, props.attestations)
@@ -211,7 +218,7 @@ export function ActionColumn(props: ActionColumnProps) {
         linkKnown={onChain === null || !props.evidenceFailed}
         onOpen={() => setOpen(true)}
       />
-      <SecondaryActions {...props} />
+      <SecondaryActions {...props} onFundBounty={() => setBountyOpen(true)} />
       <Notes
         quota={limitText(left === null ? copy.target.quotaDefault : copy.target.quotaLeft, left)}
         reason={reason}
@@ -222,6 +229,7 @@ export function ActionColumn(props: ActionColumnProps) {
       />
       {/* Mounted while closed too, so a vote that is on its way is not lost with the dialog. */}
       <AttestPanel {...panelProps(props)} open={open} onClose={() => setOpen(false)} />
+      <BountyPanel targetId={props.targetId} label={props.label} open={bountyOpen} onClose={() => setBountyOpen(false)} />
     </aside>
   )
 }
