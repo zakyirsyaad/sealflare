@@ -6,7 +6,6 @@ import { Button } from '../ui/Button'
 import { Panel } from '../ui/Panel'
 import { ConnectSection } from '../wallet/ConnectSection'
 import { WrongNetwork } from '../wallet/WrongNetwork'
-import { TransactionLink } from '../attest/AttestButton'
 import { modulesLive } from '../../lib/chain/config'
 import { moduleGate } from '../../lib/chain/modules'
 import { useUserState } from '../../lib/chain/userState'
@@ -15,6 +14,7 @@ import { formatBnb } from '../../lib/format'
 import { parseBnb } from '../../lib/publish/bond'
 import { SLOT_RANGE, bountyCap, refundDays, slotChoices, treasuryShare, withinBountyBounds } from '../../lib/bounty/settle'
 import { useBounty } from '../../lib/bounty/useBounty'
+import { WriteStates } from './WriteStates'
 
 export type BountyPanelProps = {
   targetId: string
@@ -132,36 +132,6 @@ function BountyForm(props: {
   )
 }
 
-/** The states of the write: it is on its way, it failed, or it landed. */
-function WriteStates({ status, error, txHash, onRetry }: { status: string; error: string | null; txHash: string | null; onRetry: () => void }) {
-  if (status === 'done') {
-    return (
-      <div className="sf-stack">
-        <p>{copy.common.waitingFinality}</p>
-        {txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
-      </div>
-    )
-  }
-  if (status === 'failed') {
-    return (
-      <div className="sf-stack">
-        <p role="alert" className="sf-error">
-          {error ?? copy.errors.unknown}
-        </p>
-        {txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
-        <Button variant="primary" onClick={onRetry}>
-          {copy.common.retry}
-        </Button>
-      </div>
-    )
-  }
-  // While the transaction waits for its confirmation, the reader can follow it.
-  if (status === 'sending' && txHash !== null) {
-    return <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>
-  }
-  return null
-}
-
 /**
  * The panel that funds a bounty.
  *
@@ -185,11 +155,14 @@ function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
   const hintId = useId()
-  const { state, createBounty } = useBounty()
+  const { status, error: writeError, txHash, createBounty } = useBounty()
   const gate = moduleGate(modulesLive)
   const wei = parseBnb(amount)
-  const connected = user.kind !== 'no-wallet' && user.kind !== 'wrong-network'
-  const busy = state.status === 'sending'
+  // The account signs the write, so it is named in the request. A wallet on the wrong network
+  // has no usable account here, so it needs the switch first.
+  const account = 'address' in user ? user.address : null
+  const connected = account !== null && user.kind !== 'wrong-network'
+  const busy = status === 'signing' || status === 'pending'
 
   async function fund(): Promise<void> {
     if (slots < SLOT_RANGE.min || slots > SLOT_RANGE.max) {
@@ -208,8 +181,9 @@ function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>
       setError(copy.bounty.boundsInvalid)
       return
     }
+    if (account === null) return
     setError(null)
-    await createBounty(targetId as Hex, slots, wei)
+    await createBounty(account, targetId as Hex, slots, wei)
   }
 
   return (
@@ -229,11 +203,11 @@ function BountyBody({ targetId, label, onClose }: Omit<BountyPanelProps, 'open'>
             onSlots={setSlots}
             onAmount={setAmount}
           />
-          <WriteStates status={state.status} error={state.error} txHash={state.txHash} onRetry={() => void fund()} />
+          <WriteStates status={status} error={writeError} txHash={txHash} onRetry={() => void fund()} />
           {/* The button is the only primary action of the panel, and it is locked while the
-              transaction is on its way. */}
+              transaction is on its way and after it landed. */}
           <footer className="sf-panel__footer">
-            {(state.status === 'idle' || busy) && (
+            {(status === 'idle' || busy) && (
               <Button variant="primary" disabled={busy} onClick={() => void fund()}>
                 {busy ? copy.attest.pending : copy.bounty.create}
               </Button>

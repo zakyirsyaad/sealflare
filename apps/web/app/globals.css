@@ -316,3 +316,7 @@ a.sf-btn { display: inline-flex; align-items: center; justify-content: center; t
 .sf-rows__row { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; }
 .sf-rows__name { color: var(--muted-foreground); }
 .sf-rows__value { text-align: right; }
+
+/* Pager */
+.sf-pager { display: flex; gap: var(--space-4); align-items: center; justify-content: space-between; }
+.sf-pager__where { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 12px; }

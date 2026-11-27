@@ -94,7 +94,11 @@ export function BountyTab({ targetId }: BountyTabProps) {
           setLoad({ status: 'ready', bounty: pickBounty(rows) })
         })
         .catch(() => {
-          if (live) setLoad({ status: 'failed', bounty: null })
+          // A bounty that is already on the page stays there, so a settlement that is on its way
+          // is not lost when a later read of the index fails.
+          if (live) {
+            setLoad(previous => (previous.status === 'ready' ? previous : { status: 'failed', bounty: null }))
+          }
         })
     }
     read()

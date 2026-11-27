@@ -1,5 +1,5 @@
-import { beforeEach, expect, test, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BountySummary } from '@sealflare/shared/schemas'
 import type { TrustTier } from '@sealflare/shared/rules'
@@ -15,6 +15,7 @@ const me = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
 const vault = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512'
 const targetId = `0x${'11'.repeat(32)}`
 const label = '0x60b9262456de011f7d15a54cdd8c48baaa8b022f'
+const hash = `0x${'22'.repeat(32)}`
 
 /**
  * The time of the chain the tests run against.
@@ -39,17 +40,34 @@ function daysFromNow(days: number): string {
   return new Date((NOW + days * 86_400) * 1000).toISOString()
 }
 
+type Receipt = { isSuccess: boolean; isError: boolean; error: unknown; data: undefined }
+
 const mocks = vi.hoisted(() => ({
   connection: { address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as string | undefined, isConnected: true, chainId: 56 },
   modulesLive: true,
   holder: true,
   write: vi.fn(),
+  receipt: { isSuccess: false, isError: false, error: null, data: undefined } as {
+    isSuccess: boolean
+    isError: boolean
+    error: unknown
+    data: undefined
+  },
   block: { timestamp: 1_800_000_000 },
   blockFails: false,
   connectError: null as Error | null,
   noRegistry: false,
   fetch: vi.fn(),
   loadBounties: vi.fn(),
+  // The client of the chain keeps its name, so the clock of the chain is not read again on
+  // every render.
+  publicClient: {
+    waitForTransactionReceipt: async () => ({ status: 'success' }),
+    getBlock: async () => {
+      if (mocks.blockFails) throw new Error('the chain could not be read')
+      return mocks.block
+    },
+  },
 }))
 
 vi.mock('../lib/chain/config', () => ({
@@ -82,16 +100,17 @@ vi.mock('wagmi', () => ({
     data: args.functionName === 'isAgentIdHolder' ? mocks.holder : 3,
     refetch: vi.fn(),
   }),
-  usePublicClient: () => ({
-    waitForTransactionReceipt: async () => ({ status: 'success' }),
-    getBlock: async () => {
-      if (mocks.blockFails) throw new Error('the chain could not be read')
-      return mocks.block
-    },
-  }),
-  useWriteContract: () => ({ mutateAsync: mocks.write }),
+  usePublicClient: () => mocks.publicClient,
+  useWriteContract: () => ({ writeContractAsync: mocks.write }),
   useBlock: () => ({ data: { timestamp: BigInt(mocks.block.timestamp) }, refetch: vi.fn() }),
-  useWaitForTransactionReceipt: () => ({ isSuccess: false, isError: false, error: null }),
+  // The receipt of the transaction that was sent. A transaction that is still on its way has no
+  // receipt yet, and the panel then waits for it.
+  useWaitForTransactionReceipt: (args: { hash?: string }) => ({
+    isSuccess: mocks.receipt.isSuccess,
+    isError: mocks.receipt.isError,
+    error: mocks.receipt.error,
+    data: mocks.receipt.isSuccess ? { status: 'success', transactionHash: args.hash } : undefined,
+  }),
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
   useConnectors: () => [],
   useConnect: () => ({ mutate: vi.fn(), isPending: false, error: mocks.connectError }),
@@ -124,6 +143,11 @@ function answer(items: BountySummary[]): Response {
   })
 }
 
+/** The rows of the bounties list, as the page reads them. */
+function listData(items: BountySummary[], total = items.length, page = 1) {
+  return { items, total, page, limit: 20, failed: false }
+}
+
 /** The actions of the target page, without a scan and without a vote. */
 function actionProps() {
   return {
@@ -141,6 +165,15 @@ function actionProps() {
   }
 }
 
+/** Lets every promise of a read finish, so the state of the page is the state it settles on. */
+async function flush(): Promise<void> {
+  for (let round = 0; round < 5; round += 1) {
+    await act(async () => {
+      await Promise.resolve()
+    })
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.connection = { address: me, isConnected: true, chainId: 56 }
@@ -150,10 +183,15 @@ beforeEach(() => {
   mocks.blockFails = false
   mocks.connectError = null
   mocks.noRegistry = false
-  mocks.write.mockResolvedValue(`0x${'22'.repeat(32)}`)
+  mocks.write.mockResolvedValue(hash)
+  mocks.receipt = { isSuccess: false, isError: false, error: null, data: undefined }
   mocks.fetch.mockResolvedValue(answer([bounty()]))
-  mocks.loadBounties.mockResolvedValue([bounty()])
+  mocks.loadBounties.mockResolvedValue(listData([bounty()]))
   vi.stubGlobal('fetch', mocks.fetch)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 test('slots are limited to 3 to 5 and the amount to 0.2 BNB', async () => {
@@ -203,22 +241,43 @@ test('creating a bounty needs a wallet but not an Agent ID', async () => {
   expect(call.approve).toBeUndefined()
 })
 
-test('the amount at the limit is sent as it is shown, and the panel waits for the finality', async () => {
+test('the write names the account that signs it', async () => {
+  render(<BountyPanel targetId={targetId} onClose={() => {}} />)
+  await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
+  await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
+  await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1))
+  expect(mocks.write.mock.calls[0]![0].account).toBe(me)
+})
+
+test('the amount at the limit is sent as it is shown', async () => {
   render(<BountyPanel targetId={targetId} onClose={() => {}} />)
   await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.2')
   await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
   await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1))
   expect(mocks.write.mock.calls[0]![0].value).toBe(200000000000000000n)
+})
+
+test('the transaction is on its way, and the panel names it', async () => {
+  render(<BountyPanel targetId={targetId} onClose={() => {}} />)
+  await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
+  await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
+  expect(await screen.findByText(copy.bounty.txPending)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: copy.target.transaction })).toHaveAttribute('href', `https://bscscan.com/tx/${hash}`)
   // The bounty is on its way, so a second payment is not asked for.
-  expect(await screen.findByText(copy.common.waitingFinality)).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: copy.target.transaction })).toHaveAttribute(
-    'href',
-    `https://bscscan.com/tx/0x${'22'.repeat(32)}`,
-  )
   expect(screen.queryByRole('button', { name: copy.bounty.create })).toBeNull()
 })
 
-test('a write that fails names the reason and offers a retry', async () => {
+test('the write that lands says that it waits for the finality', async () => {
+  mocks.receipt = { isSuccess: true, isError: false, error: null, data: undefined }
+  render(<BountyPanel targetId={targetId} onClose={() => {}} />)
+  await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
+  await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
+  expect(await screen.findByText(copy.common.waitingFinality)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: copy.target.transaction })).toHaveAttribute('href', `https://bscscan.com/tx/${hash}`)
+  expect(screen.queryByRole('button', { name: copy.bounty.create })).toBeNull()
+})
+
+test('a write that fails before it was sent offers a retry', async () => {
   mocks.write.mockRejectedValueOnce(new Error('the vault said no'))
   render(<BountyPanel targetId={targetId} onClose={() => {}} />)
   await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
@@ -229,6 +288,20 @@ test('a write that fails names the reason and offers a retry', async () => {
   expect(screen.queryByRole('button', { name: copy.bounty.create })).toBeNull()
   await userEvent.click(screen.getByRole('button', { name: copy.common.retry }))
   await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(2))
+})
+
+test('a write that failed after it was sent offers no retry', async () => {
+  // The receipt of a transaction that was sent fails, so the hash stays and a second bounty
+  // would be funded by a retry.
+  mocks.receipt = { isSuccess: false, isError: true, error: new Error('the receipt failed'), data: undefined }
+  render(<BountyPanel targetId={targetId} onClose={() => {}} />)
+  await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
+  await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong. Try again.')
+  expect(screen.getByText(copy.bounty.txSent)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: copy.target.transaction })).toHaveAttribute('href', `https://bscscan.com/tx/${hash}`)
+  // No retry, so a second bounty is never funded by accident.
+  expect(screen.queryByRole('button', { name: copy.common.retry })).toBeNull()
 })
 
 test('a write the wallet refuses goes back to the summary, without a message', async () => {
@@ -245,17 +318,16 @@ test('a write the wallet refuses goes back to the summary, without a message', a
 test('the reason of the contract is named when the write is refused', async () => {
   const reverted = Object.assign(new Error('the vault refused'), {
     name: 'ContractFunctionRevertedError',
-    data: { errorName: 'BountyNotSettleable', args: [] },
+    data: { errorName: 'BountyAboveCap', args: [] },
   })
   mocks.write.mockRejectedValueOnce(reverted)
   render(<BountyPanel targetId={targetId} onClose={() => {}} />)
   await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
   await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('This bounty cannot be settled yet.')
+  expect(await screen.findByRole('alert')).toHaveTextContent('That bounty is above the 0.2 BNB limit.')
 })
 
 test('the panel cannot be closed while the transaction is on its way', async () => {
-  mocks.write.mockReturnValue(new Promise(() => {}))
   render(<BountyPanel targetId={targetId} onClose={() => {}} />)
   await userEvent.type(screen.getByLabelText(copy.bounty.amountLabel), '0.1')
   await userEvent.click(screen.getByRole('button', { name: copy.bounty.create }))
@@ -286,6 +358,13 @@ test('a wallet that cannot be connected is named', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('Could not connect. Try again or choose another wallet.')
 })
 
+test('a connection the visitor refuses says nothing', () => {
+  mocks.connection = { address: undefined, isConnected: false, chainId: 56 }
+  mocks.connectError = Object.assign(new Error('the user refused'), { code: 4001 })
+  render(<BountyPanel targetId={targetId} onClose={() => {}} />)
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
 test('the slots move with the arrow keys', async () => {
   render(<BountyPanel targetId={targetId} onClose={() => {}} />)
   const first = screen.getByRole('radio', { name: '3' })
@@ -304,21 +383,29 @@ test('a bounty cannot be funded without a wallet', async () => {
 })
 
 test('a row in the list opens the target page', () => {
-  render(<BountyList items={[bounty()]} live />)
+  render(<BountyList items={[bounty()]} total={1} page={1} limit={20} />)
   const link = screen.getByRole('link', { name: label })
   expect(link).toHaveAttribute('href', `/app/t/${targetId}`)
 })
 
-test('the list shows the open bounties, and not the ones that cannot be filled', () => {
-  render(<BountyList items={[bounty({ filled: 3, settled: true })]} live />)
-  expect(screen.queryByRole('link', { name: label })).toBeNull()
+test('the list is empty when the indexer knows no open bounty', () => {
+  render(<BountyList items={[]} total={0} page={1} limit={20} />)
   expect(screen.getByText(copy.bounty.empty)).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: label })).toBeNull()
 })
 
-test('modules not live shows the empty state with the fixed sentence', () => {
-  render(<BountyList items={[bounty()]} live={false} />)
-  expect(screen.getByText('Opens when the dispute and vault contracts go live.')).toBeInTheDocument()
-  expect(screen.queryByRole('link')).toBeNull()
+test('the pager names the pages and walks through them', () => {
+  render(<BountyList items={[bounty()]} total={45} page={1} limit={20} />)
+  expect(screen.getByText('Page 1 of 3')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: copy.bounty.nextPage })).toHaveAttribute('href', '/app/bounties?page=2')
+  expect(screen.queryByRole('link', { name: copy.bounty.previousPage })).toBeNull()
+})
+
+test('the last page offers no next page', () => {
+  render(<BountyList items={[bounty()]} total={45} page={3} limit={20} />)
+  expect(screen.getByText('Page 3 of 3')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: copy.bounty.previousPage })).toHaveAttribute('href', '/app/bounties?page=2')
+  expect(screen.queryByRole('link', { name: copy.bounty.nextPage })).toBeNull()
 })
 
 test('the settle window is 48 hours after the last slot, or 7 days after creation', () => {
@@ -342,7 +429,21 @@ test('a bounty whose slots are full can be settled 48 hours after the last slot'
   const call = mocks.write.mock.calls[0]![0]
   expect(call.functionName).toBe('settleBounty')
   expect(call.args[0]).toBe(7n)
+  expect(call.account).toBe(me)
   expect(call.approve).toBeUndefined()
+})
+
+test('the settlement offers no second write after it landed', async () => {
+  mocks.receipt = { isSuccess: true, isError: false, error: null, data: undefined }
+  mocks.fetch.mockResolvedValue(answer([bounty({ filled: 3, slots: 3, createdAt: daysAgo(3), settleableAt: hoursAgo(1) })]))
+  render(<BountyTab targetId={targetId} />)
+  const button = await screen.findByRole('button', { name: copy.bounty.settle })
+  await userEvent.click(button)
+  expect(await screen.findByText(copy.common.waitingFinality)).toBeInTheDocument()
+  // The button is gone, so a second settlement is never sent.
+  expect(screen.queryByRole('button', { name: copy.bounty.settle })).toBeNull()
+  await userEvent.click(screen.getByRole('link', { name: copy.target.transaction }))
+  expect(mocks.write).toHaveBeenCalledTimes(1)
 })
 
 test('a full bounty without a known moment waits for the seven days', async () => {
@@ -445,6 +546,22 @@ test('the failed state of the tab names the failure and reads again', async () =
   expect(await screen.findByText('1 of 3 slots filled')).toBeInTheDocument()
 })
 
+test('the bounty stays on the screen when a later read of the index fails', async () => {
+  // Only the interval of the poll is held back, so the promises of the read are still real.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  render(<BountyTab targetId={targetId} />)
+  await flush()
+  expect(screen.getByText('1 of 3 slots filled')).toBeInTheDocument()
+  // The next read of the index fails, but the bounty is still on the screen.
+  mocks.fetch.mockRejectedValue(new Error('the indexer is down'))
+  act(() => {
+    vi.advanceTimersByTime(60_000)
+  })
+  await flush()
+  expect(screen.getByText('1 of 3 slots filled')).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
 test('the fund button of the target page is closed while the modules are not live', () => {
   mocks.modulesLive = false
   render(<ActionColumn {...actionProps()} />)
@@ -462,22 +579,40 @@ test('the fund button of the target page opens the panel', async () => {
 test('the page shows the fixed sentence while the modules are not live', async () => {
   mocks.modulesLive = false
   const Page = (await import('../app/app/bounties/page')).default
-  render(await Page())
+  render(await Page({ searchParams: Promise.resolve({}) }))
   expect(screen.getByText('Opens when the dispute and vault contracts go live.')).toBeInTheDocument()
+  // The heading of the page is there in every state.
+  expect(screen.getByRole('heading', { name: copy.bounty.title })).toBeInTheDocument()
   expect(mocks.loadBounties).not.toHaveBeenCalled()
 })
 
-test('the page lists the bounties the indexer read', async () => {
+test('the page lists the open bounties the indexer read', async () => {
   const Page = (await import('../app/app/bounties/page')).default
-  render(await Page())
+  render(await Page({ searchParams: Promise.resolve({}) }))
   expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', `/app/t/${targetId}`)
+  // The list asks the indexer for the open bounties, so the rows and the total agree.
+  expect(mocks.loadBounties).toHaveBeenCalledWith({ page: 1, open: true })
+})
+
+test('the page reads the page of the query', async () => {
+  const Page = (await import('../app/app/bounties/page')).default
+  render(await Page({ searchParams: Promise.resolve({ page: '2' }) }))
+  expect(mocks.loadBounties).toHaveBeenCalledWith({ page: 2, open: true })
+})
+
+test('a page that is not a number is the first page', async () => {
+  const Page = (await import('../app/app/bounties/page')).default
+  render(await Page({ searchParams: Promise.resolve({ page: 'two' }) }))
+  expect(mocks.loadBounties).toHaveBeenCalledWith({ page: 1, open: true })
 })
 
 test('the page says the bounties could not be read', async () => {
-  mocks.loadBounties.mockRejectedValue(new Error('the internal service is down'))
+  mocks.loadBounties.mockResolvedValue({ items: [], total: 0, page: 1, limit: 20, failed: true })
   const Page = (await import('../app/app/bounties/page')).default
-  render(await Page())
+  render(await Page({ searchParams: Promise.resolve({}) }))
   const alert = await screen.findByRole('alert')
   expect(alert).toHaveTextContent(copy.bounty.readFailed)
   expect(screen.getByRole('link', { name: copy.common.retry })).toHaveAttribute('href', '/app/bounties')
+  // The heading of the page is there in every state.
+  expect(screen.getByRole('heading', { name: copy.bounty.title })).toBeInTheDocument()
 })

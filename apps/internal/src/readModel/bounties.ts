@@ -43,7 +43,18 @@ export function summaryOf(row: BountyRow): BountySummary {
 export interface BountyFilters {
   targetId?: string
   requester?: string
+  /** Only the bounties that can still be filled. */
+  open?: boolean
 }
+
+/**
+ * The condition that keeps only the bounties that can still be filled.
+ *
+ * A bounty is open when it is not settled and still has a slot left. The filter lives in the
+ * query, so the rows of a page are the open bounties and not the open ones of a page that was
+ * read first.
+ */
+const OPEN = `($3::boolean IS FALSE OR (b.settled = false AND (SELECT count(*)::int FROM bounty_fillers f WHERE f.bounty_id = b.id) < b.slots))`
 
 /**
  * One page of the bounty list.
@@ -62,10 +73,10 @@ export async function listBounties(
     `SELECT b.id, b.target_id, ${LABEL} AS label, b.requester, b.slots, b.amount, b.created_at, b.settleable_at,
        b.settled, (SELECT count(*)::int FROM bounty_fillers f WHERE f.bounty_id = b.id) AS filled
      FROM bounties b
-     WHERE ($1::text IS NULL OR b.target_id = $1) AND ($2::text IS NULL OR b.requester = $2)
+     WHERE ($1::text IS NULL OR b.target_id = $1) AND ($2::text IS NULL OR b.requester = $2) AND ${OPEN}
      ORDER BY b.settled ASC, b.created_at DESC, length(b.id) DESC, b.id DESC
-     LIMIT $3 OFFSET $4`,
-    [filters.targetId ?? null, filters.requester ?? null, limit, (page - 1) * limit],
+     LIMIT $4 OFFSET $5`,
+    [filters.targetId ?? null, filters.requester ?? null, filters.open ?? false, limit, (page - 1) * limit],
   )
   return { items: rows.map(summaryOf), total }
 }
@@ -80,8 +91,8 @@ const LABEL = `COALESCE(b.label, (SELECT t.label FROM targets t WHERE t.target_i
 async function countBounties(sql: Db, filters: BountyFilters): Promise<number> {
   const rows = await sql.query<{ total: unknown }>(
     `SELECT count(*)::int AS total FROM bounties b
-     WHERE ($1::text IS NULL OR b.target_id = $1) AND ($2::text IS NULL OR b.requester = $2)`,
-    [filters.targetId ?? null, filters.requester ?? null],
+     WHERE ($1::text IS NULL OR b.target_id = $1) AND ($2::text IS NULL OR b.requester = $2) AND ${OPEN}`,
+    [filters.targetId ?? null, filters.requester ?? null, filters.open ?? false],
   )
   return Number(decimalString(rows[0]?.total ?? 0))
 }

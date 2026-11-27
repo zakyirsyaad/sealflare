@@ -483,6 +483,12 @@ export const copy = {
     "readFailed": "The bounties could not be read.",
     "loadFailed": "The bounty of this target could not be read.",
     "gas": "Settling it costs gas.",
+    "txPending": "The transaction is on its way. Follow it on the explorer.",
+    "txSent": "The transaction was sent, so it is not sent again. Follow it on the explorer.",
+    "pageOf": "Page {page} of {pages}",
+    "pagerLabel": "Pages of the bounties",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
     "vaultMissing": "The vault contract is not connected to the registry yet."
   },
   "activity": {

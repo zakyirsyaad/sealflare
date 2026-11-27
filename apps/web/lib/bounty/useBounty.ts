@@ -1,65 +1,20 @@
 'use client'
-import { useState } from 'react'
-import { usePublicClient, useWriteContract } from 'wagmi'
-import type { Hex } from 'viem'
+import { useCallback, useState } from 'react'
+import type { Address, Hex } from 'viem'
 import { vaultAbi } from '@sealflare/shared/abi'
-import { expectedChainId } from '../chain/config'
-import { isUserRejection, translateContractError } from '../chain/errors'
+import { useWriteTx, type TxState } from '../chain/useWriteTx'
 import { copy } from '../copy'
-import { confirmWrite, WriteFailed } from '../publish/confirm'
 import { vaultAddress } from '../publish/useBond'
 import { withinBountyBounds } from './settle'
 
-export type BountyStatus = 'idle' | 'sending' | 'done' | 'failed'
+/** The states of a bounty write. They are the states of every write of the app. */
+export type BountyStatus = TxState
 
-export type BountyWriteState = { status: BountyStatus; error: string | null; txHash: Hex | null }
-
-const IDLE: BountyWriteState = { status: 'idle', error: null, txHash: null }
-
-/**
- * The write of a bounty and the state it leaves behind.
- *
- * A bounty is BNB that goes straight to the vault, so no token is ever approved. The wallet of
- * the visitor signs every write, and the server signs nothing.
- */
-function useBountyWrite() {
-  const write = useWriteContract()
-  const client = usePublicClient({ chainId: expectedChainId })
-  const [state, setState] = useState<BountyWriteState>(IDLE)
-
-  function fail(error: unknown, txHash: Hex | null): void {
-    if (isUserRejection(error)) {
-      setState(IDLE)
-      return
-    }
-    const translated = translateContractError(error)
-    const message = error instanceof WriteFailed ? error.message : (translated?.message ?? copy.errors.unknown)
-    // The transaction that failed keeps its hash, so the reader can look at it on the explorer.
-    setState({ status: 'failed', error: message, txHash })
-  }
-
-  /**
-   * The write is a success only when the chain has confirmed the receipt.
-   *
-   * The hash is remembered as soon as the wallet has signed, so a transaction that is on its way
-   * can be followed while it waits for its confirmation.
-   */
-  async function run(action: () => Promise<Hex>): Promise<boolean> {
-    setState({ status: 'sending', error: null, txHash: null })
-    let txHash: Hex | null = null
-    try {
-      txHash = await action()
-      setState({ status: 'sending', error: null, txHash })
-      await confirmWrite(client, txHash)
-      setState({ status: 'done', error: null, txHash })
-      return true
-    } catch (error) {
-      fail(error, txHash)
-      return false
-    }
-  }
-
-  return { write, run, state, setState }
+export type BountyWrite = {
+  status: BountyStatus
+  error: string | null
+  /** The hash of the transaction, as soon as the wallet has signed it. */
+  txHash: Hex | null
 }
 
 /**
@@ -67,55 +22,75 @@ function useBountyWrite() {
  *
  * A bounty is BNB that goes straight to the vault, so no token is ever approved. The wallet of
  * the visitor signs every write, and the server signs nothing.
+ *
+ * Every request names the account that signs it, so a wallet that switched account between the
+ * form and the signature refuses instead of sending as another account. The write goes through
+ * the shared hook, so a transaction the wallet cancelled or replaced is a failure and never a
+ * success, and the hash that is kept is the hash of the transaction that was mined.
  */
 export function useBounty() {
-  const { write, run, state, setState } = useBountyWrite()
+  const tx = useWriteTx()
+  // A reason the app found before the wallet was asked. It holds no hash, because nothing was
+  // sent on-chain, so the reader may try again.
+  const [refusal, setRefusal] = useState<string | null>(null)
 
   /** The bounty of one target, with the slots it offers and the money it holds. */
-  async function createBounty(targetId: Hex, slots: number, amount: bigint): Promise<boolean> {
-    const vault = vaultAddress()
-    if (vault === null) {
-      setState({ status: 'failed', error: copy.bounty.vaultMissing, txHash: null })
-      return false
-    }
-    // The panel checks the bounds as well, but a write never leaves the app without them.
-    if (!withinBountyBounds(slots, amount)) {
-      setState({ status: 'failed', error: copy.bounty.boundsInvalid, txHash: null })
-      return false
-    }
-    return run(() =>
-      write.mutateAsync({
+  const createBounty = useCallback(
+    async (account: Address, targetId: Hex, slots: number, amount: bigint): Promise<void> => {
+      const vault = vaultAddress()
+      if (vault === null) {
+        setRefusal(copy.bounty.vaultMissing)
+        return
+      }
+      // The panel checks the bounds as well, but a write never leaves the app without them.
+      if (!withinBountyBounds(slots, amount)) {
+        setRefusal(copy.bounty.boundsInvalid)
+        return
+      }
+      setRefusal(null)
+      await tx.send({
+        account,
         address: vault,
         abi: vaultAbi,
         functionName: 'createBounty',
         args: [targetId, slots],
         value: amount,
-        chainId: expectedChainId,
-      }),
-    )
-  }
+      })
+    },
+    [tx.send],
+  )
 
   /** The payout of a bounty. The contract decides whether it may be settled. */
-  async function settleBounty(id: bigint): Promise<boolean> {
-    const vault = vaultAddress()
-    if (vault === null) {
-      setState({ status: 'failed', error: copy.bounty.vaultMissing, txHash: null })
-      return false
-    }
-    return run(() =>
-      write.mutateAsync({
+  const settleBounty = useCallback(
+    async (account: Address, id: bigint): Promise<void> => {
+      const vault = vaultAddress()
+      if (vault === null) {
+        setRefusal(copy.bounty.vaultMissing)
+        return
+      }
+      setRefusal(null)
+      await tx.send({
+        account,
         address: vault,
         abi: vaultAbi,
         functionName: 'settleBounty',
         args: [id],
-        chainId: expectedChainId,
-      }),
-    )
-  }
+      })
+    },
+    [tx.send],
+  )
+
+  const reset = useCallback(() => {
+    setRefusal(null)
+    tx.reset()
+  }, [tx.reset])
 
   return {
-    state,
+    status: (refusal === null ? tx.state : 'failed') as BountyStatus,
+    error: refusal ?? tx.error,
+    txHash: tx.txHash,
     createBounty,
     settleBounty,
+    reset,
   }
 }

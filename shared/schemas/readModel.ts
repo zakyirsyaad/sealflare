@@ -210,7 +210,7 @@ export const ChallengeDetail = ChallengeSummary.extend({
 export type ChallengeDetail = z.infer<typeof ChallengeDetail>
 
 export const BountySummary = z.object({
-  /** Opaque indexer-assigned id; the frozen contracts key bounties by target, not by a numeric id. */
+  /** The number of the bounty on the vault, the number `Vault.settleBounty(uint256)` takes. */
   id: z.string().min(1),
   targetId: Bytes32Schema,
   label: z.string().min(1),

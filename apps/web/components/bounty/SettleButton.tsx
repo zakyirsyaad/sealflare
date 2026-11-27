@@ -3,11 +3,11 @@ import type { BountySummary } from '@sealflare/shared/schemas'
 import { Button } from '../ui/Button'
 import { ConnectSection } from '../wallet/ConnectSection'
 import { WrongNetwork } from '../wallet/WrongNetwork'
-import { TransactionLink } from '../attest/AttestButton'
 import { useUserState } from '../../lib/chain/userState'
 import { copy } from '../../lib/copy'
 import { canSettle } from '../../lib/bounty/settle'
-import { useBounty, type BountyStatus } from '../../lib/bounty/useBounty'
+import { useBounty } from '../../lib/bounty/useBounty'
+import { WriteStates } from './WriteStates'
 
 export type SettleButtonProps = {
   bounty: BountySummary
@@ -31,36 +31,6 @@ function numericId(id: string): bigint | null {
   }
 }
 
-/** The states of the write: it is on its way, it failed, or it landed. */
-function WriteStates({ status, error, txHash, onRetry }: { status: BountyStatus; error: string | null; txHash: string | null; onRetry: () => void }) {
-  if (status === 'done') {
-    return (
-      <div className="sf-stack">
-        <p>{copy.common.waitingFinality}</p>
-        {txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
-      </div>
-    )
-  }
-  if (status === 'failed') {
-    return (
-      <div className="sf-stack">
-        <p role="alert" className="sf-error">
-          {error ?? copy.errors.unknown}
-        </p>
-        {txHash !== null && <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>}
-        <Button variant="primary" onClick={onRetry}>
-          {copy.common.retry}
-        </Button>
-      </div>
-    )
-  }
-  // While the transaction waits for its confirmation, the reader can follow it.
-  if (status === 'sending' && txHash !== null) {
-    return <TransactionLink txHash={txHash}>{copy.target.transaction}</TransactionLink>
-  }
-  return null
-}
-
 /**
  * The settlement of a bounty.
  *
@@ -70,7 +40,7 @@ function WriteStates({ status, error, txHash, onRetry }: { status: BountyStatus;
  * offered the switch to BNB Smart Chain.
  */
 export function SettleButton({ bounty, now }: SettleButtonProps) {
-  const { state, settleBounty } = useBounty()
+  const { status, error, txHash, settleBounty } = useBounty()
   const user = useUserState()
   const id = numericId(bounty.id)
   if (now === null || id === null) return null
@@ -79,16 +49,24 @@ export function SettleButton({ bounty, now }: SettleButtonProps) {
   if (user.kind === 'wrong-network') return <WrongNetwork />
   // While the wallet is still being read, nothing is offered that needs it.
   if (user.kind === 'checking') return null
-  const busy = state.status === 'sending'
+  // The account signs the write, so it is named in the request.
+  const account = user.kind === 'no-agent-id' || user.kind === 'holder' ? user.address : null
+  const busy = status === 'signing' || status === 'pending'
+  // The id is a number now, so the write names the bounty it settles.
+  const bountyId = id
+  function settle(): void {
+    if (account === null) return
+    void settleBounty(account, bountyId)
+  }
   return (
     <div className="sf-stack">
-      {(state.status === 'idle' || busy) && (
-        <Button variant="primary" disabled={busy} onClick={() => void settleBounty(id)}>
+      {(status === 'idle' || busy) && (
+        <Button variant="primary" disabled={busy || account === null} onClick={settle}>
           {busy ? copy.attest.pending : copy.bounty.settle}
         </Button>
       )}
       <p className="sf-lead">{copy.bounty.gas}</p>
-      <WriteStates status={state.status} error={state.error} txHash={state.txHash} onRetry={() => void settleBounty(id)} />
+      <WriteStates status={status} error={error} txHash={txHash} onRetry={settle} />
     </div>
   )
 }

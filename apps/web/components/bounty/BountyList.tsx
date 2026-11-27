@@ -7,8 +7,12 @@ import { formatBnb, formatDate } from '../../lib/format'
 
 export type BountyListProps = {
   items: readonly BountySummary[]
-  /** Whether the vault and the court are live. A bounty cannot be funded before they are. */
-  live: boolean
+  /** How many open bounties the indexer knows, so the pager knows how many pages there are. */
+  total: number
+  /** The page this list holds. */
+  page: number
+  /** How many rows a page holds. */
+  limit: number
 }
 
 const columns = [
@@ -19,25 +23,46 @@ const columns = [
 ]
 
 /**
- * Whether a bounty can still be filled.
+ * The pages of the list.
  *
- * The screen of the bounties shows the open ones, the ones that still have a slot left, because
- * a bounty that is full or settled cannot be filled any more.
+ * The last page never offers a next one, and a page before the first never offers a previous
+ * one, so the reader never walks into a page that does not exist.
  */
-function isOpen(bounty: BountySummary): boolean {
-  return !bounty.settled && bounty.filled < bounty.slots
+function Pager({ page, total, limit }: { page: number; total: number; limit: number }) {
+  const pages = Math.max(1, Math.ceil(total / limit))
+  if (pages <= 1) return null
+  return (
+    <nav className="sf-pager" aria-label={copy.bounty.pagerLabel}>
+      {page > 1 ? (
+        <Link className="sf-btn sf-btn--secondary" href={`/app/bounties?page=${page - 1}`}>
+          {copy.bounty.previousPage}
+        </Link>
+      ) : (
+        <span />
+      )}
+      <span className="sf-pager__where">
+        {copy.bounty.pageOf.replace('{page}', String(page)).replace('{pages}', String(pages))}
+      </span>
+      {page < pages ? (
+        <Link className="sf-btn sf-btn--secondary" href={`/app/bounties?page=${page + 1}`}>
+          {copy.bounty.nextPage}
+        </Link>
+      ) : (
+        <span />
+      )}
+    </nav>
+  )
 }
 
 /**
- * The list of the bounties, the open ones first.
+ * The list of the bounties that can still be filled.
  *
- * A row opens the target the bounty is about, because a bounty is filled by attesting that
- * target. While the modules are not live the list is empty, and it says why.
+ * The rows come from the indexer, and its query already keeps only the bounties that still have
+ * a slot left, so the rows and the total of the list always agree. A row opens the target the
+ * bounty is about, because a bounty is filled by attesting that target.
  */
-export function BountyList({ items, live }: BountyListProps) {
-  if (!live) return <EmptyState title={copy.common.modulesNotLive} />
-  const open = items.filter(isOpen)
-  if (open.length === 0) {
+export function BountyList({ items, total, page, limit }: BountyListProps) {
+  if (items.length === 0) {
     return (
       <EmptyState
         title={copy.bounty.empty}
@@ -49,7 +74,7 @@ export function BountyList({ items, live }: BountyListProps) {
       />
     )
   }
-  const rows = open.map(item => ({
+  const rows = items.map(item => ({
     id: item.id,
     cells: {
       target: <Link href={`/app/t/${item.targetId}`}>{item.label}</Link>,
@@ -59,8 +84,11 @@ export function BountyList({ items, live }: BountyListProps) {
     },
   }))
   return (
-    <div className="sf-frame sf-scroll">
-      <Table caption={copy.bounty.title} columns={columns} rows={rows} />
+    <div className="sf-stack">
+      <div className="sf-frame sf-scroll">
+        <Table caption={copy.bounty.title} columns={columns} rows={rows} />
+      </div>
+      <Pager page={page} total={total} limit={limit} />
     </div>
   )
 }
