@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useConnect, useConnectors, useDisconnect } from 'wagmi'
+import { useDisconnect } from 'wagmi'
 import type { ScanReport } from '@sealflare/shared/schemas'
 import { CONSTANTS, type FlagName, type TrustTier, type Verdict } from '@sealflare/shared/rules'
 import { Button } from '../ui/Button'
 import { Panel } from '../ui/Panel'
+import { ConnectSection } from '../wallet/ConnectSection'
 import { NoAgentId } from '../wallet/NoAgentId'
 import { WrongNetwork } from '../wallet/WrongNetwork'
 import { useUserState } from '../../lib/chain/userState'
@@ -34,28 +35,6 @@ export type AttestPanelProps = {
    */
   open?: boolean
   onClose: () => void
-}
-
-/** The wallet has to be connected before anything can be signed. */
-function ConnectSection() {
-  const connectors = useConnectors()
-  const { mutate, isPending, error } = useConnect()
-  return (
-    <section className="sf-stack">
-      <h3 className="sf-stack__title">{copy.wallet.connectTitle}</h3>
-      <p className="sf-lead">{copy.wallet.connectIntro}</p>
-      <ul className="sf-connectors">
-        {connectors.map(connector => (
-          <li key={connector.uid}>
-            <Button className="sf-btn--block" disabled={isPending} onClick={() => mutate({ connector })}>
-              {connector.name}
-            </Button>
-          </li>
-        ))}
-      </ul>
-      {error !== null && error !== undefined && <p role="alert" className="sf-lead">{copy.wallet.connectFailed}</p>}
-    </section>
-  )
 }
 
 type Step = 'verdict' | 'review'
