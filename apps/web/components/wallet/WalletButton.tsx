@@ -12,7 +12,14 @@ import { shortAddress } from '../../lib/format'
 
 const pendingLabel = (count: number) => (count === 1 ? copy.wallet.pendingOne : copy.wallet.pendingMany.replace('{count}', String(count)))
 
-export function WalletButton({ pendingCount = 0 }: { pendingCount?: number }) {
+/**
+ * The button of the wallet, with the mark of the things that wait on the account.
+ *
+ * The mark says how many things wait on the account. A count that could not be read is not zero:
+ * a mark that says "?" tells the reader that the number is not known, so the reader does not read
+ * the screen as if there were nothing to do.
+ */
+export function WalletButton({ pendingCount = 0 }: { pendingCount?: number | null }) {
   const state = useUserState()
   const { mutate: disconnect } = useDisconnect()
   const [prompt, setPrompt] = useState(false)
@@ -51,15 +58,17 @@ export function WalletButton({ pendingCount = 0 }: { pendingCount?: number }) {
     </>
   }
   const short = shortAddress(state.address)
+  const unknown = pendingCount === null
   return <div ref={root} className="sf-wallet">
     <Button
       aria-haspopup="menu"
       aria-expanded={menu}
-      aria-label={pendingCount > 0 ? `${short}, ${pendingLabel(pendingCount)}` : undefined}
+      aria-label={unknown ? `${short}, ${copy.wallet.pendingUnknown}` : pendingCount > 0 ? `${short}, ${pendingLabel(pendingCount)}` : undefined}
       onClick={() => setMenu(open => !open)}
     >
       <span className="sf-mono">{short}</span>
-      {pendingCount > 0 && <Chip className="sf-chip--count">{pendingCount}</Chip>}
+      {unknown && <Chip className="sf-chip--count">?</Chip>}
+      {!unknown && pendingCount > 0 && <Chip className="sf-chip--count">{pendingCount}</Chip>}
     </Button>
     {menu && <WalletMenu pendingCount={pendingCount} onClose={closeMenu} />}
   </div>

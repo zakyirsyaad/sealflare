@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { usePublicClient, useWriteContract } from 'wagmi'
 import type { Address, Hex } from 'viem'
 import { vaultAbi } from '@sealflare/shared/abi'
-import { addresses } from '../chain/addresses'
+import { vaultAddress } from '../chain/addresses'
 import { expectedChainId } from '../chain/config'
 import { isUserRejection, translateContractError } from '../chain/errors'
 import { copy } from '../copy'
@@ -12,15 +12,6 @@ import { confirmWrite, WriteFailed } from './confirm'
 export type BondStatus = 'idle' | 'sending' | 'done' | 'failed'
 
 export type BondState = { status: BondStatus; error: string | null; txHash: Hex | null }
-
-/** The vault of this chain, or null when the vault contract is not connected yet. */
-export function vaultAddress(): Address | null {
-  try {
-    return addresses(expectedChainId).vault
-  } catch {
-    return null
-  }
-}
 
 /**
  * The bond writes. The bond is BNB that goes straight to the vault, so no token is ever approved,

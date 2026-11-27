@@ -4,6 +4,9 @@ import userEvent from '@testing-library/user-event'
 import { AppHeader } from '../components/AppHeader'
 vi.mock('next/navigation', () => ({ usePathname: () => '/app' }))
 vi.mock('../components/wallet/WalletButton', () => ({ WalletButton: () => <button type="button">Connect wallet</button> }))
+vi.mock('../lib/chain/userState', () => ({
+  useUserState: () => ({ kind: 'no-wallet', isLoading: false, isError: false, recheck: () => {} }),
+}))
 test('header exposes specified routes, active navigation and the wallet button slot', () => {
   render(<AppHeader />)
   expect(screen.getByRole('navigation', { name: 'App' })).toBeVisible()

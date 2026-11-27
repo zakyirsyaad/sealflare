@@ -1,0 +1,277 @@
+'use client'
+import { useCallback, useMemo, useRef } from 'react'
+import { useReadContract, useReadContracts } from 'wagmi'
+import { zeroAddress, type Address, type Hex } from 'viem'
+import { coreAbi, vaultAbi } from '@sealflare/shared/abi'
+import { coreAddress, vaultAddress } from '../chain/addresses'
+import { expectedChainId, modulesLive } from '../chain/config'
+import { toNextWeight } from './standing'
+
+/**
+ * The readings of the chain that the My activity screen shows.
+ *
+ * The balance, the standing and the pending penalties are read from the contracts and not from
+ * the indexer, so a reader never sees a number that the chain has already changed. A read that
+ * fails is a failure of the screen, not an empty reading: the screen says so.
+ */
+
+/** The balance of an account in the vault, in wei. Null while it is not read. */
+export function useVaultBalance(address: string | null): {
+  wei: bigint | null
+  failed: boolean
+  refetch: () => void
+} {
+  const vault = vaultAddress()
+  const read = useReadContract({
+    abi: vaultAbi,
+    address: vault ?? undefined,
+    chainId: expectedChainId,
+    functionName: 'balanceOf',
+    args: [(address ?? zeroAddress) as Address],
+    query: { enabled: vault !== null && address !== null },
+  })
+  const data = read.data
+  const refetch = useStableRefetch(read)
+  return {
+    wei: typeof data === 'bigint' ? data : null,
+    // A deployment that names no vault cannot be read, and that is a failure, not a loading read.
+    // While the vault is not open yet there is nothing to read, and the screen says so instead.
+    failed: read.isError === true || (modulesLive && vault === null && address !== null),
+    refetch,
+  }
+}
+
+/** A refetch that keeps its name, so the panels are not drawn again for nothing. */
+function useStableRefetch(read: { refetch: () => unknown }): () => void {
+  const latest = useRef(read.refetch)
+  latest.current = read.refetch
+  return useCallback(() => void latest.current(), [])
+}
+
+/** The standing of an account: its score, its weight and what it may still attest today. */
+export type StandingReading = {
+  score: number | null
+  weight: number | null
+  toNextWeight: number | null
+  attestationsLeft: number | null
+  failed: boolean
+  refetch: () => void
+}
+
+export function useStanding(address: string | null): StandingReading {
+  const core = coreAddress()
+  const enabled = core !== null && address !== null
+  const guardian = useReadContract({
+    abi: coreAbi,
+    address: core ?? undefined,
+    chainId: expectedChainId,
+    functionName: 'getGuardian',
+    args: [(address ?? zeroAddress) as Address],
+    query: { enabled },
+  })
+  const weight = useReadContract({
+    abi: coreAbi,
+    address: core ?? undefined,
+    chainId: expectedChainId,
+    functionName: 'weightOf',
+    args: [(address ?? zeroAddress) as Address],
+    query: { enabled },
+  })
+  const quota = useReadContract({
+    abi: coreAbi,
+    address: core ?? undefined,
+    chainId: expectedChainId,
+    functionName: 'attestationsLeftToday',
+    args: [(address ?? zeroAddress) as Address],
+    query: { enabled },
+  })
+  const score = scoreOf(guardian.data)
+  // The search for the next weight walks the thresholds, so it happens once per score.
+  const next = useMemo(() => (score === null ? null : toNextWeight(score)), [score])
+  const failed =
+    guardian.isError === true ||
+    weight.isError === true ||
+    quota.isError === true ||
+    (core === null && address !== null)
+  const readGuardian = useStableRefetch(guardian)
+  const readWeight = useStableRefetch(weight)
+  const readQuota = useStableRefetch(quota)
+  const refetch = useCallback(() => {
+    readGuardian()
+    readWeight()
+    readQuota()
+  }, [readGuardian, readWeight, readQuota])
+  return {
+    score,
+    weight: typeof weight.data === 'number' ? weight.data : null,
+    toNextWeight: next,
+    attestationsLeft: typeof quota.data === 'number' ? quota.data : null,
+    failed,
+    refetch,
+  }
+}
+
+/** The score of a guardian, when the chain answered with one. */
+function scoreOf(data: unknown): number | null {
+  if (typeof data !== 'object' || data === null) return null
+  const score = (data as { score?: unknown }).score
+  return typeof score === 'number' ? score : null
+}
+
+/** What the chain says about the penalties of one target. */
+export type TargetPenalties = {
+  /** The SAFE votes that would still be charged. */
+  pending: number
+  /** How many attestations the target holds, when the chain said. */
+  attestations: number | null
+  /** The chain could not read this target. */
+  failed: boolean
+}
+
+/** The penalties that are still waiting on each of the targets. */
+export function usePendingPenalties(targets: readonly string[]): {
+  pending: Record<string, TargetPenalties>
+  /** The moment the numbers were read, so a reader knows when the chain answered. */
+  updatedAt: number
+  /** The number of pending penalties could not be read. */
+  failed: boolean
+  /** The targets could not be read, so the range of a page is unknown. */
+  viewsFailed: boolean
+  refetch: () => void
+  /**
+   * Reads the numbers of the penalties again and answers with them.
+   *
+   * The answer is the reading that was made after the call, so a number that is reported comes
+   * from the chain and not from the screen. A read that fails answers with null, because a failed
+   * read says nothing about the penalties that are left.
+   */
+  refresh: () => Promise<Record<string, number> | null>
+} {
+  const core = coreAddress()
+  const key = targets.join(',')
+  const contracts = useMemo(
+    () =>
+      core === null
+        ? []
+        : targets.map(target => ({
+            abi: coreAbi,
+            address: core,
+            functionName: 'pendingPenalties' as const,
+            args: [target as Hex],
+          })),
+    // The contracts are rebuilt only when the targets change, so the read is not repeated.
+    [key, core],
+  )
+  const read = useReadContracts({
+    contracts,
+    chainId: expectedChainId,
+    query: { enabled: core !== null && targets.length > 0 },
+  })
+  const counts: Record<string, number> = {}
+  const countFailed = new Set<string>()
+  targets.forEach((target, index) => {
+    const entry = read.data?.[index]
+    // A read of the batch that failed is a failure of that target, not a target without penalties.
+    if (failedOf(entry)) {
+      countFailed.add(target)
+      counts[target] = 0
+      return
+    }
+    const value = resultOf(entry)
+    counts[target] = typeof value === 'number' ? value : 0
+  })
+  // Only the targets that wait on a penalty are read a second time, so the batch stays small.
+  const waiting = targets.filter(target => (counts[target] ?? 0) > 0)
+  const waitingKey = waiting.join(',')
+  const views = useMemo(
+    () =>
+      core === null
+        ? []
+        : waiting.map(target => ({
+            abi: coreAbi,
+            address: core,
+            functionName: 'getTarget' as const,
+            args: [target as Hex],
+          })),
+    [waitingKey, core],
+  )
+  const readViews = useReadContracts({
+    contracts: views,
+    chainId: expectedChainId,
+    query: { enabled: core !== null && waiting.length > 0 },
+  })
+  const pending: Record<string, TargetPenalties> = {}
+  targets.forEach(target => {
+    pending[target] = { pending: counts[target] ?? 0, attestations: null, failed: countFailed.has(target) }
+  })
+  waiting.forEach((target, index) => {
+    const entry = readViews.data?.[index]
+    const known = pending[target]
+    pending[target] = {
+      pending: known?.pending ?? 0,
+      attestations: attestationCountOf(resultOf(entry)),
+      failed: known?.failed === true || failedOf(entry),
+    }
+  })
+  const refetchPending = useStableRefetch(read)
+  const refetchViews = useStableRefetch(readViews)
+  const refetch = useCallback(() => {
+    refetchPending()
+    refetchViews()
+  }, [refetchPending, refetchViews])
+  const viewsBroken = readViews.isError === true || (readViews.data ?? []).some(entry => failedOf(entry))
+  // The reading that a refresh answers with is the one that was made after the call.
+  const readPending = useRef(read.refetch)
+  readPending.current = read.refetch
+  const listed = useRef(targets)
+  listed.current = targets
+  const refresh = useCallback(async (): Promise<Record<string, number> | null> => {
+    const result = (await readPending.current()) as { data?: unknown }
+    const entries = result.data
+    if (!Array.isArray(entries)) return null
+    const counts: Record<string, number> = {}
+    for (const [index, target] of listed.current.entries()) {
+      const entry = entries[index]
+      // A read that failed says nothing about the penalties that are left.
+      if (failedOf(entry)) return null
+      const value = resultOf(entry)
+      counts[target] = typeof value === 'number' ? value : 0
+    }
+    return counts
+  }, [])
+  return {
+    pending,
+    updatedAt: read.dataUpdatedAt ?? 0,
+    failed: read.isError === true || countFailed.size > 0 || (core === null && targets.length > 0),
+    // A target that cannot be read leaves the range of a page unknown, so a page is not sent.
+    viewsFailed: viewsBroken,
+    refetch,
+    refresh,
+  }
+}
+
+/**
+ * The result of one read of a batch.
+ *
+ * A batch of reads answers with one entry per call, and every entry says whether the call
+ * succeeded. Only a call that succeeded holds a result.
+ */
+function resultOf(entry: unknown): unknown {
+  if (typeof entry !== 'object' || entry === null) return null
+  const value = entry as { status?: unknown; result?: unknown }
+  if (value.status !== 'success') return null
+  return value.result
+}
+
+/** Whether one read of a batch failed. */
+function failedOf(entry: unknown): boolean {
+  if (typeof entry !== 'object' || entry === null) return false
+  return (entry as { status?: unknown }).status === 'failure'
+}
+
+/** How many attestations a target holds, when the chain answered with the target. */
+function attestationCountOf(view: unknown): number | null {
+  if (typeof view !== 'object' || view === null) return null
+  const count = (view as { attestationCount?: unknown }).attestationCount
+  return typeof count === 'number' ? count : null
+}

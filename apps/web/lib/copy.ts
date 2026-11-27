@@ -1,4 +1,5 @@
 // Exact UI strings from docs/ux.md, grouped by screen. Shared wording lives in common.
+import { activity } from './copy.activity'
 import { dispute } from './copy.dispute'
 import { explore } from './copy.explore'
 import { guardians } from './copy.guardians'
@@ -11,7 +12,9 @@ export const copy = {
     "loading": "Loading",
     "onChainSafe": "Your on-chain data is unaffected.",
     "onChainUnknown": "On-chain data could not be verified.",
+    "bnb": "BNB",
     "waitingFinality": "Waiting for finality",
+    "waitingConfirmation": "Waiting for confirmation",
     "modulesNotLive": "Opens when the dispute and vault contracts go live.",
     "appLabel": "App",
     "skip": "Skip to content",
@@ -53,7 +56,8 @@ export const copy = {
     "connectFailed": "Could not connect. Try again or choose another wallet.",
     "menuLabel": "Wallet menu",
     "pendingOne": "1 item needs action",
-    "pendingMany": "{count} items need action"
+    "pendingMany": "{count} items need action",
+    "pendingUnknown": "The number of items that need action is not known."
   },
   "errors": {
     "unknown": "Something went wrong. Try again.",
@@ -493,15 +497,7 @@ export const copy = {
     "nextPage": "Next page",
     "vaultMissing": "The vault contract is not connected to the registry yet."
   },
-  "activity": {
-    "title": "My activity",
-    "needsAction": "Needs action",
-    "balance": "Balance",
-    "standing": "Standing",
-    "history": "History",
-    "withdraw": "Withdraw",
-    "claimXp": "Claim XP"
-  },
+  "activity": activity,
   "explore": explore,
   "guardians": guardians,
   "site": {
