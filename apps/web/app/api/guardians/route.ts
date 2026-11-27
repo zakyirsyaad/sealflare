@@ -3,7 +3,7 @@ import { fail } from '../../../server/respond'
 import { readList, readPage } from '../../../server/read'
 
 /**
- * The guardians the Core knows, the ones with the most votes first.
+ * The guardians the Core knows, the ones with the highest score first.
  *
  * A guardian with a penalty that was never charged is marked, so a reader sees that its score
  * still counts a penalty that is waiting.

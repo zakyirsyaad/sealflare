@@ -2,18 +2,46 @@ import { z } from 'zod'
 import { ListQuery } from '@sealflare/shared/schemas'
 import type { TargetType, TrustTier } from '@sealflare/shared/rules'
 import { fail, ok } from '../../../server/respond'
+import { copy } from '../../../lib/copy'
 import { internalGet, InternalServiceError, InternalTargetSummary } from '../../../server/internal'
 import { withTiers } from '../../../server/tier'
-import { deadlineFromNow, withDeadline } from '../../../server/deadline'
+import { deadlineFromNow } from '../../../server/deadline'
+import { VERDICT_TIERS, VerdictSchema, type Verdict } from '../../../lib/verdict'
 
 /** The default size of a page. */
 const DEFAULT_LIMIT = 20
 
 /**
+ * What a reader is told when a filter covers more targets than one request can read.
+ *
+ * The tier is read from the chain, so a filter has to read the tier of every candidate. A
+ * filter that covers too many of them cannot be answered in one request, and the reader is
+ * told to narrow it instead of being shown a failure without a reason.
+ */
+const NARROW_MESSAGE = copy.explore.tooMany
+
+/**
+ * How many candidates a filter may cover before the request cannot answer it in time.
+ *
+ * The tier of a target is read from the chain in batches of a hundred, so a filter that covers
+ * more than one batch needs more than one round of reads. Such a filter cannot be answered
+ * inside the deadline of a request, so the reader is asked for a narrower one instead of a
+ * failure without a reason.
+ */
+const BROAD_CANDIDATES = 100
+
+/** The query of the target list: the frozen one, plus the verdict a reader filters by. */
+type TargetQuery = z.infer<typeof ListQuery> & { verdict?: Verdict }
+
+/**
  * The query of the target list. The frozen `ListQuery` decides what a query may hold, and the
  * text of the query is turned into the numbers it names before it is checked.
+ *
+ * The verdict is checked apart, because it is a group of trust tiers and not a tier itself.
+ * A query that names a tier and a verdict at the same time asks for two different lists, so it
+ * is refused instead of answered with one of them.
  */
-function readQuery(url: URL): { ok: true; value: z.infer<typeof ListQuery> } | { ok: false } {
+function readQuery(url: URL): { ok: true; value: TargetQuery } | { ok: false } {
   const params = url.searchParams
   const parsed = ListQuery.safeParse({
     page: readNumber(params.get('page')),
@@ -22,7 +50,12 @@ function readQuery(url: URL): { ok: true; value: z.infer<typeof ListQuery> } | {
     type: params.get('type') ?? undefined,
     tier: params.get('tier') ?? undefined,
   })
-  return parsed.success ? { ok: true, value: parsed.data } : { ok: false }
+  if (!parsed.success) return { ok: false }
+  const text = params.get('verdict')
+  const verdict = text === null ? undefined : VerdictSchema.safeParse(text)
+  if (verdict !== undefined && !verdict.success) return { ok: false }
+  if (parsed.data.tier !== undefined && verdict?.success === true) return { ok: false }
+  return { ok: true, value: { ...parsed.data, ...(verdict?.success === true ? { verdict: verdict.data } : {}) } }
 }
 
 /** A number of the query, or nothing when the query does not hold one. */
@@ -38,32 +71,44 @@ function readNumber(text: string | null): number | undefined {
  * Without a tier filter the page comes from the internal service and only the tier of the rows
  * of that page is filled. With a tier filter every candidate is read, because the tier is not
  * in the indexed rows and the page cannot be cut before the tier is known.
+ *
+ * The request is bounded without a race around the whole work: the internal service has a
+ * timeout of its own and the reads of the chain stop at the deadline of the route. The route
+ * therefore decides what a failure means, because it knows how many candidates were read.
  */
 export async function GET(request: Request): Promise<Response> {
   const query = readQuery(new URL(request.url))
   if (!query.ok) return fail('BAD_REQUEST', 'The query of the target list is not valid.', 400)
   const deadlineAt = deadlineFromNow()
   try {
-    return await withDeadline(answerTargets(query.value, deadlineAt), deadlineAt)
+    return await answerTargets(query.value, deadlineAt)
   } catch (error) {
     if (error instanceof InternalServiceError) {
-      // The internal service refused or could not answer. There is no list to show, so the answer
-      // is an error and never an empty list that looks like a registry without targets.
+      // The internal service refused the request or could not answer. There is no list to show,
+      // so the answer is an error and never an empty list that looks like a registry without
+      // targets. A request that cannot be read in one go is named, so the reader is asked for a
+      // narrower filter instead of a page that cannot be filled.
+      if (error.code === 'BAD_REQUEST') return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
       return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
     }
-    // The deadline of the request passed, or the chain could not be read. There is no list.
     console.error('The target list could not be read.', error instanceof Error ? error.name : 'unknown')
     return fail('INTERNAL', 'The target list could not be read.', 503)
   }
 }
 
-/** The answer of the target list, with the tier of Core filled in. */
-async function answerTargets(query: z.infer<typeof ListQuery>, deadlineAt: number): Promise<Response> {
-  const { page, limit, address, type, tier } = query
+/**
+ * The answer of the target list, with the tier of Core filled in.
+ *
+ * A verdict is a group of tiers, so a filter by verdict reads the same candidates a filter by
+ * tier reads.
+ */
+async function answerTargets(query: TargetQuery, deadlineAt: number): Promise<Response> {
+  const { page, limit, address, type, tier, verdict } = query
   const current = page ?? 1
   const size = limit ?? DEFAULT_LIMIT
-  if (tier === undefined) return answerPage({ page: current, limit: size, address, type }, deadlineAt)
-  return answerFiltered({ page: current, limit: size, address, type, tier }, deadlineAt)
+  const tiers = tier !== undefined ? [tier] : verdict !== undefined ? [...VERDICT_TIERS[verdict]] : null
+  if (tiers === null) return answerPage({ page: current, limit: size, address, type }, deadlineAt)
+  return answerFiltered({ page: current, limit: size, address, type, tiers }, deadlineAt)
 }
 
 /** The page of the internal service, with the tier of every row of that page filled in. */
@@ -92,7 +137,7 @@ async function answerPage(
 }
 
 /**
- * The page of the candidates that match the tier.
+ * The page of the candidates that match the tiers.
  *
  * The candidates come from one snapshot of the internal service, the tiers are read from Core,
  * and only then the page is cut, so the total counts every row that matches.
@@ -103,7 +148,7 @@ async function answerFiltered(
     limit: number
     address?: string
     type?: TargetType
-    tier: TrustTier
+    tiers: readonly TrustTier[]
   },
   deadlineAt: number,
 ): Promise<Response> {
@@ -114,10 +159,19 @@ async function answerFiltered(
   const items = InternalTargetSummary.array().safeParse(answer.data.items)
   if (!items.success) return fail('INTERNAL', 'The indexed targets cannot be read.', 503)
   const filled = await withTiers(items.data, deadlineAt)
-  if (filled === null) return fail('INTERNAL', 'The trust tier cannot be read.', 503)
+  if (filled === null) {
+    // A filter that covers more candidates than one round of tier reads cannot be answered
+    // inside the deadline, so the reader is asked for a narrower filter. A filter that covers
+    // few of them only ran out of time, so the answer is a failure of the read and not a
+    // request to change a filter that was fine.
+    if (Date.now() >= deadlineAt && items.data.length > BROAD_CANDIDATES) {
+      return fail('BAD_REQUEST', NARROW_MESSAGE, 400)
+    }
+    return fail('INTERNAL', 'The trust tier cannot be read.', 503)
+  }
   // The order of the internal service is kept, so the page of a filter is the page of the
   // unfiltered list with the rows that do not match taken out.
-  const matching = filled.filter(item => item.tier === filters.tier)
+  const matching = filled.filter(item => filters.tiers.includes(item.tier))
   const start = (filters.page - 1) * filters.limit
   return ok(
     { items: matching.slice(start, start + filters.limit) },
