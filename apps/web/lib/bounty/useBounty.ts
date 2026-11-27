@@ -4,7 +4,7 @@ import type { Address, Hex } from 'viem'
 import { vaultAbi } from '@sealflare/shared/abi'
 import { useWriteTx, type TxState } from '../chain/useWriteTx'
 import { copy } from '../copy'
-import { vaultAddress } from '../publish/useBond'
+import { vaultAddress } from '../chain/addresses'
 import { withinBountyBounds } from './settle'
 
 /** The states of a bounty write. They are the states of every write of the app. */

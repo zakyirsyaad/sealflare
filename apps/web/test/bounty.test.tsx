@@ -85,6 +85,8 @@ vi.mock('../lib/chain/addresses', () => ({
     if (mocks.noRegistry) throw new Error('the registry is not configured')
     return { agentId: me, core: me, court: null, vault }
   },
+  coreAddress: () => (mocks.noRegistry ? null : me),
+  vaultAddress: () => (mocks.noRegistry ? null : vault),
 }))
 vi.mock('../server/bounties', () => ({ loadBounties: mocks.loadBounties }))
 vi.mock('../lib/env.public', () => ({
